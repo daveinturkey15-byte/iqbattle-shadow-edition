@@ -7,19 +7,19 @@
 
 /* ---------- tokens ---------- */
 :root{
-  --bg:#0b1120;
-  --panel:#0f1a30;
-  --panel-2:#101d38;
-  --tile:#0c1830;
+  --bg:#040812;
+  --panel:#020e20;
+  --panel-2:#0a1428;
+  --tile:#000000;
   --ink:#eef2fb;
-  --muted:#8fa0c4;
-  --acc-a:#3f7dff;
-  --acc-b:#ff2e88;
-  --grad:linear-gradient(135deg,var(--acc-a),var(--acc-b));
+  --muted:#9aa7ba;
+  --acc-a:#2d7cff;
+  --acc-b:#ef4cc8;
+  --grad:linear-gradient(90deg,#ef4cc8,#9b6dff 40%,#2d7cff 60%,#2ce8ff);
   --ok:#22d3a5;
   --bad:#ff2e88;
-  --shadow:0 10px 30px rgba(0,20,60,.35);
-  --radius:14px;
+  --shadow:0 12px 34px rgba(0,20,60,.26),0 2px 10px rgba(0,10,40,.18);
+  --radius:22px;
 }
 
 /* ---------- reset / shell ---------- */
@@ -33,7 +33,7 @@ body{
     radial-gradient(900px 600px at 8% 110%,rgba(255,46,136,.05),transparent 60%),
     var(--bg);
   color:var(--ink);
-  font-family:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
+  font-family:'Oxanium','Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
   transition:background 1.5s ease,color 1.5s ease;
 }
 #app{height:100%;display:flex;flex-direction:column;position:relative;z-index:2}
@@ -51,9 +51,9 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 
 /* ---------- buttons (luxe pills) ---------- */
 .btn{
-  cursor:pointer;border:none;font-family:inherit;font-weight:800;
-  text-transform:uppercase;letter-spacing:.1em;font-size:12.5px;
-  padding:14px 28px;border-radius:999px;background:#182648;color:var(--ink);
+  cursor:pointer;border:none;font-family:inherit;font-weight:500;
+  text-transform:uppercase;letter-spacing:.18em;font-size:12.5px;
+  padding:14px 26px;border-radius:14px;background:rgba(2,10,22,.52);color:var(--ink);
   box-shadow:var(--shadow);transition:transform .08s,box-shadow .15s,filter .15s;
 }
 .btn:hover{transform:translateY(-2px);filter:brightness(1.12)}
@@ -75,8 +75,8 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 .btn.pill{padding:9px 18px;font-size:11px;border-radius:999px}
 .btn.pill.danger{color:#ff8ba6;box-shadow:inset 0 0 0 2px rgba(255,46,136,.4)}
 .btn.pill.danger:hover{box-shadow:inset 0 0 0 2px var(--bad);color:#ffb3cd}
-.btn.mini{border-radius:10px;opacity:.7}
-.btn.mini:hover{opacity:1}
+.btn.mini{border-radius:999px;opacity:.7;font-size:10px;padding:8px 16px;
+  max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .boot-sub{margin-top:8px;color:var(--muted);font-size:11px;letter-spacing:.26em;text-transform:uppercase}
 .boot-card input{
   width:100%;margin:26px 0 10px;padding:13px 16px;font-size:16px;font-family:inherit;
@@ -153,30 +153,33 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 #scr-play{flex:1;display:flex;flex-direction:column;min-height:0;padding:0}
 .play-main{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0;padding:14px}
 .round-strip{
-  display:flex;align-items:center;gap:18px;padding:10px 18px;border-radius:12px;
-  background:var(--panel);border:1px solid rgba(255,255,255,.06);box-shadow:var(--shadow)}
-.round-label{font-weight:900;font-size:17px;letter-spacing:.03em;color:#fff}
+  display:flex;align-items:center;gap:18px;padding:15px 18px;border-radius:16px;
+  background:rgb(2,12,29);border:1px solid rgba(64,137,238,.16);box-shadow:var(--shadow)}
+.round-label{font-weight:500;font-size:30px;letter-spacing:.02em;color:#fff}
 .timer-bar{
-  height:6px;border-radius:3px;flex:1;overflow:hidden;
-  background:linear-gradient(90deg,var(--acc-a),var(--acc-b))}
-.timer-bar>i{display:block;height:100%;width:100%;background:inherit;transform-origin:left}
+  height:5px;border-radius:3px;flex:1;overflow:hidden;
+  background:rgba(64,137,238,.1)}
+.timer-bar>i{display:block;height:100%;width:100%;background:var(--grad);transform-origin:left}
 .timer-num{
-  margin-left:auto;font-variant-numeric:tabular-nums;font-weight:900;
-  font-size:22px;color:#fff}
+  margin-left:auto;font-family:'Oxanium',ui-monospace,'Cascadia Mono',Consolas,monospace;
+  font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
+  letter-spacing:.02em;font-weight:400;
+  font-size:30px;color:#fff}
 .timer-low .timer-num{color:var(--bad);animation:blinklow .5s steps(2) infinite}
 @keyframes blinklow{50%{opacity:.35}}
 .board-zone{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
 .board-frame{
-  background:var(--panel);border:1px solid rgba(255,255,255,.06);
-  border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);max-height:100%}
+  background:rgba(1,8,18,.82);border:1px solid rgba(83,158,250,.38);
+  border-radius:16px;padding:18px;box-shadow:var(--shadow);max-height:100%}
 
 /* option tiles: 4x2 grid, dark cells with white borders */
 .opts-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:2px 0}
 .opt-btn{
-  cursor:pointer;background:var(--tile);border:2px solid rgba(255,255,255,.09);
-  border-radius:12px;padding:8px;min-height:76px;
+  cursor:pointer;background:#000;border:1px solid rgba(64,137,238,.24);
+  border-radius:14px;padding:12px;min-height:80px;
   display:flex;align-items:center;justify-content:center;
   transition:border-color .1s,transform .1s,box-shadow .15s;box-shadow:0 4px 14px rgba(0,10,40,.35)}
+.opt-btn:active{transform:scale(.97)}
 .opt-btn:hover{border-color:var(--acc-a);transform:translateY(-2px)}
 .opt-btn.picked{border-color:var(--acc-a);box-shadow:0 0 0 3px rgba(63,125,255,.25)}
 .opt-btn.correct{
@@ -194,8 +197,8 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 /* ---------- side scoreboard ---------- */
 .side-panel{width:300px;flex:none;display:flex;flex-direction:column;gap:10px;padding:14px 14px 14px 0}
 .score-card{
-  background:var(--panel-2);border:1px solid rgba(255,255,255,.05);
-  border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;
+  background:rgba(0,3,9,.72);border:1px solid rgba(64,137,238,.26);
+  border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:14px;
   box-shadow:var(--shadow);transition:outline .2s}
 .score-card.leader{outline:2px solid gold;outline-offset:-2px}
 .score-card.me{background:linear-gradient(135deg,rgba(63,125,255,.12),rgba(255,46,136,.12));border-color:rgba(255,46,136,.25)}
@@ -466,8 +469,7 @@ body.corr-3 .score-card.me,body.act-3 .score-card.me{
 /* ---------- responsive ---------- */
 @media(max-width:900px){
   .side-panel{display:none}
-  .opts-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-  .opt-btn{padding:4px;min-height:58px}
+  .opt-btn{padding:8px;min-height:58px}
   .opt-btn svg{width:100%!important;height:auto!important}
   .menu-title{font-size:14vw}
   .panel{padding:22px}
