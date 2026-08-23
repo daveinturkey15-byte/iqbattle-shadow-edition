@@ -26,7 +26,8 @@
  *
  * Protocol: plain JSON frames `{ t:'lobby'|'round'|'pick'|'reveal'|'scores'
  * |'end'|'chat', ... }`.
- *   hello  client→host  {t:'hello', name}
+ *   hello  client→host  {t:'hello', name, uid}  (uid = ONE stable id shared
+ *                       by BOTH transports so the host never double-registers)
  *   lobby  host→all     {t:'lobby', players:[{id,name,isHost}], cfg}
  *   round  host→all     {t:'round', ...sanitized puzzle}  (NO answer!)
  *   pick   client→host  {t:'pick', qid, idx}  (host scores authoritatively)
@@ -46,6 +47,7 @@
  *                                 back into the host's own handlers
  *   .broadcast(obj)            -> host→all clients AND fires locally on host
  *   .kick(id) .leave()         -> teardown helpers; all no-throw offline
+ *   .debugLog()                -> last 20 net events [{t,dir,ts,ok}] (debug ring)
  * ==========================================================================*/
 (function () {
   'use strict';
@@ -62,11 +64,24 @@
     peerId: null,                // remote peer id we connected to (client)
     peer: null,                  // our own Peer instance
     hostConn: null,              // client: the single DataConnection to host
-    conns: {},                   // host: connId -> DataConnection
-    players: {},                 // host: playerId -> {id,name,isHost}
+    conns: {},                   // host: playerKey -> DataConnection
+    players: {},                 // host: playerKey -> {id,name,isHost}
     handlers: {},                // event -> [fn,...]
-    dead: false
+   joining: false,              // client: handshake in flight (enables join retry)
+   dead: false,
+   seen: {},                    // bus poll/event dedup of recent frame nonces
+   myUid: null                  // THIS side's stable uid ('HOST' for host, C<ts><rand> for client)
   };
+
+  // ---- tiny debug ring: last 20 net events, exposed via Net.debugLog() ------
+  var LOG_CAP = 20;
+  var logRing = [];
+  function logEv(t, dir, ok) {
+    try {
+      logRing.push({ t: String(t == null ? '' : t), dir: dir, ts: Date.now(), ok: !!ok });
+      if (logRing.length > LOG_CAP) logRing.splice(0, logRing.length - LOG_CAP);
+    } catch (e) {}
+  }
   /* ---- storage-event transport (same-browser, file://-proof).
    * Frames JSON'd into localStorage key 'iqvs-bus-<code>'; 'storage' events
    * fire in every OTHER tab sharing the origin. */
@@ -76,17 +91,24 @@
     if (!ev.key || ev.key !== lsKey || !ev.newValue) return;
     var m = null;
     try { m = JSON.parse(ev.newValue); } catch (e) { return; }
+    if (m && m._n) { if (state.seen[m._n]) return; state.seen[m._n] = 1; var kn = Object.keys(state.seen); if (kn.length > 60) delete state.seen[kn[0]]; }
     if (!m || m.bc !== 1 || m.src === lsMyId) return;
     if (m.to && m.to !== lsMyId) return;
     if (state.role === 'host' && m.t === 'hello') {
+      logEv('hello', 'in', true);
+      var isNew = !Object.prototype.hasOwnProperty.call(state.players, m.src);
       state.players[m.src] = { id: m.src, name: String(m.name || 'PLAYER').slice(0, 16), isHost: false };
       var lobby = buildLobby(); lobby.src = lsMyId;
       lsSend(lobby);
-      emit('peer-join', { id: m.src, name: state.players[m.src].name });
-      emit('lobby', lobby);
+      if (isNew) emit('peer-join', { id: m.src, name: state.players[m.src].name });
+      emit('lobby', lobby); // host's OWN handlers must see the roster too
     } else if (state.role === 'host' && m.t === 'pick') {
+      // bus frames already carry src=uid; normalize so the host game logic
+      // sees the SAME {uid} field shape the PeerJS transport delivers
+      if (!m.uid) m.uid = m.src;
       emit('pick', m);
     } else if (state.role === 'client') {
+      logEv(m.t || '', 'in', true);
       emit(m.t || '', m);
     }
   }
@@ -153,6 +175,7 @@
     conn.on('data', function (data) {
       try { onData(conn, data); }
       catch (e) {
+        logEv('handler-error', 'err', false);
         try { root.console.error('IQ.Net onData throw:', (e && e.stack) || e); } catch (_e) {}
         emit('net-error', { message: String((e && e.message) || e), stack: String((e && e.stack) || '') });
       }
@@ -169,22 +192,40 @@
     } catch (e) { return; }
     if (!msg || typeof msg.t !== 'string') return;
 
+    logEv(msg.t, 'in', true);
     if (state.role === 'host') {
       if (msg.t === 'hello') {
-        // register the freshly-helloed client, then push the lobby everywhere
-        var pid = conn.peer;
+        // register the client under ONE stable uid (both transports use the
+        // same uid), closing/replacing any earlier conn registered for it —
+        // this is what stops BC+PeerJS double-hello from doubling players.
+        var pid = String(msg.uid || conn.peer);
+        // if this physical conn was previously registered under another
+        // key, retire the stale entry so it can't linger as a ghost
+        for (var pk in state.conns) {
+          if (Object.prototype.hasOwnProperty.call(state.conns, pk) && state.conns[pk] === conn && pk !== pid) {
+            delete state.conns[pk];
+            delete state.players[pk];
+          }
+        }
+        var prev = state.conns[pid];
+        if (prev && prev !== conn) { try { prev.close(); } catch (e) {} }
+        var isNew = !Object.prototype.hasOwnProperty.call(state.players, pid);
         state.players[pid] = { id: pid, name: String(msg.name || 'PLAYER').slice(0, 16), isHost: false };
         state.conns[pid] = conn;
-        emit('peer-join', { id: pid, name: state.players[pid].name });
+        if (isNew) emit('peer-join', { id: pid, name: state.players[pid].name });
         var lobby = buildLobby();
         broadcast(lobby);
         emit('lobby', lobby);
       } else if (msg.t === 'chat') {
         // relay chat with attribution; never trust claimed identity fields
-        var p = state.players[conn.peer];
-        broadcast({ t: 'chat', id: conn.peer, name: p ? p.name : '???', text: String(msg.text || '').slice(0, 200) });
+        var pkey = connKey(conn);
+        var p = pkey ? state.players[pkey] : null;
+        broadcast({ t: 'chat', id: pkey || conn.peer, name: p ? p.name : '???', text: String(msg.text || '').slice(0, 200) });
       } else {
-        // 'pick' etc: hand to host game logic untouched — host is the authority
+        // 'pick' etc: hand to host game logic untouched — host is the authority.
+        // Stamp the sender's stable uid (conn key) so scoring keys by uid,
+        // never by display name (same-name tabs must stay distinct).
+        if (!msg.uid) msg.uid = connKey(conn) || conn.peer;
         emit(msg.t, msg);
       }
     } else if (state.role === 'client') {
@@ -202,10 +243,18 @@
   }
 
   // host: a client vanished. client: the host vanished -> session over.
+  // Conns are keyed by stable uid (not conn.peer), so find the key by identity.
+  function connKey(conn) {
+    for (var k in state.conns) {
+      if (Object.prototype.hasOwnProperty.call(state.conns, k) && state.conns[k] === conn) return k;
+    }
+    return null;
+  }
   function onConnGone(conn) {
     if (state.role === 'host') {
-      var pid = conn.peer;
-      if (!state.players[pid]) return;
+      var pid = connKey(conn);
+      if (!pid || !state.players[pid]) return;
+      if (state.conns[pid] !== conn) return; // superseded by a replacement hello
       delete state.conns[pid];
       var gone = state.players[pid];
       delete state.players[pid];
@@ -214,6 +263,7 @@
       broadcast(lobby);
       emit('lobby', lobby);
     } else if (state.role === 'client' && !state.dead) {
+      if (state.joining && retryJoinConn) { retryJoinConn(); return; } // broker flap -> retry
       endSession();
       emit('end', { reason: 'host-left' });
     }
@@ -241,6 +291,7 @@
       teardown();
 
       var attempt = 0;
+      state.myUid = BC_ID_HOST; // host's own stable uid (bus frames use it too)
       state.role = 'host';
       state.code = base;
       state.players = {};
@@ -254,7 +305,12 @@
         var peer = new root.Peer(id, { debug: 1 });
         state.peer = peer;
         peer.on('open', function () {
-          state.code = base + (attempt > 1 ? String(attempt) : '');
+          var finalCode = base + (attempt > 1 ? String(attempt) : '');
+          // Ghost-code guard: if we fell back to a suffixed id, rebind the
+          // storage bus to the REAL room code so joiners find us, and resolve
+          // with the code index.html will actually display.
+          if (finalCode !== base) bcOpen(finalCode, BC_ID_HOST);
+          state.code = finalCode;
           state.players[peer.id] = { id: peer.id, name: String(displayName || 'HOST').slice(0, 16), isHost: true };
           peer.on('connection', function (conn) {
             wire(conn);
@@ -267,6 +323,7 @@
         });
         peer.on('error', function (err) {
           var type = err && err.type;
+          logEv(type || 'peer-error', 'err', false);
           if ((type === 'unavailable-id' || type === 'invalid-id') && attempt < MAX_ID_RETRIES) {
             try { peer.destroy(); } catch (e) {}
             tryOpen(); // id taken -> next suffix
@@ -282,7 +339,14 @@
     });
   };
 
-  /* Join a hosted room. Resolves with the first lobby snapshot. */
+  // Set during join(): onConnGone calls it to retry the host connection
+  // while the handshake is still in flight (broker flaps).
+  var retryJoinConn = null;
+  /* Join a hosted room. Resolves with the first lobby snapshot.
+   * ONE stable uid is generated here and sent in BOTH hello frames (storage
+   * bus + PeerJS), so the host registers this human exactly once even when
+   * both transports connect. The peer connect retries twice (600ms apart)
+   * before the 15s timeout rejects — brokers flap. */
   Net.join = function (roomCode, displayName) {
     return new Promise(function (resolve, reject) {
       if (!Net.available()) { reject(new Error('IQ.Net: PeerJS unavailable')); return; }
@@ -293,37 +357,73 @@
       state.role = 'client';
       state.code = code;
       state.dead = false;
-      var myBcId = 'C' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
-      if (bcOpen(code, myBcId)) bcSend({ t: 'hello', to: BC_ID_HOST, name: displayName });
+      state.joining = true;
+      var myUid = 'C' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+      state.myUid = myUid; // ONE stable uid shared by both transports
+      if (bcOpen(code, myUid)) {
+        bcSend({ t: 'hello', to: BC_ID_HOST, name: String(displayName || 'PLAYER').slice(0, 16), uid: myUid });
+        logEv('hello', 'out', true);
+      }
       var settled = false;
 
       var peer = new root.Peer(null, { debug: 1 });
       var failTimer = setTimeout(function () {
-        if (!settled) { settled = true; teardown(); reject(new Error('IQ.Net: join timeout')); }
+        if (!settled) {
+          settled = true;
+          retryJoinConn = null;
+          logEv('join-timeout', 'err', false);
+          teardown();
+          reject(new Error('IQ.Net: join timeout'));
+        }
       }, 15000);
 
-      peer.on('open', function () {
-        var conn = peer.connect('iqvs-' + code, { reliable: true, serialization: 'json' });
-        state.hostConn = conn;
-        wire(conn);
-        conn.on('open', function () {
-          try { conn.send({ t: 'hello', name: String(displayName || 'PLAYER').slice(0, 16) }); } catch (e) {}
-        });
-      });
-
-      peer.on('error', function (err) {
+      function settle() {
         if (settled) return;
         settled = true;
         clearTimeout(failTimer);
+        retryJoinConn = null;
+        state.joining = false;
+      }
+
+      var tryN = 0;
+      function attemptConn() {
+        if (settled) return;
+        tryN++;
+        var conn;
+        try {
+          conn = peer.connect('iqvs-' + code, { reliable: true, serialization: 'json' });
+        } catch (e) { scheduleRetry(); return; }
+        state.hostConn = conn;
+        wire(conn);
+        conn.on('open', function () {
+          var ok = false;
+          try { conn.send({ t: 'hello', name: String(displayName || 'PLAYER').slice(0, 16), uid: myUid }); ok = true; } catch (e) {}
+          logEv('hello', 'out', ok);
+        });
+      }
+      function scheduleRetry() {
+        if (settled || tryN >= 3) return; // exhausted -> 15s failTimer rejects
+        setTimeout(function () { if (!settled) attemptConn(); }, 600);
+      }
+      retryJoinConn = scheduleRetry;
+
+      peer.on('open', attemptConn);
+
+      peer.on('error', function (err) {
+        var type = err && err.type;
+        logEv(type || 'peer-error', 'err', false);
+        if (settled) return;
+        // host peer id not up yet / broker flap -> retry instead of failing
+        if (type === 'peer-unavailable') { scheduleRetry(); return; }
+        settle();
         teardown();
-        reject(err instanceof Error ? err : new Error(String((err && err.type) || 'peer-error')));
+        reject(err instanceof Error ? err : new Error(String(type || 'peer-error')));
       });
 
       // first authoritative lobby snapshot completes the handshake
       var off = Net.on('lobby', function (msg) {
         if (settled) return;
-        settled = true;
-        clearTimeout(failTimer);
+        settle();
         off();
         resolve({ players: msg.players || [] });
       });
@@ -344,16 +444,21 @@
   /* Client→host delivery. On the host this loops back into its own handlers,
    * so one game-code path works for both roles. No-throw when offline. */
   Net.send = function (obj) {
+    var ok = false;
     try {
       if (state.role === 'client' && state.hostConn && state.hostConn.open) {
         state.hostConn.send(obj);
+        ok = true;
       }
       if (state.role === 'client') {
         bcSend(Object.assign({}, obj, { to: BC_ID_HOST }));
+        ok = true;
       } else if (state.role === 'host') {
         emit((obj && obj.t) || '', obj || {}); // host talks to itself
+        ok = true;
       }
-    } catch (e) { /* offline solo mode keeps working */ }
+    } catch (e) { /* offline solo mode keeps working */ ok = false; }
+    logEv((obj && obj.t) || 'send', 'out', ok);
   };
 
   /* Host→every client. ALSO fires locally on the host so both sides see the
@@ -370,10 +475,26 @@
         }
         bcSend(obj);
         emit((obj && obj.t) || '', obj || {});
+    logEv((obj && obj.t) || 'broadcast', 'out', anyOpen);
         return anyOpen;
       }
     } catch (e) { /* keep the host alive even if a pipe is broken */ }
     return false;
+  };
+
+  /* Last 20 net events ({t, dir:'in'|'out'|'err', ts, ok}) for debugging
+   * silent transport failures. Copy — safe to mutate. */
+  // internal alias used by onData/onConnGone
+  var broadcast = Net.broadcast;
+  Net.debugLog = function () {
+    try { return logRing.slice(); } catch (e) { return []; }
+  };
+
+  /* THIS side's stable uid — 'HOST' when hosting, C<ts><rand> when joining.
+   * Game code must key players/scoring by this, NEVER by display name
+   * (two tabs on the same profile share a name but never a uid). */
+  Net.myUid = function () {
+    return state.myUid || null;
   };
 
   Net.kick = function (id) {
@@ -413,7 +534,9 @@
   };
 
   function teardown() {
+    retryJoinConn = null;
     state.dead = true;
+    state.joining = false;
     var k;
     for (k in state.conns) {
       if (Object.prototype.hasOwnProperty.call(state.conns, k)) {

@@ -454,7 +454,9 @@ body.corr-3 .score-card.me,body.act-3 .score-card.me{
 /* ---------- responsive ---------- */
 @media(max-width:900px){
   .side-panel{display:none}
-  .opts-grid{grid-template-columns:repeat(4,1fr)}
+  .opts-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .opt-btn{padding:4px;min-height:58px}
+  .opt-btn svg{width:100%!important;height:auto!important}
   .menu-title{font-size:14vw}
   .panel{padding:22px}
   .cfg-row label{width:120px}

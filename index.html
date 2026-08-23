@@ -22,7 +22,7 @@
       <button class="btn btn-ghost" id="boot-join" style="width:100%;margin-top:8px">Join Room</button>
       <div class="fineprint" id="net-status"></div>
       <div class="fineprint">Solo gauntlets run against house demons.<br>Puzzle Forge · Grimoire · Settings below.</div>
-      <div style="display:flex;gap:6px;margin-top:6px">
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn btn-ghost mini" data-nav="forge">Forge</button>
         <button class="btn btn-ghost mini" data-nav="grimoire">Grimoire</button>
         <button class="btn btn-ghost mini" data-nav="settings">Settings</button>
@@ -82,13 +82,28 @@
 <script src="./shadow.js"></script>
 <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js" crossorigin="anonymous"></script>
 <script src="./net.js"></script>
+<script src="./room-ui.js"></script>
+<script src="./fun.js"></script>
+<script src="./gfx-title.js"></script>
+<script src="./gfx-background.js"></script>
+<script src="./gen_latin.js"></script><script>window.IQ.Gens=window.IQ.Gens||{};window.IQ.Gens.latin=window.IQ.GenV;</script>
+<script src="./gen_iqvs.js"></script><script>window.IQ.Gens.iqvs=window.IQ.GenV;</script>
+<script src="./gen_cycle.js"></script><script>window.IQ.Gens.cycle=window.IQ.GenV;</script>
+<script src="./gen_rotate.js"></script><script>window.IQ.Gens.rotate=window.IQ.GenV;</script>
+<script src="./gen_count.js"></script><script>window.IQ.Gens.count=window.IQ.GenV;</script>
+<script src="./gen_dual.js"></script><script>window.IQ.Gens.dual=window.IQ.GenV;</script>
+<script src="./gen_wild.js"></script><script>window.IQ.Gens.wild=window.IQ.GenV;</script>
+<script src="./content_quips.js"></script>
+<script src="./content_prompts.js"></script>
+<script src="./onboard.js"></script>
+<script src="./gfx-board.js"></script>
 <script>
 'use strict';
 /* ============================================================
    IQ VERSUS — faithful clone that decays into SHADOW
    ============================================================ */
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
-const rnd=(a,b)=>a+Math.random()*(b+a===0?0:0)+Math.random()*(b-a), ri=(a,b)=>Math.floor(a+Math.random()*(b-a+1)), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rnd=(a,b)=>a+Math.random()*(b-a), ri=(a,b)=>Math.floor(a+Math.random()*(b-a+1)), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 let P=store.get('IQB_PROFILE_V1',null)||{name:'',runs:0,wins:0,bestScore:0,deepestStage:0,followers:[],relicsSeen:[],totalCorrect:0,totalWrong:0};
@@ -102,10 +117,10 @@ const AU={ok:false,
  mute(m){try{this.ok&&IQ.Audio.setMuted(m)}catch(e){}}};
 const CX={ok:false,
  mount(){try{window.IQ&&IQ.Chaos&&(IQ.Chaos.mount($('#app')),this.ok=true)}catch(e){}},
- shake(p,m){try{this.ok&&IQ.Chaos.shake(p,m)}catch(e){}},
- glitch(m){try{this.ok&&IQ.Chaos.glitch(m)}catch(e){}},
+ shake(p,m){try{if(this.ok&&!store.get('IQB_MOTION',true))return;this.ok&&IQ.Chaos.shake(p,m)}catch(e){}},
+ glitch(m){try{if(this.ok&&!store.get('IQB_MOTION',true))return;this.ok&&IQ.Chaos.glitch(m)}catch(e){}},
  flash(c,m){try{this.ok&&IQ.Chaos.flash(c,m)}catch(e){}},
- invert(m){try{this.ok&&IQ.Chaos.invert(m)}catch(e){}},
+ invert(m){try{if(this.ok&&!store.get('IQB_MOTION',true))return;this.ok&&IQ.Chaos.invert(m)}catch(e){}},
  pulse(){try{this.ok&&IQ.Chaos.pulse()}catch(e){}},
  embers(o){try{this.ok&&IQ.Chaos.embers(o)}catch(e){}},
  inten(v){try{this.ok&&IQ.Chaos.setIntensity(v)}catch(e){}},
@@ -165,7 +180,7 @@ function tileSVG(tile,size,palIdx,showQ){
  for(let i=0;i<cols*rows;i++){const c=cells[i],x=(i%cols)*cs,y=Math.floor(i/cols)*cs;
   out+=`<rect x="${x}" y="${y}" width="${cs}" height="${cs}" rx="2" fill="rgba(127,127,127,.08)"/>`;
   if(!c&&showQ)out+=`<text x="${x+cs/2}" y="${y+cs/2}" font-size="${cs*.5}" font-weight="900" text-anchor="middle" dominant-baseline="central" fill="currentColor" opacity=".85">?</text>`;
-  else if(c)out+=cellSVG(c,x,y,cs,palIdx);}
+  else if(c)out+=(c.cells&&c.cells.length)?tileSVG(c,cs,palIdx,false).replace('<svg ','<svg x="'+x+'" y="'+y+'" '):cellSVG(c,x,y,cs,palIdx);}
  return `<svg viewBox="0 0 ${cols*cs} ${rows*cs}" width="${size}" height="${size}" style="display:block">${out}</svg>`;
 }
 const optTile=t=>t&&t.cells?t:{cols:1,rows:1,cells:[t]};
@@ -177,7 +192,7 @@ function setStage(n){
  P.deepestStage=Math.max(P.deepestStage,n);saveP();
  document.body.classList.remove('act-1','act-2','act-3','corr-1','corr-2','corr-3');
  if(n>=1)document.body.classList.add('act-'+n,'corr-'+n);
- CX.cact(n);AU.act(n);CX.inten([.15,.4,.7,1][n]);CX.embers(n>=3);
+ CX.cact(n);AU.act(n);if(store.get('IQB_MOTION',true))CX.inten([.15,.4,.7,1][n]);CX.embers(n>=3);try{window.IQ&&IQ.GfxBg&&IQ.GfxBg.setStage(n)}catch(e){}
  updateTitle();
  if(n>=3)SH.say(SH.q('appear'),true);
 }
@@ -194,6 +209,7 @@ function timeline(){
 
 /* ---------- nav ---------- */
 function nav(to){
+ if(G.screen==='play'&&to!=='play'){cancelAnimationFrame(G.raf);clearInterval(G.shuffleIv);G.answered=true}
  $$('#app > section').forEach(x=>x.classList.add('hidden'));
  $('#topbar').classList.toggle('hidden',to!=='play');
  G.screen=to;
@@ -205,7 +221,7 @@ function banner(txt){const b=document.createElement('div');b.className='event-ba
 /* ---------- scoreboard ---------- */
 function renderScores(){
  const sp=$('#side-panel');if(!sp)return;
- const rows=[{me:1,name:P.name||'YOU',ava:'🜃',pts:G.score},...G.opps.map(o=>({name:o.n,ava:o.ava,pts:o.pts}))];
+ const rows=[{me:1,name:P.name||'YOU',ava:'🜃',pts:G.score},...G.opps.map(o=>({name:o.n,ava:o.ava,pts:o.pts})),...(G.humans||[]).map(h=>({name:h.n,ava:'🜂',pts:h.pts}))];
  rows.sort((a,b)=>b.pts-a.pts);
  sp.innerHTML=rows.map((o,i)=>`<div class="score-card ${o.me?'me':''} ${i===0?'leader':''}">
   <div class="sc-ava">${o.ava}</div><div style="flex:1;min-width:0"><div class="sc-name">${esc(o.name)}</div>
@@ -217,11 +233,14 @@ function renderScores(){
 function startRun(){
  $('#center-content').innerHTML='';
  G.round=0;G.score=0;G.streak=0;G.stage=-1;setStage(0);
- G.totalRounds=clamp(+$('#cfg-rounds').value||10,5,20);
- G.timerLen=clamp(+$('#cfg-timer').value||60,15,120);
+ try{window.IQ&&IQ.Fun&&IQ.Fun.reset()}catch(e){}
+ G.totalRounds=clamp(G.mpCfg?G.mpCfg.total:(+$('#cfg-rounds').value||10),5,20);
+ G.timerLen=clamp(G.mpCfg?G.mpCfg.timer:(+$('#cfg-timer').value||60),15,120);
+ G.remotePicks={};G.humans=[];G.lastAppliedRevealRound=null;
  G.emeralds=[];G.usedEmeralds=new Set();G.chaosControlLeft=0;G.blackArrowLeft=0;G.zapFired=false;
  G.forgery=$('#cfg-forged').classList.contains('on');
  S.shadowOn=$('#cfg-shadow').classList.contains('on');
+ if(G.mp.on&&(G.players||[]).length<=1){G.mp={on:false,host:false,code:''}}
  G.opps=G.mp.on?[]:ROSTER.slice(0,2).map(o=>({...o,pts:0}));
  nav('play');updateTitle();renderScores();
  setTimeout(()=>nextRound(),800);
@@ -237,10 +256,21 @@ function nextRound(){
 
  let pz=null;
  if(!G.mp.on||G.mp.host){
-  const useForged=G.forgery&&store.get('IQB_PUZZLES_V1',[]).length&&Math.random()<.3;
+  const useForged=G.forgery&&store.get('IQB_PUZZLES_V1',[]).length&&(G.round<=2||Math.random()<.5);
   if(useForged){pz={...store.get('IQB_PUZZLES_V1',[])[ri(0,store.get('IQB_PUZZLES_V1',[]).length-1)]}}
-  else try{pz=IQ.Puzzles.generate({difficulty:clamp(G.diff+(G.round>G.totalRounds*.6?1:0),1,5)})}catch(e){}
-  pz=pz||fallbackPuzzle();
+  else pz=makePuzzle(clamp(G.diff+(G.round>G.totalRounds*.6?1:0),1,5));
+function makePuzzle(diff){
+ const G_=(window.IQ&&IQ.Gens)||{};const S=G.stage;
+ const table=S<=0?['iqvs','iqvs','latin','cycle']:S===1?['iqvs','iqvs','latin','cycle','rotate','count']:S===2?['iqvs','latin','cycle','rotate','count','dual','dual']:['wild','wild','dual','iqvs','latin','rotate'];
+ const pick=table[ri(0,table.length-1)];const gen=G_[pick];
+ const kinds=S>=2?['matrix','sequence','oddone']:['matrix','matrix','sequence'];
+ if(gen&&gen.generate){try{
+   const p=gen.generate({difficulty:diff,kinds});
+   const okShape=p&&p.options&&p.options.length===8&&Number.isFinite(p.difficulty)&&(p.board||p.seq||p.oddBoard);
+   if(okShape&&(!gen.validate||gen.validate(p).ok!==false))return p;
+ }catch(e){}}
+ try{return IQ.Puzzles.generate({difficulty:diff})}catch(e){return fallbackPuzzle()}
+}
   const tl=timeline();
   if(pz.board&&tl.corruptChance&&Math.random()<tl.corruptChance){
    const idx=pz.board.cells.findIndex((c,i)=>i!==pz.board.holeIndex&&c);
@@ -249,9 +279,14 @@ function nextRound(){
   if(pz.options&&tl.impossibleChance&&Math.random()<tl.impossibleChance){
    const a=pz.answer;pz.options[a]=JSON.parse(JSON.stringify(pz.options[(a+3)%8]));pz.impossible=true;}
   G.puzzle=pz;
+  // ONE shuffled option order per round, fixed by the host and shipped in the
+  // round frame — otherwise each tab shuffles locally and a client's `pos`
+  // maps to a DIFFERENT tile on the host (picks scored against wrong option).
+  pz.ord=shuffledOrder(pz.options.length);
  }
  broadcastRound();
  renderBoard();
+ try{window.IQ&&IQ.Fun&&IQ.Fun.onRoundStart(G.round)}catch(e){}
  startTimer();
  if(!G.mp.on)G.opps.forEach(o=>simOpponent(o));
 }
@@ -262,18 +297,19 @@ function fallbackPuzzle(){
   board:{cols:3,rows:3,cells,holeIndex:4},
   options:Array.from({length:8},(_,i)=>({cols:1,rows:1,cells:[i?{...correct,color:(correct.color+i)%8}:correct]})),answer:0};
 }
+function shuffledOrder(n){const o=Array.from({length:n},(_,i)=>i);for(let i=o.length-1;i>0;i--){const j=ri(0,i);[o[i],o[j]]=[o[j],o[i]]}return o}
 function broadcastRound(){
  if(!(G.mp.on&&G.mp.host)||!G.puzzle)return;
  try{
-  // SECURITY: strip answer/rule before broadcast (server-authoritative pattern from iqversus)
   const pz=G.puzzle;
-  IQ.Net.broadcast({t:'round',n:G.round,timerLen:G.timerLen,kind:pz.kind,board:pz.board,oddBoard:pz.oddBoard,seq:pz.seq,options:pz.options});
+  const ob=pz.oddBoard?{cols:pz.oddBoard.cols,rows:pz.oddBoard.rows,cells:pz.oddBoard.cells}:undefined;
+  IQ.Net.broadcast({t:'round',n:G.round,total:G.totalRounds,timerLen:G.timerLen,kind:pz.kind,board:pz.board,oddBoard:ob,seq:pz.seq,options:pz.options,ord:pz.ord,imp:pz.impossible?1:0});
  }catch(e){ try{localStorage.setItem('iqvs-neterr',String(e&&e.message||e))}catch(_e){} }
 }
 function renderBoard(){
  const pz=G.puzzle;if(!pz)return;
  $('#round-label').textContent=`Round ${G.round}/${G.totalRounds}`;
- let html='';const SZ=Math.min(330,(innerHeight-300));
+ let html='';const SZ=Math.max(180,Math.min(330,innerWidth-110,innerHeight-300));
  if(pz.kind==='matrix')html=tileSVG(pz.board,SZ,pal(),true);
  else if(pz.kind==='sequence'){const cs=SZ/(pz.seq.length+1);
   html=`<div style="display:flex;gap:10px;align-items:center">${pz.seq.map(c=>tileSVG({cols:1,rows:1,cells:[c]},cs*.8,pal(),false)).join('')}${tileSVG({cols:1,rows:1,cells:[null]},cs*.8,pal(),true)}</div>`;}
@@ -284,8 +320,11 @@ function renderBoard(){
 }
 function drawOptions(){
  const og=$('#opts-grid'),pz=G.puzzle;if(!pz||!pz.options)return;og.innerHTML='';
- const order=pz.options.map((_,i)=>i);
- for(let i=order.length-1;i>0;i--){const j=ri(0,i);[order[i],order[j]]=[order[j],order[i]]}
+ let order=pz.ord;
+ if(!order||order.length!==pz.options.length){ // solo mode: shuffle locally
+  order=pz.options.map((_,i)=>i);
+  for(let i=order.length-1;i>0;i--){const j=ri(0,i);[order[i],order[j]]=[order[j],order[i]]}
+ }
  G.optOrder=order;
  order.forEach((oi,pos)=>{
   const b=document.createElement('div');b.className='opt-btn';b.dataset.i=oi;
@@ -293,8 +332,8 @@ function drawOptions(){
   b.onclick=()=>answer(pos);og.appendChild(b);});
 }
 function applyIncomingRound(pl){
- G.awaitingRound=false;G.round=pl.n;G.timerLen=pl.timerLen;G.answered=false;
- G.puzzle={kind:pl.kind,board:pl.board,oddBoard:pl.oddBoard,seq:pl.seq,options:pl.options,answer:-99};
+ G.awaitingRound=false;G.round=pl.n;G.totalRounds=pl.total||G.totalRounds;G.timerLen=pl.timerLen;G.answered=false;G.impossibleNow=!!pl.imp;
+ G.puzzle={kind:pl.kind,board:pl.board,oddBoard:pl.oddBoard,seq:pl.seq,options:pl.options,ord:pl.ord,answer:-99};
  renderBoard();startTimer();
 }
 
@@ -315,9 +354,10 @@ function maybeZap(){
 function startTimer(){
  cancelAnimationFrame(G.raf);
  G.timeLeft=G.timerLen;G.lastTick=99;G.t0=performance.now();
+ const dur=G.timerLen;
  const step=t=>{
-  const left=Math.max(0,G.timeLeft-(t-G.t0)/1000);
-  $('#timer-fill').style.transform=`scaleX(${left/G.timeLeft})`;
+  const left=Math.max(0,dur-(t-G.t0)/1000);G.timeLeft=left;
+  $('#timer-fill').style.transform=`scaleX(${dur?left/dur:0})`;
   $('#timer-num').textContent=Math.ceil(left);
   $('#round-strip').classList.toggle('timer-low',left<=10);
   if(left<=10&&Math.ceil(left)!==G.lastTick){G.lastTick=Math.ceil(left);AU.p(left<=5?'tick':'heart',{vol:.3});CX.pulse()}
@@ -330,7 +370,6 @@ function startTimer(){
 /* ---------- solo opponents ---------- */
 function simOpponent(o){
  setTimeout(()=>{
-  if(G.answered)return;
   o.pts+=Math.random()<clamp(o.acc-(G.diff-2)*.05,.3,.95)?ri(80,140):ri(-30,20);
   renderScores();
   if(Math.random()<.15){const b=document.createElement('div');b.className='taunt-bubble';
@@ -345,14 +384,20 @@ function answer(pos){
  if(G.answered||!G.puzzle||!G.puzzle.options)return;G.answered=true;
  cancelAnimationFrame(G.raf);clearInterval(G.shuffleIv);
  const pz=G.puzzle;
- const impossible=pz.answer===-99||pz.impossible;
+ const clientPick=G.mp.on&&!G.mp.host;
+ const impossible=clientPick?!!G.impossibleNow:(pz.answer===-99||pz.impossible);
  const correct=!impossible&&pos>=0&&G.optOrder[pos]===pz.answer;
+ if(clientPick){try{IQ.Net.send({t:'pick',n:G.round,pos,name:P.name,uid:(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():null})}catch(e){}}
  const btns=$$('#opts-grid .opt-btn');
  btns.forEach(b=>b.classList.toggle('picked',pos>=0&&G.optOrder[pos]===+b.dataset.i));
  const cb=btns.find(b=>+b.dataset.i===pz.answer);
  if(cb&&!impossible)setTimeout(()=>cb.classList.add('correct'),250);
  if(!correct&&pos>=0)btns.find(b=>G.optOrder[pos]===+b.dataset.i)?.classList.add('wrongpick');
 
+ if(clientPick){
+  if(impossible)banner('THIS ROUND MADE NO SENSE. NOBODY WINS.');
+  return; // host is the scorer — reveal will tell us the truth
+ }
  if(impossible){
   if(G.emeralds.includes('chaos_control')&&G.chaosControlLeft>0){
    G.chaosControlLeft--;banner('CHAOS CONTROL — TIME FREEZES');SH.say('CHAOS CONTROL!',true);scoreMe(150,true);}
@@ -378,11 +423,31 @@ function answer(pos){
  }
 
  setTimeout(()=>{
-  if(G.mp.host){try{IQ.Net.broadcast({t:'reveal',answer:pz.answer,scores:[{name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts}))]})}catch(e){}}
+  if(G.mp.host){
+   const myUid=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():null;
+   try{
+    // HOST-AUTHORITATIVE SCORING — every entry carries its stable uid so
+    // clients match by uid, never by name (two tabs may share a profile name).
+    // per-round delta -> ACCUMULATED total: frames always carry totals
+    // (same semantics as the host's own entry) so clients can assign directly.
+    const humans=Object.values(G.remotePicks||{}).map(pk=>{
+     const okPick=pk.pos>=0&&G.optOrder[pk.pos]===pz.answer&&!pz.impossible;
+     const delta=pz.impossible?-25:(okPick?Math.round(100*pz.difficulty+40):-40);
+     const gh=(G.humans||[]).find(x=>x.uid===pk.uid);
+     return {uid:pk.uid,name:pk.n||'PLAYER',pts:(gh?(gh.pts||0):0)+delta};
+    });
+    humans.forEach(h=>{const gh=(G.humans||[]).find(x=>x.uid===h.uid);if(gh){gh.pts=h.pts;gh.n=h.name||h.n}});
+    renderScores(); // broadcast echoes locally but host reveal handler self-guards
+    IQ.Net.broadcast({t:'reveal',answer:pz.impossible?-99:pz.answer,imp:pz.impossible?1:0,scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...humans]});
+   }catch(e){}
+   if(pz.impossible)endMatchBroadcast(); // before clearing: final table needs the picks
+   G.remotePicks={};
+  }
  },1400);
  setTimeout(()=>{
   if(G.mp.on&&!G.mp.host)return; // clients idle — host deals the next round
-  else if(!G.mp.on&&(G.round===3||G.round===6||G.round===9)&&G.usedEmeralds.size<EMERALDS.length)emeraldPick();
+  if(G.round>=G.totalRounds){if(G.mp.host)endMatchBroadcast();endRun();return}
+  if(G.opps.length>0&&(G.round===3||G.round===6||G.round===9)&&G.usedEmeralds.size<EMERALDS.length)emeraldPick();
   else nextRound();
  },1700);
 }
@@ -390,6 +455,7 @@ function scoreMe(pts,good,silent){
  G.score+=pts;renderScores();
  P.totalCorrect+=good?1:0;P.totalWrong+=good?0:1;saveP();
  if(!silent&&good&&pts>50&&G.puzzle.rule)flashRule();
+ try{window.IQ&&IQ.Fun&&IQ.Fun.onAnswer(!!good,G.round)}catch(e){}
 }
 function flashRule(){const t=document.createElement('div');t.className='event-banner';t.style.fontSize='12px';t.textContent=(G.puzzle.rule||'').toUpperCase().slice(0,64);document.body.appendChild(t);setTimeout(()=>t.remove(),1500)}
 
@@ -401,18 +467,26 @@ function emeraldPick(){
  const w=document.createElement('div');w.className='interlude-bg';
  w.innerHTML='<div class="interlude-title">a chaos emerald surfaces</div>'+
   '<div style="font-size:11px;letter-spacing:.24em;opacity:.5;margin-top:6px">take one. the rest belong to shadow.</div>'+
-  '<div class="relic-row">'+picks.map((r,i)=>`<div class="relic-card" data-i="${i}"><div class="relic-icon">${r.icon}</div><div class="relic-name">${r.n}</div><div class="relic-desc">${r.d}</div></div>`).join('')+'</div>';
+  '<div class="relic-row">'+picks.map((r,i)=>`<div class="relic-card" role="button" tabindex="0" aria-label="Pick ${r.n}" data-i="${i}"><div class="relic-icon">${r.icon}</div><div class="relic-name">${r.n}</div><div class="relic-desc">${r.d}</div></div>`).join('')+'</div>';
  document.body.appendChild(w);AU.p('sacrifice',{vol:.35});
- w.querySelectorAll('.relic-card').forEach(c=>c.onclick=()=>{
-  const r=picks[+c.dataset.i];G.emeralds.push(r.id);G.usedEmeralds.add(r.id);
-  if(r.id==='chaos_control')G.chaosControlLeft=1;
-  if(r.id==='black_arrow')G.blackArrowLeft=1;
-  P.relicsSeen=[...new Set([...P.relicsSeen,r.id])];saveP();
-  AU.p('levelup');w.remove();SH.say('the '+r.n.toLowerCase()+' is yours.',true);
-  setTimeout(nextRound,1200);});
+  const pickCard=el=>{const r=picks[+el.dataset.i];G.emeralds.push(r.id);G.usedEmeralds.add(r.id);
+   if(r.id==='chaos_control')G.chaosControlLeft=1;
+   if(r.id==='black_arrow')G.blackArrowLeft=1;
+   P.relicsSeen=[...new Set([...P.relicsSeen,r.id])];saveP();
+   AU.p('levelup');w.remove();SH.say('the '+r.n.toLowerCase()+' is yours.',true);
+   try{window.IQ&&IQ.Fun&&IQ.Fun.onEmerald(r.n)}catch(e){}
+   setTimeout(nextRound,1200);};
+  w.querySelectorAll('.relic-card').forEach(c=>{c.onclick=()=>pickCard(c);c.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pickCard(c)}};});
+  w.querySelector('.relic-card').focus();
 }
 
 /* ---------- ending ---------- */
+function endMatchBroadcast(){
+ try{
+  const myUid=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():null;
+  IQ.Net.broadcast({t:'end',scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...Object.values(G.remotePicks||{}).map(p=>({uid:p.uid,name:p.n||'PLAYER',pts:p.pts||0}))]});
+ }catch(e){}
+}
 function endRun(){
  nav('center');
  const topRival=G.opps.reduce((m,o)=>Math.max(m,o.pts),0);
@@ -447,7 +521,7 @@ function wireLanding(){
   const code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[ri(0,31)]).join('');
   let ok=false;
   if(window.IQ&&IQ.Net&&IQ.Net.available()){
-   try{await IQ.Net.host(code,P.name);G.mp={on:true,host:true,code};listenNet();ok=true}catch(e){}
+   try{const hosted=await IQ.Net.host(code,P.name);G.mp={on:true,host:true,code:hosted.code};listenNet();ok=true}catch(e){}
   }
  if(!ok){G.mp={on:true,host:true,code};} // storage-bus room still works same-browser; peer retries on next host
   openLobby(G.mp.code?('Room '+G.mp.code+' — share this code!'):'Private Room');
@@ -458,14 +532,16 @@ function wireLanding(){
   if(!(window.IQ&&IQ.Net&&IQ.Net.available())){alertEv('PEER LINK UNAVAILABLE');return}
   P.name=($('#boot-name').value.trim()||('GUEST-'+ri(10,99)));saveP();AU.init();
   alertEv('LINKING TO '+code+'…');
-  try{await IQ.Net.join(code,P.name);
-   G.mp={on:true,host:false,code};listenNet();openLobby('Room '+code);
+  try{const joined=await IQ.Net.join(code,P.name);
+   G.mp={on:true,host:false,code};G.players=(joined&&joined.players)||[];
+   $('#lobby-count').textContent=G.players.length; // join()'s snapshot fired BEFORE listenNet subscribed
+   listenNet();openLobby('Room '+code);
   }catch(e){alertEv('ROOM NOT FOUND')}
  };
  bindSeg('#cfg-diff',v=>G.diff=+v);
  $('#cfg-start').onclick=()=>{
   if(G.mp.on&&!G.mp.host){alertEv('WAITING FOR HOST TO START…');return}
-  if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin'})}catch(e){}}
+  if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin',total:clamp(+$('#cfg-rounds').value||10,5,20),timer:clamp(+$('#cfg-timer').value||60,15,120)})}catch(e){}}
   startRun();};
  $('#lobby-back').onclick=()=>{leaveMp();nav('landing')};
  $('#tb-lobby').onclick=()=>nav('landing');
@@ -473,27 +549,51 @@ function wireLanding(){
  $('#cfg-forged').onclick=e=>e.target.classList.toggle('on');
  $('#cfg-shadow').onclick=e=>e.target.classList.toggle('on');
  bindNav();
+ }
+function onRemotePick(pk){if(!(G.mp.host&&pk))return;
+ // key by stable uid — NEVER by display name (same-profile tabs collide)
+ const uid=pk.uid||pk.from||('anon-'+pk.n);
+ G.remotePicks[uid]={uid,n:pk.name||pk.n||'PLAYER',pos:pk.pos};
+ G.humans=G.humans||[];
+ if(!G.humans.find(h=>h.uid===uid))G.humans.push({uid,n:pk.name||pk.n||'PLAYER',pts:0});
 }
-function openLobby(title){$('#lobby-title').textContent=title;updateTitle();nav('lobby')}
-function leaveMp(){try{if(G.mp.on&&window.IQ&&IQ.Net)IQ.Net.leave()}catch(e){}G.mp={on:false,host:false,code:''};G.players=[]}
 function hostMp(code){ /* host path: after Create Room with code */ }
-function onRemotePick(pk){if(G.mp.host&&pk)G.remotePicks[pk.from]={n:pk.n,pos:pk.pos}}
+/* Apply a host-authored scores array ({uid,name,pts}[...]) onto local state.
+ * SELF is matched by stable uid first (name only as legacy fallback); every
+ * other entry lands in G.humans keyed by uid so same-name tabs stay distinct. */
+function applyScoresFrame(scores){
+ if(!Array.isArray(scores))return;
+ const myUid=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():null;
+ const isMe=s=>(myUid&&s.uid===myUid)||(!s.uid&&s.name===P.name);
+ const me=scores.find(isMe);
+ if(me)G.score=me.pts;
+ G.humans=G.humans||[];
+ scores.filter(s=>!isMe(s)).forEach(s=>{
+  let h=G.humans.find(x=>x.uid&&s.uid&&x.uid===s.uid)||(!s.uid&&G.humans.find(x=>!x.uid&&x.n===s.name));
+  if(!h){h={uid:s.uid||null,n:s.name||'PLAYER',pts:0};G.humans.push(h)}
+  h.n=s.name||h.n;h.pts=s.pts;
+ });
+ renderScores();
+}
 function listenNet(){
  try{
   IQ.Net.on('lobby',pl=>{G.players=(pl.players||[]);$('#lobby-count').textContent=G.players.length;});
   IQ.Net.on('pick',pk=>onRemotePick(pk));
-  IQ.Net.on('begin',()=>{if(G.mp.on&&!G.mp.host)startRun()});
+  IQ.Net.on('begin',m=>{if(G.mp.on&&!G.mp.host){G.mpCfg={total:m&&m.total||10,timer:m&&m.timer||60};startRun()}});
   IQ.Net.on('round',pl=>{if(G.mp.host)return;applyIncomingRound(pl)});
   IQ.Net.on('reveal',rv=>{if(G.mp.host)return;
+   if(G.lastAppliedRevealRound===G.round)return; // idempotent: never double-apply a reveal
+   G.lastAppliedRevealRound=G.round;
+   if(rv.imp)banner('THIS ROUND MADE NO SENSE. NOBODY WINS.');
    const btns=$$('#opts-grid .opt-btn');
    const cb=btns.find(b=>+b.dataset.i===rv.answer);
    if(cb)cb.classList.add('correct');
-   if(Array.isArray(rv.scores)){const me=rv.scores.find(s=>s.name===P.name);if(me){G.score=me.pts}
-    G.opps=rv.scores.filter(s=>s.name!==P.name).map(s=>({n:s.name,ava:'⛧',pts:s.pts}));renderScores()}});
-  IQ.Net.on('end',()=>{if(G.screen==='play'){alertEv('CONNECTION LOST');G.mp={on:false,host:false,code:''}}else alertEv('ROOM CLOSED')});
+   applyScoresFrame(rv.scores)});
+  IQ.Net.on('end',m=>{
+   if(m&&Array.isArray(m.scores)&&G.screen==='play'){applyScoresFrame(m.scores);alertEv('MATCH TERMINATED');return}
+   if(G.screen==='play'){alertEv('CONNECTION LOST');G.mp={on:false,host:false,code:''}}else alertEv('ROOM CLOSED')});
  }catch(e){}
 }
-
 /* ================================================================
    forge / grimoire / settings
    ================================================================ */
@@ -507,12 +607,12 @@ function openForge(){
   '<button class="btn btn-primary" id="forge-new">+ Forge New</button></div>'+
   '<div style="font-size:11px;letter-spacing:.2em;opacity:.5">artifacts you have forged ('+list.length+')</div>'+
   '<div style="width:min(760px,94vw);display:flex;flex-direction:column;gap:10px">'+
-  list.map(p=>'<div class="forge-item" style="width:100%">'+
+  (list.length?list.map(p=>'<div class="forge-item" style="width:100%">'+
    '<div style="flex-shrink:0">'+tileSVG(optTile((p.options||[])[p.answer||0]),54,G.stage,false)+'</div>'+
    '<div style="flex:1"><b style="letter-spacing:.06em">'+esc(p.name||'Unnamed Sigil')+'</b><div style="font-size:11px;opacity:.5">'+esc(p.kind||'matrix')+' · diff '+(p.difficulty||2)+'</div></div>'+
    '<button class="btn btn-ghost fe" data-id="'+p.id+'" style="padding:8px 14px;font-size:11px">Edit</button>'+
-   '<button class="btn btn-ghost fd" data-id="'+p.id+'" style="padding:8px 14px;font-size:11px;color:#e01030">Burn</button></div>').join('')||
-  '<div style="opacity:.4;letter-spacing:.2em;font-size:12px;padding:30px">the anvil is cold.</div>'+'</div>';
+   '<button class="btn btn-ghost fd" data-id="'+p.id+'" style="padding:8px 14px;font-size:11px;color:#e01030">Burn</button></div>').join(''):
+  '<div style="opacity:.4;letter-spacing:.2em;font-size:12px;padding:30px">the anvil is cold.</div>')+'</div>';
  bindNav();
  $('#forge-new').onclick=()=>openEditor(null);
  $$('.fe').forEach(b=>b.onclick=()=>openEditor(b.dataset.id));
@@ -639,9 +739,13 @@ function boot(){
  CX.mount();AU.init();
  if(store.get('IQB_MUTED',false))AU.mute(true);
  wireLanding();
+ try{window.IQ&&IQ.RoomUI&&IQ.RoomUI.mount()}catch(e){}
+ try{window.IQ&&IQ.Fun&&IQ.Fun.init({onAnswer:function(c,r){},onRoundStart:function(r){},onEmerald:function(n){},getStage:function(){return G.stage}})}catch(e){}
+ try{window.IQ&&IQ.Onboard&&IQ.Onboard.start()}catch(e){}
 }
 addEventListener('keydown',e=>{
  if(G.screen!=='play'||G.answered)return;
+ if(e.altKey||e.ctrlKey||e.metaKey)return;
  const n=+e.key;
  if(n>=1&&n<=8)$$('#opts-grid .opt-btn')[n-1]?.click();
 });
