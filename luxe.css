@@ -451,6 +451,18 @@ body.corr-3 #fx-scan,body.act-3 #fx-scan{opacity:.8}
 body.corr-3 .score-card.me,body.act-3 .score-card.me{
   background:linear-gradient(135deg,rgba(224,16,48,.16),rgba(0,230,138,.07))}
 
+/* ---------- mobile-first landing ---------- */
+.boot-big{width:100%;padding:16px;font-size:16px;margin-top:10px;min-height:52px}
+.link-quiet{background:none;border:none;color:inherit;opacity:.55;font-family:inherit;font-size:12px;letter-spacing:.06em;cursor:pointer;margin-top:10px;text-decoration:underline;text-underline-offset:3px;min-height:32px}
+#join-reveal{margin-top:8px}
+#join-reveal input{width:100%;padding:12px;font-size:16px;font-family:inherit;background:rgba(127,127,127,.1);border:1px solid rgba(127,127,127,.3);border-radius:6px;color:inherit;text-align:center;outline:none;user-select:text;-webkit-user-select:text;margin-bottom:8px}
+.boot-card input{font-size:16px!important} /* prevents iOS focus zoom */
+@media (max-width:520px),(max-height:740px){
+  .boot-card{padding:22px 18px;max-width:92vw;max-height:96vh;overflow-y:auto}
+  .boot-sub{font-size:9px;letter-spacing:.18em}
+  .fineprint{display:none}
+  .boot-big{padding:14px;min-height:50px}
+}
 /* ---------- responsive ---------- */
 @media(max-width:900px){
   .side-panel{display:none}

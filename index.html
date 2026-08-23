@@ -15,14 +15,17 @@
   <section id="scr-boot">
     <div class="boot-card">
       <div class="boot-logo">IQ&nbsp;VERSUS</div>
-      <div class="boot-sub">head-to-head abstract reasoning</div>
-      <input id="boot-name" maxlength="16" placeholder="Display name" style="user-select:text;-webkit-user-select:text">
-      <input id="join-code" maxlength="8" placeholder="Room code (friends)" style="text-transform:uppercase;user-select:text;-webkit-user-select:text">
-      <button class="btn btn-primary" id="boot-go">Create Room</button>
-      <button class="btn btn-ghost" id="boot-join" style="width:100%;margin-top:8px">Join Room</button>
+      <div class="boot-sub">abstract reasoning · corrupted</div>
+      <input id="boot-name" maxlength="16" placeholder="Display name" autocomplete="off" style="user-select:text;-webkit-user-select:text">
+      <button class="btn btn-primary boot-big" id="boot-solo">PLAY SOLO</button>
+      <button class="btn boot-big" id="boot-host">HOST ROOM</button>
+      <div id="join-reveal" class="hidden">
+        <input id="join-code" maxlength="8" placeholder="Room code" autocomplete="off" style="text-transform:uppercase;user-select:text;-webkit-user-select:text">
+        <button class="btn btn-primary boot-big" id="boot-join">JOIN</button>
+      </div>
+      <button class="link-quiet" id="toggle-join">have a friend's code? join a room</button>
       <div class="fineprint" id="net-status"></div>
-      <div class="fineprint">Solo gauntlets run against house demons.<br>Puzzle Forge · Grimoire · Settings below.</div>
-      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;justify-content:center">
         <button class="btn btn-ghost mini" data-nav="forge">Forge</button>
         <button class="btn btn-ghost mini" data-nav="grimoire">Grimoire</button>
         <button class="btn btn-ghost mini" data-nav="settings">Settings</button>
@@ -516,27 +519,37 @@ function endRun(){
 function wireLanding(){
  $('#net-status').textContent=(window.IQ&&IQ.Net&&IQ.Net.available())?'Peer link ready — friends can join your code.':'Offline mode — solo vs demons.';
  if(P.name)$('#boot-name').value=P.name;
- $('#boot-go').onclick=async()=>{
+ $('#boot-solo').onclick=()=>{
+  P.name=($('#boot-name').value.trim()||('SUBJECT-'+ri(100,999)));saveP();AU.init();AU.p('chime');
+  leaveMp();openLobby('Solo Gauntlet');
+ };
+ $('#boot-host').onclick=async()=>{
   P.name=($('#boot-name').value.trim()||('SUBJECT-'+ri(100,999)));saveP();AU.init();AU.p('chime');
   const code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[ri(0,31)]).join('');
-  let ok=false;
-  if(window.IQ&&IQ.Net&&IQ.Net.available()){
-   try{const hosted=await IQ.Net.host(code,P.name);G.mp={on:true,host:true,code:hosted.code};listenNet();ok=true}catch(e){}
-  }
- if(!ok){G.mp={on:true,host:true,code};} // storage-bus room still works same-browser; peer retries on next host
-  openLobby(G.mp.code?('Room '+G.mp.code+' — share this code!'):'Private Room');
+  alertEv('OPENING ROOM '+code+'…');
+  const hosted=await Promise.race([
+   (window.IQ&&IQ.Net&&IQ.Net.available())?IQ.Net.host(code,P.name).catch(()=>null):Promise.resolve(null),
+   new Promise(res=>setTimeout(()=>res(null),3500))
+  ]);
+  if(hosted&&hosted.code){G.mp={on:true,host:true,code:hosted.code};listenNet()}
+  else{G.mp={on:false,host:false,code:''};alertEv('PEER LINK SLOW — SOLO ROOM OPENED')}
+  openLobby(G.mp.code?('Room '+G.mp.code+' — share this code!'):'Solo Gauntlet');
  };
+ $('#toggle-join').onclick=()=>{const j=$('#join-reveal');j.classList.toggle('hidden');if(!j.classList.contains('hidden')){$('#join-code').focus()}};
  $('#boot-join').onclick=async()=>{
   const code=$('#join-code').value.trim().toUpperCase();
   if(!code){$('#join-code').focus();return}
   if(!(window.IQ&&IQ.Net&&IQ.Net.available())){alertEv('PEER LINK UNAVAILABLE');return}
   P.name=($('#boot-name').value.trim()||('GUEST-'+ri(10,99)));saveP();AU.init();
   alertEv('LINKING TO '+code+'…');
-  try{const joined=await IQ.Net.join(code,P.name);
+  try{const joined=await Promise.race([
+   IQ.Net.join(code,P.name),
+   new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+  ]);
    G.mp={on:true,host:false,code};G.players=(joined&&joined.players)||[];
-   $('#lobby-count').textContent=G.players.length; // join()'s snapshot fired BEFORE listenNet subscribed
+   $('#lobby-count').textContent=G.players.length;
    listenNet();openLobby('Room '+code);
-  }catch(e){alertEv('ROOM NOT FOUND')}
+  }catch(e){alertEv('ROOM NOT FOUND — CHECK THE CODE')}
  };
  bindSeg('#cfg-diff',v=>G.diff=+v);
  $('#cfg-start').onclick=()=>{
@@ -575,6 +588,8 @@ function applyScoresFrame(scores){
  });
  renderScores();
 }
+function leaveMp(){try{if(G.mp.on&&window.IQ&&IQ.Net)IQ.Net.leave()}catch(e){}G.mp={on:false,host:false,code:''};G.players=[]}
+function openLobby(title){$('#lobby-title').textContent=title;updateTitle();nav('lobby')}
 function listenNet(){
  try{
   IQ.Net.on('lobby',pl=>{G.players=(pl.players||[]);$('#lobby-count').textContent=G.players.length;});
