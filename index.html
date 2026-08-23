@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IQ Versus | Head-to-Head Abstract Reasoning Puzzles</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="./luxe.css">
+<style>
+#fx-layer{position:fixed;inset:0;pointer-events:none;z-index:60}
+</style>
+</head>
+<body class="act-0">
+<div id="app">
+
+  <section id="scr-boot">
+    <div class="boot-card">
+      <div class="boot-logo">IQ&nbsp;VERSUS</div>
+      <div class="boot-sub">head-to-head abstract reasoning</div>
+      <input id="boot-name" maxlength="16" placeholder="Display name" style="user-select:text;-webkit-user-select:text">
+      <input id="join-code" maxlength="8" placeholder="Room code (friends)" style="text-transform:uppercase;user-select:text;-webkit-user-select:text">
+      <button class="btn btn-primary" id="boot-go">Create Room</button>
+      <button class="btn btn-ghost" id="boot-join" style="width:100%;margin-top:8px">Join Room</button>
+      <div class="fineprint" id="net-status"></div>
+      <div class="fineprint">Solo gauntlets run against house demons.<br>Puzzle Forge · Grimoire · Settings below.</div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn btn-ghost mini" data-nav="forge">Forge</button>
+        <button class="btn btn-ghost mini" data-nav="grimoire">Grimoire</button>
+        <button class="btn btn-ghost mini" data-nav="settings">Settings</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="scr-lobby" class="hidden" style="flex:1;display:flex;align-items:center;justify-content:center">
+    <div class="panel">
+      <h2 id="lobby-title">Room</h2>
+      <div class="cfg-row"><label>Rounds</label><input type="number" id="cfg-rounds" min="5" max="20" value="10"></div>
+      <div class="cfg-row"><label>Round Timer (s)</label><input type="number" id="cfg-timer" min="15" max="120" value="60"></div>
+      <div class="cfg-row"><label>Torment</label><div class="seg" id="cfg-diff">
+        <button data-v="1">Gentle</button><button data-v="2" class="on">Standard</button><button data-v="3">Hard</button><button data-v="4">Brutal</button><button data-v="5">Impossible</button>
+      </div></div>
+      <div class="cfg-row"><label>Include Forged</label><div class="sw" id="cfg-forged"></div></div>
+      <div class="cfg-row"><label>Shadow Mode</label><div class="sw on" id="cfg-shadow"></div></div>
+      <div style="font-size:11px;opacity:.55;margin:4px 0 10px">Players here: <b id="lobby-count">1</b></div>
+      <div style="display:flex;gap:12px">
+        <button class="btn btn-danger" id="lobby-back">Leave</button>
+        <button class="btn btn-primary" id="cfg-start" style="flex:1">START</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="scr-play" class="hidden" style="flex-direction:column">
+    <div id="topbar">
+      <button class="btn btn-ghost pill" id="tb-lobby">LOBBY ⟲</button>
+      <div class="logo-mini" id="room-title" style="margin:0 auto">Room</div>
+      <button class="btn btn-ghost pill danger" id="tb-leave">LEAVE ⏻</button>
+    </div>
+    <div style="display:flex;flex:1;gap:14px;padding:14px;min-height:0;max-width:1280px;margin:0 auto;width:100%">
+      <div class="play-main">
+        <div class="round-strip" id="round-strip">
+          <div class="round-label" id="round-label">Round 1/10</div>
+          <div class="timer-bar"><i id="timer-fill"></i></div>
+          <div class="timer-num" id="timer-num">60</div>
+        </div>
+        <div class="board-zone"><div class="board-frame" id="board-frame"></div></div>
+        <div class="opts-grid" id="opts-grid"></div>
+      </div>
+      <div class="side-panel" id="side-panel"></div>
+    </div>
+  </section>
+
+  <section id="scr-center" class="hidden" style="flex-direction:column">
+    <div class="center-wrap" id="center-content"></div>
+  </section>
+
+</div>
+
+<div id="fx-vignette"></div><div id="fx-scan"></div><div id="fx-layer"></div>
+
+<script src="./puzzles.js"></script>
+<script src="./audio.js"></script>
+<script src="./chaos.js"></script>
+<script src="./shadow.js"></script>
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js" crossorigin="anonymous"></script>
+<script src="./net.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   IQ VERSUS — faithful clone that decays into SHADOW
+   ============================================================ */
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const rnd=(a,b)=>a+Math.random()*(b+a===0?0:0)+Math.random()*(b-a), ri=(a,b)=>Math.floor(a+Math.random()*(b-a+1)), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+let P=store.get('IQB_PROFILE_V1',null)||{name:'',runs:0,wins:0,bestScore:0,deepestStage:0,followers:[],relicsSeen:[],totalCorrect:0,totalWrong:0};
+const saveP=()=>store.set('IQB_PROFILE_V1',P);
+
+/* ---------- bridges ---------- */
+const AU={ok:false,
+ init(){try{window.IQ&&IQ.Audio&&(IQ.Audio.init(),this.ok=true)}catch(e){}},
+ p(n,o){try{this.ok&&IQ.Audio.play(n,o)}catch(e){}},
+ act(a){try{this.ok&&IQ.Audio.setAct(Math.min(a,2))}catch(e){}},
+ mute(m){try{this.ok&&IQ.Audio.setMuted(m)}catch(e){}}};
+const CX={ok:false,
+ mount(){try{window.IQ&&IQ.Chaos&&(IQ.Chaos.mount($('#app')),this.ok=true)}catch(e){}},
+ shake(p,m){try{this.ok&&IQ.Chaos.shake(p,m)}catch(e){}},
+ glitch(m){try{this.ok&&IQ.Chaos.glitch(m)}catch(e){}},
+ flash(c,m){try{this.ok&&IQ.Chaos.flash(c,m)}catch(e){}},
+ invert(m){try{this.ok&&IQ.Chaos.invert(m)}catch(e){}},
+ pulse(){try{this.ok&&IQ.Chaos.pulse()}catch(e){}},
+ embers(o){try{this.ok&&IQ.Chaos.embers(o)}catch(e){}},
+ inten(v){try{this.ok&&IQ.Chaos.setIntensity(v)}catch(e){}},
+ cact(a){try{this.ok&&IQ.Chaos.setAct(Math.min(a,2))}catch(e){}}};
+const S={voiceOn:store.get('IQB_VOICE',false),shadowOn:true};
+const SH={ok:false,
+ q(c){try{return this.ok?IQ.Shadow.quip(c):''}catch(e){return''}},
+ say(t,voice){try{this.ok&&IQ.Shadow.say(t,{voice:voice&&S.voiceOn})}catch(e){}}};
+
+/* ---------- palettes ---------- */
+const PAL=[
+ ['#38bdf8','#f472b6','#facc15','#34d399','#a78bfa','#fb7185','#60a5fa','#2dd4bf'],
+ ['#7dd3fc','#e5a4b8','#d8c46a','#7ba887','#a08bd0','#cf8296','#8aa8d8','#66b8ac'],
+ ['#c04070','#b05878','#b09050','#50886a','#7868a8','#b86878','#6878a8','#489088'],
+ ['#ff1e3c','#ff5a1e','#ffb01e','#00e68a','#e01030','#ff2060','#8a0315','#ff3d5e']];
+
+/* ---------- demons ---------- */
+const ROSTER=[
+ {id:'bee',n:'BEELZEBOT',ava:'🜏',acc:.72,spd:11},{id:'mal',n:'MALGORATH',ava:'⛧',acc:.64,spd:14},
+ {id:'lil',n:'LILITH.EXE',ava:'🜂',acc:.76,spd:10},{id:'skel',n:'SKELEVON',ava:'☠',acc:.56,spd:16},
+ {id:'aud',n:'THE AUDITOR',ava:'👁',acc:.85,spd:8}];
+const TAUNTS=["your neurons are rusted, mortal.","i flunked kindergarten. in flames.","run the numbers. they run you.","bone appétit.","anomaly detected: confidence."];
+
+/* ---------- chaos emeralds (rounds 3/6/9 only) ---------- */
+const EMERALDS=[
+ {id:'chaos_control',icon:'💠',n:'CHAOS CONTROL',d:'Once per run, an impossible round is frozen and answered for you.'},
+ {id:'doom_bloom',icon:'🌹',n:'DOOM BLOOM',d:'+30% points. Your wrong answers sting every opponent for 20.'},
+ {id:'gravity_greed',icon:'🧲',n:'GRAVITY GREED',d:'Correct answers pull 60 pts from the leader.'},
+ {id:'black_arrow',icon:'🏹',n:'BLACK ARROW',d:'One free skip per run. Some shame.'},
+ {id:'crimson_veil',icon:'🩸',n:'CRIMSON VEIL',d:'Corrupted and impossible rounds cannot hurt you.'},
+ {id:'final_chaos',icon:'🌀',n:'FINAL CHAOS',d:'Final round ×2. Bomb it and your run halves.'}];
+
+/* ---------- state ---------- */
+const G={stage:0,screen:'landing',round:0,totalRounds:10,timerLen:60,timeLeft:0,raf:null,t0:0,
+ diff:2,opps:[],players:[],score:0,streak:0,puzzle:null,picked:null,answered:false,optOrder:[],
+ emeralds:[],usedEmeralds:new Set(),forgery:false,chaosControlLeft:0,blackArrowLeft:0,
+ pendingDebt:0,lastTick:99,shuffleIv:null,zapFired:false,impossibleNow:false,
+ mp:{on:false,host:false,code:''},awaitingRound:false};
+
+/* ---------- svg renderer ---------- */
+function pal(){return Math.min(G.stage,3)}
+function cellSVG(c,x,y,s,palIdx){
+ const col=PAL[palIdx][c.color%PAL[palIdx].length],cx=x+s/2,cy=y+s/2,u=s;
+ const rot=`transform="rotate(${(c.rot||0)*90} ${cx} ${cy})"`;let inner='';
+ switch(c.shape){
+  case 'plus':{const w=u*.13,l=u*.33;inner=`<rect x="${cx-w}" y="${cy-l}" width="${w*2}" height="${l*2}" rx="${u*.05}"/><rect x="${cx-l}" y="${cy-w}" width="${l*2}" height="${w*2}" rx="${u*.05}"/>`;break}
+  case 'cross':{const w=u*.11,l=u*.36;inner=`<g transform="rotate(45 ${cx} ${cy})"><rect x="${cx-w}" y="${cy-l}" width="${w*2}" height="${l*2}" rx="${u*.05}"/><rect x="${cx-l}" y="${cy-w}" width="${l*2}" height="${w*2}" rx="${u*.05}"/></g>`;break}
+  case 'ring':inner=`<circle cx="${cx}" cy="${cy}" r="${u*.3}" fill="none" stroke-width="${u*.14}" stroke="${col}"/>`;break;
+  case 'square':{const r=u*.26;inner=`<rect x="${cx-r}" y="${cy-r}" width="${r*2}" height="${r*2}" rx="${u*.05}"/>`;break}
+  case 'diamond':{const r=u*.36;inner=`<polygon points="${cx},${cy-r} ${cx+r},${cy} ${cx},${cy+r} ${cx-r},${cy}"/>`;break}
+  case 'triangle':{const r=u*.36;inner=`<polygon points="${cx},${cy-r} ${cx+r*.87},${cy+r*.5} ${cx-r*.87},${cy+r*.5}"/>`;break}
+ }
+ return `<g ${rot} fill="${col}">${inner}</g>`;
+}
+function tileSVG(tile,size,palIdx,showQ){
+ const t=tile||{cols:1,rows:1,cells:[null]};const{cols,rows,cells}=t;const cs=size/Math.max(cols,rows);let out='';
+ for(let i=0;i<cols*rows;i++){const c=cells[i],x=(i%cols)*cs,y=Math.floor(i/cols)*cs;
+  out+=`<rect x="${x}" y="${y}" width="${cs}" height="${cs}" rx="2" fill="rgba(127,127,127,.08)"/>`;
+  if(!c&&showQ)out+=`<text x="${x+cs/2}" y="${y+cs/2}" font-size="${cs*.5}" font-weight="900" text-anchor="middle" dominant-baseline="central" fill="currentColor" opacity=".85">?</text>`;
+  else if(c)out+=cellSVG(c,x,y,cs,palIdx);}
+ return `<svg viewBox="0 0 ${cols*cs} ${rows*cs}" width="${size}" height="${size}" style="display:block">${out}</svg>`;
+}
+const optTile=t=>t&&t.cells?t:{cols:1,rows:1,cells:[t]};
+function cellSVGHTML(c){return '<svg viewBox="0 0 40 40" width="44" height="44" style="display:block">'+cellSVG(c,0,0,40,pal())+'</svg>'}
+
+/* ---------- stage machine ---------- */
+function setStage(n){
+ n=Math.max(0,Math.min(3,n));if(n<=G.stage)return;G.stage=n;
+ P.deepestStage=Math.max(P.deepestStage,n);saveP();
+ document.body.classList.remove('act-1','act-2','act-3','corr-1','corr-2','corr-3');
+ if(n>=1)document.body.classList.add('act-'+n,'corr-'+n);
+ CX.cact(n);AU.act(n);CX.inten([.15,.4,.7,1][n]);CX.embers(n>=3);
+ updateTitle();
+ if(n>=3)SH.say(SH.q('appear'),true);
+}
+function updateTitle(){
+ const t=$('#room-title');if(!t)return;
+ const base=G.mp.code?('Room '+G.mp.code):'Private Room';
+ t.textContent=G.stage>=3?'IQ VERSUS: SHADOW':base;
+ document.title=(G.stage>=3?'IQ Versus Shadow':'IQ Versus')+' | Abstract Reasoning Puzzles';
+}
+function timeline(){
+ try{if(window.IQ&&IQ.Shadow&&IQ.Shadow.TIMELINE)return IQ.Shadow.TIMELINE(G.round,G.totalRounds)}catch(e){}
+ return{zapAtFraction:null,subtleGlitch:false,paletteLevel:0,corruptChance:0,shadowTalks:false,impossibleChance:0};
+}
+
+/* ---------- nav ---------- */
+function nav(to){
+ $$('#app > section').forEach(x=>x.classList.add('hidden'));
+ $('#topbar').classList.toggle('hidden',to!=='play');
+ G.screen=to;
+ $({'landing':'#scr-boot','lobby':'#scr-lobby','play':'#scr-play','center':'#scr-center'}[to]).classList.remove('hidden');
+ AU.p('click');
+}
+function banner(txt){const b=document.createElement('div');b.className='event-banner';b.textContent=txt;document.body.appendChild(b);CX.shake(6,180);setTimeout(()=>b.remove(),1700)}
+
+/* ---------- scoreboard ---------- */
+function renderScores(){
+ const sp=$('#side-panel');if(!sp)return;
+ const rows=[{me:1,name:P.name||'YOU',ava:'🜃',pts:G.score},...G.opps.map(o=>({name:o.n,ava:o.ava,pts:o.pts}))];
+ rows.sort((a,b)=>b.pts-a.pts);
+ sp.innerHTML=rows.map((o,i)=>`<div class="score-card ${o.me?'me':''} ${i===0?'leader':''}">
+  <div class="sc-ava">${o.ava}</div><div style="flex:1;min-width:0"><div class="sc-name">${esc(o.name)}</div>
+  <div class="sc-sub">${o.me?(G.streak>1?'streak ×'+G.streak:'you'):'rival'}</div></div>
+  <div class="sc-pts">${o.pts}</div></div>`).join('');
+}
+
+/* ---------- run flow ---------- */
+function startRun(){
+ $('#center-content').innerHTML='';
+ G.round=0;G.score=0;G.streak=0;G.stage=-1;setStage(0);
+ G.totalRounds=clamp(+$('#cfg-rounds').value||10,5,20);
+ G.timerLen=clamp(+$('#cfg-timer').value||60,15,120);
+ G.emeralds=[];G.usedEmeralds=new Set();G.chaosControlLeft=0;G.blackArrowLeft=0;G.zapFired=false;
+ G.forgery=$('#cfg-forged').classList.contains('on');
+ S.shadowOn=$('#cfg-shadow').classList.contains('on');
+ G.opps=G.mp.on?[]:ROSTER.slice(0,2).map(o=>({...o,pts:0}));
+ nav('play');updateTitle();renderScores();
+ setTimeout(()=>nextRound(),800);
+}
+
+function nextRound(){
+ if(G.mp.on&&!G.mp.host){G.awaitingRound=true;return} // clients only receive host deals
+ clearInterval(G.shuffleIv);
+ G.round++;
+ G.answered=false;G.zapFired=false;G.impossibleNow=false;
+ // slow-burn stage gates
+ if(G.round===3)setStage(1);else if(G.round===5)setStage(2);else if(G.round===7)setStage(3);
+
+ let pz=null;
+ if(!G.mp.on||G.mp.host){
+  const useForged=G.forgery&&store.get('IQB_PUZZLES_V1',[]).length&&Math.random()<.3;
+  if(useForged){pz={...store.get('IQB_PUZZLES_V1',[])[ri(0,store.get('IQB_PUZZLES_V1',[]).length-1)]}}
+  else try{pz=IQ.Puzzles.generate({difficulty:clamp(G.diff+(G.round>G.totalRounds*.6?1:0),1,5)})}catch(e){}
+  pz=pz||fallbackPuzzle();
+  const tl=timeline();
+  if(pz.board&&tl.corruptChance&&Math.random()<tl.corruptChance){
+   const idx=pz.board.cells.findIndex((c,i)=>i!==pz.board.holeIndex&&c);
+   if(idx>=0)pz.board.cells[idx]={...pz.board.cells[idx],color:(pz.board.cells[idx].color+ri(1,7))%8};
+   pz.corrupted=true;}
+  if(pz.options&&tl.impossibleChance&&Math.random()<tl.impossibleChance){
+   const a=pz.answer;pz.options[a]=JSON.parse(JSON.stringify(pz.options[(a+3)%8]));pz.impossible=true;}
+  G.puzzle=pz;
+ }
+ broadcastRound();
+ renderBoard();
+ startTimer();
+ if(!G.mp.on)G.opps.forEach(o=>simOpponent(o));
+}
+function fallbackPuzzle(){
+ const cells=[];for(let i=0;i<9;i++)cells.push(i===4?null:{shape:'plus',color:(i%2===0?i:i+2)%8,rot:i%4});
+ const correct={shape:'plus',color:2,rot:0};
+ return{id:'fb'+Date.now(),kind:'matrix',difficulty:1,rule:'colors advance along rows',
+  board:{cols:3,rows:3,cells,holeIndex:4},
+  options:Array.from({length:8},(_,i)=>({cols:1,rows:1,cells:[i?{...correct,color:(correct.color+i)%8}:correct]})),answer:0};
+}
+function broadcastRound(){
+ if(!(G.mp.on&&G.mp.host)||!G.puzzle)return;
+ try{
+  // SECURITY: strip answer/rule before broadcast (server-authoritative pattern from iqversus)
+  const pz=G.puzzle;
+  IQ.Net.broadcast({t:'round',n:G.round,timerLen:G.timerLen,kind:pz.kind,board:pz.board,oddBoard:pz.oddBoard,seq:pz.seq,options:pz.options});
+ }catch(e){ try{localStorage.setItem('iqvs-neterr',String(e&&e.message||e))}catch(_e){} }
+}
+function renderBoard(){
+ const pz=G.puzzle;if(!pz)return;
+ $('#round-label').textContent=`Round ${G.round}/${G.totalRounds}`;
+ let html='';const SZ=Math.min(330,(innerHeight-300));
+ if(pz.kind==='matrix')html=tileSVG(pz.board,SZ,pal(),true);
+ else if(pz.kind==='sequence'){const cs=SZ/(pz.seq.length+1);
+  html=`<div style="display:flex;gap:10px;align-items:center">${pz.seq.map(c=>tileSVG({cols:1,rows:1,cells:[c]},cs*.8,pal(),false)).join('')}${tileSVG({cols:1,rows:1,cells:[null]},cs*.8,pal(),true)}</div>`;}
+ else html=tileSVG(pz.oddBoard,SZ,pal(),false)+'<div style="text-align:center;margin-top:8px;font-size:11px;letter-spacing:.2em;opacity:.6">ONE FRAGMENT IS AN IMPOSTOR</div>';
+ $('#board-frame').innerHTML=html;
+ drawOptions();
+ maybeZap();
+}
+function drawOptions(){
+ const og=$('#opts-grid'),pz=G.puzzle;if(!pz||!pz.options)return;og.innerHTML='';
+ const order=pz.options.map((_,i)=>i);
+ for(let i=order.length-1;i>0;i--){const j=ri(0,i);[order[i],order[j]]=[order[j],order[i]]}
+ G.optOrder=order;
+ order.forEach((oi,pos)=>{
+  const b=document.createElement('div');b.className='opt-btn';b.dataset.i=oi;
+  b.innerHTML=tileSVG(optTile(pz.options[oi]),104,pal(),false)+`<span class="opt-key">${pos+1}</span>`;
+  b.onclick=()=>answer(pos);og.appendChild(b);});
+}
+function applyIncomingRound(pl){
+ G.awaitingRound=false;G.round=pl.n;G.timerLen=pl.timerLen;G.answered=false;
+ G.puzzle={kind:pl.kind,board:pl.board,oddBoard:pl.oddBoard,seq:pl.seq,options:pl.options,answer:-99};
+ renderBoard();startTimer();
+}
+
+/* ---------- mid-round zap (round 1 signature) ---------- */
+function maybeZap(){
+ const tl=timeline();
+ if(G.round!==1||!tl.zapAtFraction||G.zapFired)return;G.zapFired=true;
+ setTimeout(()=>{
+  const z=document.createElement('div');z.style.cssText='position:fixed;inset:0;z-index:120;background:#dff3ff';document.body.appendChild(z);
+  AU.p('glitch');CX.invert(220);CX.flash('rgba(223,243,255,.85)',140);CX.shake(18,420);
+  const bf=$('#board-frame');bf.style.filter='brightness(0)';
+  banner('POWER CUT?');
+  setTimeout(()=>{bf.style.filter='';z.remove();if(S.shadowOn)SH.say(SH.q('zap'),true)},420);
+ },G.timerLen*tl.zapAtFraction*1000);
+}
+
+/* ---------- timer ---------- */
+function startTimer(){
+ cancelAnimationFrame(G.raf);
+ G.timeLeft=G.timerLen;G.lastTick=99;G.t0=performance.now();
+ const step=t=>{
+  const left=Math.max(0,G.timeLeft-(t-G.t0)/1000);
+  $('#timer-fill').style.transform=`scaleX(${left/G.timeLeft})`;
+  $('#timer-num').textContent=Math.ceil(left);
+  $('#round-strip').classList.toggle('timer-low',left<=10);
+  if(left<=10&&Math.ceil(left)!==G.lastTick){G.lastTick=Math.ceil(left);AU.p(left<=5?'tick':'heart',{vol:.3});CX.pulse()}
+  if(left<=0&&!G.answered)answer(-1);
+  else if(!G.answered)G.raf=requestAnimationFrame(step);
+ };
+ G.raf=requestAnimationFrame(step);
+}
+
+/* ---------- solo opponents ---------- */
+function simOpponent(o){
+ setTimeout(()=>{
+  if(G.answered)return;
+  o.pts+=Math.random()<clamp(o.acc-(G.diff-2)*.05,.3,.95)?ri(80,140):ri(-30,20);
+  renderScores();
+  if(Math.random()<.15){const b=document.createElement('div');b.className='taunt-bubble';
+   b.innerHTML=`<b>${esc(o.n)}:</b> ${esc(TAUNTS[ri(0,TAUNTS.length-1)])}`;
+   b.style.left=rnd(8,58)+'vw';b.style.top=rnd(14,46)+'vh';document.body.appendChild(b);
+   setTimeout(()=>b.remove(),2400);}
+ },rnd(5,o.spd*1.5)*1000);
+}
+
+/* ---------- answering ---------- */
+function answer(pos){
+ if(G.answered||!G.puzzle||!G.puzzle.options)return;G.answered=true;
+ cancelAnimationFrame(G.raf);clearInterval(G.shuffleIv);
+ const pz=G.puzzle;
+ const impossible=pz.answer===-99||pz.impossible;
+ const correct=!impossible&&pos>=0&&G.optOrder[pos]===pz.answer;
+ const btns=$$('#opts-grid .opt-btn');
+ btns.forEach(b=>b.classList.toggle('picked',pos>=0&&G.optOrder[pos]===+b.dataset.i));
+ const cb=btns.find(b=>+b.dataset.i===pz.answer);
+ if(cb&&!impossible)setTimeout(()=>cb.classList.add('correct'),250);
+ if(!correct&&pos>=0)btns.find(b=>G.optOrder[pos]===+b.dataset.i)?.classList.add('wrongpick');
+
+ if(impossible){
+  if(G.emeralds.includes('chaos_control')&&G.chaosControlLeft>0){
+   G.chaosControlLeft--;banner('CHAOS CONTROL — TIME FREEZES');SH.say('CHAOS CONTROL!',true);scoreMe(150,true);}
+  else if(G.emeralds.includes('crimson_veil')){banner('THE CRIMSON VEIL DRINKS THE CURSE');scoreMe(40,true);}
+  else{banner('THIS ROUND MADE NO SENSE. NOBODY WINS.');scoreMe(-25,false,true);SH.say(SH.q('impossible'),true);}
+ }else if(pos>=0&&correct){
+  G.streak++;
+  const speed=clamp(G.timeLeft/G.timerLen,0,1);
+  let pts=Math.round(100*pz.difficulty+speed*80+(G.streak>1?(G.streak-1)*20:0));
+  if(G.emeralds.includes('doom_bloom'))pts=Math.round(pts*1.3);
+  if(G.emeralds.includes('gravity_greed')){const lead=[...G.opps].sort((a,b)=>b.pts-a.pts)[0];if(lead){lead.pts=Math.max(0,lead.pts-60);pts+=60}}
+  if(G.emeralds.includes('final_chaos')&&G.round===G.totalRounds)pts*=2;
+  scoreMe(pts,true);AU.p('sting');CX.flash('rgba(34,211,165,.10)',130);
+  if(G.streak>=4&&Math.random()<.5)SH.say(SH.q('right'),true);
+ }else if(pos===-3&&G.blackArrowLeft>0){
+  G.blackArrowLeft--;banner('BLACK ARROW SPENT — SIN FORGIVEN');scoreMe(10,true);
+ }else{
+  G.streak=0;let pts=-40;
+  if(G.emeralds.includes('doom_bloom'))G.opps.forEach(o=>o.pts-=20);
+  if(G.emeralds.includes('final_chaos')&&G.round===G.totalRounds){G.score=Math.round(G.score*.5);banner('FINAL CHAOS PUNISHES')}
+  scoreMe(pts,false);AU.p('buzz');CX.shake(12,280);AU.p('laugh',{vol:.3});
+  if(Math.random()<.35&&G.stage>=2)SH.say(SH.q('wrong'),true);
+ }
+
+ setTimeout(()=>{
+  if(G.mp.host){try{IQ.Net.broadcast({t:'reveal',answer:pz.answer,scores:[{name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts}))]})}catch(e){}}
+ },1400);
+ setTimeout(()=>{
+  if(G.mp.on&&!G.mp.host)return; // clients idle — host deals the next round
+  else if(!G.mp.on&&(G.round===3||G.round===6||G.round===9)&&G.usedEmeralds.size<EMERALDS.length)emeraldPick();
+  else nextRound();
+ },1700);
+}
+function scoreMe(pts,good,silent){
+ G.score+=pts;renderScores();
+ P.totalCorrect+=good?1:0;P.totalWrong+=good?0:1;saveP();
+ if(!silent&&good&&pts>50&&G.puzzle.rule)flashRule();
+}
+function flashRule(){const t=document.createElement('div');t.className='event-banner';t.style.fontSize='12px';t.textContent=(G.puzzle.rule||'').toUpperCase().slice(0,64);document.body.appendChild(t);setTimeout(()=>t.remove(),1500)}
+
+/* ---------- emerald pick (rounds 3/6/9 only) ---------- */
+function emeraldPick(){
+ const pool=EMERALDS.filter(e=>!G.usedEmeralds.has(e.id));
+ const picks=[];while(picks.length<3&&pool.length)picks.push(pool.splice(ri(0,pool.length-1),1)[0]);
+ if(!picks.length){nextRound();return}
+ const w=document.createElement('div');w.className='interlude-bg';
+ w.innerHTML='<div class="interlude-title">a chaos emerald surfaces</div>'+
+  '<div style="font-size:11px;letter-spacing:.24em;opacity:.5;margin-top:6px">take one. the rest belong to shadow.</div>'+
+  '<div class="relic-row">'+picks.map((r,i)=>`<div class="relic-card" data-i="${i}"><div class="relic-icon">${r.icon}</div><div class="relic-name">${r.n}</div><div class="relic-desc">${r.d}</div></div>`).join('')+'</div>';
+ document.body.appendChild(w);AU.p('sacrifice',{vol:.35});
+ w.querySelectorAll('.relic-card').forEach(c=>c.onclick=()=>{
+  const r=picks[+c.dataset.i];G.emeralds.push(r.id);G.usedEmeralds.add(r.id);
+  if(r.id==='chaos_control')G.chaosControlLeft=1;
+  if(r.id==='black_arrow')G.blackArrowLeft=1;
+  P.relicsSeen=[...new Set([...P.relicsSeen,r.id])];saveP();
+  AU.p('levelup');w.remove();SH.say('the '+r.n.toLowerCase()+' is yours.',true);
+  setTimeout(nextRound,1200);});
+}
+
+/* ---------- ending ---------- */
+function endRun(){
+ nav('center');
+ const topRival=G.opps.reduce((m,o)=>Math.max(m,o.pts),0);
+ const won=G.score>topRival;
+ P.runs++;if(won)P.wins++;P.bestScore=Math.max(P.bestScore,G.score);
+ const newF=G.opps.filter(o=>o.pts<G.score&&won).map(o=>o.n);
+ newF.forEach(n=>{if(!P.followers.includes(n))P.followers.push(n)});saveP();
+ $('#center-content').innerHTML=
+  '<div style="font-size:11px;letter-spacing:.34em;opacity:.5;text-transform:uppercase">match terminated</div>'+
+  `<div class="rank-big" style="margin:10px 0;color:${won?'#00e68a':'#e01030'}">${won?(G.stage>=3?'SHADOW BOWS. YOU WON.':'YOU OUTSCORED THE ROOM'):'THE ROOM OUTSCORED YOU'}</div>`+
+  '<div class="stat-grid">'+
+  `<div class="stat-cell"><div class="stat-val">${G.score}</div><div class="stat-lbl">score</div></div>`+
+  `<div class="stat-cell"><div class="stat-val">${G.totalRounds}</div><div class="stat-lbl">rounds</div></div></div>`+
+  (newF.length?'<div style="font-size:11px;letter-spacing:.2em;opacity:.6;margin-bottom:8px">NEW CULT MEMBERS</div><div class="followers-strip">'+newF.map(f=>`<div class="follower-chip">${esc(f)}</div>`).join('')+'</div>':'')+
+  '<div style="display:flex;gap:12px;margin-top:22px">'+
+  '<button class="btn btn-primary" id="home-btn">Back To Lobby</button>'+
+  '<button class="btn btn-danger" id="again-btn">Descend Again</button></div>';
+ $('#again-btn').onclick=()=>startRun();
+ $('#home-btn').onclick=()=>nav('landing');
+ AU.p(won?'laugh':'scream');CX.shake(10,380);
+ if(G.stage>=3)SH.say(SH.q(won?'win':'lose'),true);
+}
+
+/* ================================================================
+   landing / lobby / multiplayer wiring
+   ================================================================ */
+function wireLanding(){
+ $('#net-status').textContent=(window.IQ&&IQ.Net&&IQ.Net.available())?'Peer link ready — friends can join your code.':'Offline mode — solo vs demons.';
+ if(P.name)$('#boot-name').value=P.name;
+ $('#boot-go').onclick=async()=>{
+  P.name=($('#boot-name').value.trim()||('SUBJECT-'+ri(100,999)));saveP();AU.init();AU.p('chime');
+  const code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[ri(0,31)]).join('');
+  let ok=false;
+  if(window.IQ&&IQ.Net&&IQ.Net.available()){
+   try{await IQ.Net.host(code,P.name);G.mp={on:true,host:true,code};listenNet();ok=true}catch(e){}
+  }
+ if(!ok){G.mp={on:true,host:true,code};} // storage-bus room still works same-browser; peer retries on next host
+  openLobby(G.mp.code?('Room '+G.mp.code+' — share this code!'):'Private Room');
+ };
+ $('#boot-join').onclick=async()=>{
+  const code=$('#join-code').value.trim().toUpperCase();
+  if(!code){$('#join-code').focus();return}
+  if(!(window.IQ&&IQ.Net&&IQ.Net.available())){alertEv('PEER LINK UNAVAILABLE');return}
+  P.name=($('#boot-name').value.trim()||('GUEST-'+ri(10,99)));saveP();AU.init();
+  alertEv('LINKING TO '+code+'…');
+  try{await IQ.Net.join(code,P.name);
+   G.mp={on:true,host:false,code};listenNet();openLobby('Room '+code);
+  }catch(e){alertEv('ROOM NOT FOUND')}
+ };
+ bindSeg('#cfg-diff',v=>G.diff=+v);
+ $('#cfg-start').onclick=()=>{
+  if(G.mp.on&&!G.mp.host){alertEv('WAITING FOR HOST TO START…');return}
+  if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin'})}catch(e){}}
+  startRun();};
+ $('#lobby-back').onclick=()=>{leaveMp();nav('landing')};
+ $('#tb-lobby').onclick=()=>nav('landing');
+ $('#tb-leave').onclick=()=>location.reload();
+ $('#cfg-forged').onclick=e=>e.target.classList.toggle('on');
+ $('#cfg-shadow').onclick=e=>e.target.classList.toggle('on');
+ bindNav();
+}
+function openLobby(title){$('#lobby-title').textContent=title;updateTitle();nav('lobby')}
+function leaveMp(){try{if(G.mp.on&&window.IQ&&IQ.Net)IQ.Net.leave()}catch(e){}G.mp={on:false,host:false,code:''};G.players=[]}
+function hostMp(code){ /* host path: after Create Room with code */ }
+function onRemotePick(pk){if(G.mp.host&&pk)G.remotePicks[pk.from]={n:pk.n,pos:pk.pos}}
+function listenNet(){
+ try{
+  IQ.Net.on('lobby',pl=>{G.players=(pl.players||[]);$('#lobby-count').textContent=G.players.length;});
+  IQ.Net.on('pick',pk=>onRemotePick(pk));
+  IQ.Net.on('begin',()=>{if(G.mp.on&&!G.mp.host)startRun()});
+  IQ.Net.on('round',pl=>{if(G.mp.host)return;applyIncomingRound(pl)});
+  IQ.Net.on('reveal',rv=>{if(G.mp.host)return;
+   const btns=$$('#opts-grid .opt-btn');
+   const cb=btns.find(b=>+b.dataset.i===rv.answer);
+   if(cb)cb.classList.add('correct');
+   if(Array.isArray(rv.scores)){const me=rv.scores.find(s=>s.name===P.name);if(me){G.score=me.pts}
+    G.opps=rv.scores.filter(s=>s.name!==P.name).map(s=>({n:s.name,ava:'⛧',pts:s.pts}));renderScores()}});
+  IQ.Net.on('end',()=>{if(G.screen==='play'){alertEv('CONNECTION LOST');G.mp={on:false,host:false,code:''}}else alertEv('ROOM CLOSED')});
+ }catch(e){}
+}
+
+/* ================================================================
+   forge / grimoire / settings
+   ================================================================ */
+const FORGE={grid:null,hole:4,editingId:null,meta:{},awaitingHole:false};
+function defaultGrid(){return Array.from({length:9},(_,i)=>i===4?null:{shape:'plus',color:i%8,rot:0})}
+function openForge(){
+ nav('center');const cc=$('#center-content');
+ const list=store.get('IQB_PUZZLES_V1',[]);
+ cc.innerHTML='<div style="align-self:stretch;display:flex;align-items:center;gap:14px;width:min(760px,94vw)">'+
+  '<button class="btn btn-ghost" data-nav="landing">← Back</button><h2 style="flex:1">PUZZLE FORGE</h2>'+
+  '<button class="btn btn-primary" id="forge-new">+ Forge New</button></div>'+
+  '<div style="font-size:11px;letter-spacing:.2em;opacity:.5">artifacts you have forged ('+list.length+')</div>'+
+  '<div style="width:min(760px,94vw);display:flex;flex-direction:column;gap:10px">'+
+  list.map(p=>'<div class="forge-item" style="width:100%">'+
+   '<div style="flex-shrink:0">'+tileSVG(optTile((p.options||[])[p.answer||0]),54,G.stage,false)+'</div>'+
+   '<div style="flex:1"><b style="letter-spacing:.06em">'+esc(p.name||'Unnamed Sigil')+'</b><div style="font-size:11px;opacity:.5">'+esc(p.kind||'matrix')+' · diff '+(p.difficulty||2)+'</div></div>'+
+   '<button class="btn btn-ghost fe" data-id="'+p.id+'" style="padding:8px 14px;font-size:11px">Edit</button>'+
+   '<button class="btn btn-ghost fd" data-id="'+p.id+'" style="padding:8px 14px;font-size:11px;color:#e01030">Burn</button></div>').join('')||
+  '<div style="opacity:.4;letter-spacing:.2em;font-size:12px;padding:30px">the anvil is cold.</div>'+'</div>';
+ bindNav();
+ $('#forge-new').onclick=()=>openEditor(null);
+ $$('.fe').forEach(b=>b.onclick=()=>openEditor(b.dataset.id));
+ $$('.fd').forEach(b=>b.onclick=()=>{store.set('IQB_PUZZLES_V1',store.get('IQB_PUZZLES_V1',[]).filter(x=>x.id!==b.dataset.id));AU.p('sacrifice');openForge()});
+}
+function openEditor(id){
+ nav('center');
+ if(id){const p=store.get('IQB_PUZZLES_V1',[]).find(x=>x.id===id);
+  if(p){FORGE.editingId=id;FORGE.grid=(p.board.cells||defaultGrid()).slice();FORGE.hole=p.board.holeIndex!=null?p.board.holeIndex:4;
+   FORGE.meta={name:p.name||'',prompt:p.prompt||'',difficulty:p.difficulty||2};
+   while(FORGE.grid.length<p.board.cols*p.board.rows)FORGE.grid.push(null);}}
+ else{FORGE.editingId=null;FORGE.grid=defaultGrid();FORGE.hole=4;FORGE.meta={name:'',prompt:'',difficulty:2}}
+ FORGE.cols=Math.sqrt(FORGE.grid.length)|0;FORGE.rows=FORGE.cols;
+ renderEditor();
+}
+function renderEditor(){
+ nav('center');const cc=$('#center-content');
+ const cols=FORGE.cols||3,rows=FORGE.rows||3,cells=FORGE.grid;
+ cc.innerHTML='<div style="align-self:stretch;display:flex;align-items:center;gap:14px;width:min(760px,94vw)">'+
+  '<button class="btn btn-ghost" id="forge-back">← Forge List</button><h2 style="flex:1">SIGIL EDITOR</h2></div>'+
+  '<div style="display:flex;gap:26px;flex-wrap:wrap;justify-content:center;align-items:flex-start">'+
+  '<div><div class="editor-grid" id="egrid" style="grid-template-columns:repeat('+cols+',52px)">'+
+  cells.map((c,i)=>'<div class="ecell" data-i="'+i+'">'+(c?cellSVGHTML(c):'<span style="opacity:.4;font-weight:900;font-size:20px">?</span>')+
+   (i===FORGE.hole?'<div style="position:absolute;outline:2px dashed #e01030;outline-offset:-3px;width:52px;height:52px;border-radius:4px;pointer-events:none"></div>':'')+'</div>').join('')+
+  '</div><div style="display:flex;gap:8px;margin-top:10px;justify-content:center">'+
+  '<button class="btn btn-ghost" id="eg-cols" style="padding:8px 12px;font-size:11px">Size '+cols+'×'+rows+'</button>'+
+  '<button class="btn btn-ghost" id="eg-hole" style="padding:8px 12px;font-size:11px">Set Hole: click a cell first</button></div>'+
+  '<div style="font-size:10px;opacity:.5;margin-top:8px;text-align:center">click=color · right-click=shape · shift-click=rotate · ctrl-click=clear</div></div>'+
+  '<div style="width:270px;display:flex;flex-direction:column;gap:10px">'+
+  '<input id="fg-name" maxlength="28" placeholder="Sigil name" value="'+esc(FORGE.meta.name||'')+'" style="padding:10px 14px;font-family:inherit;background:rgba(127,127,127,.1);border:1px solid rgba(127,127,127,.3);border-radius:6px;color:inherit;user-select:text;-webkit-user-select:text">'+
+  '<input id="fg-prompt" maxlength="60" placeholder="Prompt shown" value="'+esc(FORGE.meta.prompt||'')+'" style="padding:10px 14px;font-family:inherit;background:rgba(127,127,127,.1);border:1px solid rgba(127,127,127,.3);border-radius:6px;color:inherit;user-select:text;-webkit-user-select:text">'+
+  '<div class="seg" id="fg-diff">'+[1,2,3,4,5].map(d=>'<button data-v="'+d+'" class="'+((FORGE.meta.difficulty||2)===d?'on':'')+'">'+d+'</button>').join('')+'</div>'+
+  '<button class="btn btn-primary" id="fg-save">Imprison Puzzle</button></div></div>';
+ $('#forge-back').onclick=openForge;
+ $('#eg-cols').onclick=()=>{const n=(FORGE.cols||3)>=5?3:(FORGE.cols||3)+1;
+  const old=FORGE.grid;FORGE.grid=Array.from({length:n*n},(_,i)=>old[i]||null);
+  FORGE.hole=Math.min(FORGE.hole,n*n-1);FORGE.cols=n;FORGE.rows=n;renderEditor()};
+ $$('#egrid .ecell').forEach(el=>{
+  el.onclick=e=>{const i=+el.dataset.i;const cs=FORGE.grid;
+   if(e.shiftKey){if(cs[i]){cs[i]={...cs[i],rot:((cs[i].rot||0)+1)%4};renderEditor()}return}
+   if(e.ctrlKey){cs[i]=null;if(i===FORGE.hole)FORGE.hole=-1;renderEditor();return}
+   if(FORGE.awaitingHole){FORGE.hole=i;cs[i]=null;FORGE.awaitingHole=false;renderEditor();return}
+   if(!cs[i])cs[i]={shape:'plus',color:0,rot:0};else cs[i]={...cs[i],color:(cs[i].color+1)%8};
+   renderEditor()};
+  el.oncontextmenu=e=>{e.preventDefault();const i=+el.dataset.i;const sh=['plus','cross','ring','square','diamond','triangle'];
+   const cur=sh.indexOf(FORGE.grid[i]?.shape);
+   FORGE.grid[i]=cur>=0?{...FORGE.grid[i],shape:sh[(cur+1)%sh.length]}:{shape:'plus',color:0,rot:0};renderEditor()};
+ });
+ $('#eg-hole').onclick=()=>{FORGE.awaitingHole=true;$('#eg-hole').textContent='now CLICK a cell to make it the hole'};
+ $$('#fg-diff button').forEach(b=>b.onclick=()=>{$$('#fg-diff button').forEach(x=>x.classList.remove('on'));b.classList.add('on')});
+ $('#fg-save').onclick=saveForged;
+}
+function saveForged(){
+ if(FORGE.hole==null||FORGE.hole<0){alertEv('SET A HOLE FIRST');return}
+ const diff=+($('#fg-diff .on')?.dataset.v||2);
+ const cols=FORGE.cols,rows=FORGE.rows,cells=FORGE.grid,hole=FORGE.hole;
+ const r0=Math.floor(hole/cols),c0=hole%cols;
+ const nb=[[r0,c0-1],[r0-1,c0],[r0,c0+1],[r0+1,c0]].find(([rr,cc])=>rr>=0&&cc>=0&&rr<rows&&cc<cols&&cells[rr*cols+cc]);
+ const correctFill=nb?(()=>{const n=cells[nb[0]*cols+nb[1]];return{...n,color:(n.color+1)%8}})():{shape:'ring',color:ri(0,7),rot:0};
+ const opts=[{cols:1,rows:1,cells:[correctFill]}];
+ for(let i=1;i<8;i++){const m={...correctFill};const w=i%3;
+  if(w===0)m.color=(m.color+ri(1,7))%8;
+  else if(w===1)m.shape=['plus','cross','ring','square','diamond','triangle'][ri(0,5)];
+  else m.rot=((m.rot||0)+ri(1,3))%4;
+  if(!opts.some(o=>JSON.stringify(o.cells[0])===JSON.stringify(m)))opts.push({cols:1,rows:1,cells:[m]});else i--}
+ const order=opts.map((_,i)=>i);
+ for(let i=order.length-1;i>0;i--){const j=ri(0,i);[order[i],order[j]]=[order[j],order[i]]}
+ const savedAnswer=order.indexOf(0);
+ const puzzle={id:FORGE.editingId||('f'+Date.now()+ri(0,999)),
+  name:($('#fg-name')?.value.trim()||'Unnamed Sigil'),prompt:($('#fg-prompt')?.value.trim()||'COMPLETE THE FORBIDDEN SIGIL.'),
+  kind:'matrix',difficulty:diff,rule:'forged by '+(P.name||'anon'),
+  board:{cols,rows,cells:cells.slice(),holeIndex:hole},options:order.map(i=>opts[i]),answer:savedAnswer};
+ const arr=store.get('IQB_PUZZLES_V1',[]);const ix=arr.findIndex(x=>x.id===puzzle.id);
+ if(ix>=0)arr[ix]=puzzle;else arr.push(puzzle);
+ store.set('IQB_PUZZLES_V1',arr);AU.p('sacrifice');alertEv('IMPRISONED ✓');setTimeout(openForge,600);
+}
+function openGrimoire(){
+ nav('center');const cc=$('#center-content');
+ const corr=clamp(P.deepestStage*22+P.followers.length*4+P.wins*3,0,100);
+ cc.innerHTML='<div style="align-self:stretch;display:flex;align-items:center;gap:14px;width:min(680px,94vw)">'+
+  '<button class="btn btn-ghost" data-nav="landing">← Back</button><h2 style="flex:1">GRIMOIRE</h2></div>'+
+  '<div class="panel" style="width:min(680px,94vw)">'+
+  '<div style="display:flex;gap:20px;align-items:center"><div class="sc-ava" style="width:64px;height:64px;font-size:32px">🜃</div>'+
+  '<div><div style="font-weight:900;font-size:20px">'+esc(P.name||'UNNAMED')+'</div>'+
+  '<div style="font-size:11px;opacity:.5;letter-spacing:.14em">RUNS '+P.runs+' · WINS '+P.wins+' · BEST '+P.bestScore+' · DEEPEST STAGE '+P.deepestStage+'</div></div></div>'+
+  '<div style="margin-top:20px;font-size:11px;letter-spacing:.2em;opacity:.6">CORRUPTION</div>'+
+  '<div class="grim-meter" style="margin-top:6px"><i style="width:'+corr+'%"></i></div>'+
+  '<div style="display:flex;gap:26px;margin-top:18px;flex-wrap:wrap">'+
+  '<div class="stat-cell"><div class="stat-val">'+P.totalCorrect+'</div><div class="stat-lbl">fragments solved</div></div>'+
+  '<div class="stat-cell"><div class="stat-val">'+P.totalWrong+'</div><div class="stat-lbl">sins</div></div>'+
+  '<div class="stat-cell"><div class="stat-val">'+P.followers.length+'</div><div class="stat-lbl">cult members</div></div></div>'+
+  (P.followers.length?'<div class="followers-strip" style="margin-top:14px">'+P.followers.map(f=>'<div class="follower-chip">'+esc(f)+'</div>').join('')+'</div>':'')+
+  (P.relicsSeen.length?'<div style="margin-top:12px;font-size:11px;opacity:.6">EMERALDS TOUCHED: '+P.relicsSeen.length+'/6</div>':'')+
+  '</div>';
+ bindNav();
+}
+function openSettings(){
+ nav('center');const cc=$('#center-content');
+ let muted=store.get('IQB_MUTED',false),motion=store.get('IQB_MOTION',true),voice=S.voiceOn;
+ cc.innerHTML='<div style="align-self:stretch;display:flex;align-items:center;gap:14px;width:min(560px,94vw)">'+
+  '<button class="btn btn-ghost" data-nav="landing">← Back</button><h2 style="flex:1">SETTINGS</h2></div>'+
+  '<div class="panel" style="width:min(560px,94vw)">'+
+  '<div class="sw-row"><div class="sw '+(muted?'':'on')+'" id="sw-sound"></div><div>Sound</div></div>'+
+  '<div class="sw-row"><div class="sw '+(motion?'on':'')+'" id="sw-motion"></div><div>Screen chaos</div></div>'+
+  '<div class="sw-row"><div class="sw '+(voice?'on':'')+'" id="sw-voice"></div><div>Shadow speaks (robot voice)</div></div>'+
+  '<div class="sw-row"><div style="flex:1"></div><button class="btn btn-danger" id="wipe-btn" style="font-size:12px;padding:10px 18px">Burn All Records</button></div></div>';
+ bindNav();
+ $('#sw-sound').onclick=e=>{muted=!muted;store.set('IQB_MUTED',muted);e.target.classList.toggle('on',!muted);AU.mute(muted)};
+ $('#sw-motion').onclick=e=>{motion=!motion;store.set('IQB_MOTION',motion);e.target.classList.toggle('on',motion);CX.inten(motion?.5:0)};
+ $('#sw-voice').onclick=e=>{S.voiceOn=!S.voiceOn;store.set('IQB_VOICE',S.voiceOn);e.target.classList.toggle('on',S.voiceOn)};
+ $('#wipe-btn').onclick=()=>{if(confirm('Erase every record?')){localStorage.removeItem('IQB_PROFILE_V1');localStorage.removeItem('IQB_PUZZLES_V1');location.reload()}};
+}
+
+/* ---------- misc ---------- */
+function alertEv(msg){banner(msg)}
+function bindNav(){$$('[data-nav]').forEach(b=>b.onclick=()=>goNav(b.dataset.nav))}
+function goNav(to){if(to==='forge')openForge();else if(to==='grimoire')openGrimoire();else if(to==='settings')openSettings();else nav('landing')}
+function bindSeg(sel,cb){$$(`#${sel.slice(1)} button`).forEach(b=>b.onclick=()=>{$$(`#${sel.slice(1)} button`).forEach(x=>x.classList.remove('on'));b.classList.add('on');cb&&cb(b.dataset.v)})}
+
+/* ---------- boot ---------- */
+function boot(){
+ document.body.classList.add('act-0');
+ SH.ok=!!(window.IQ&&IQ.Shadow);
+ CX.mount();AU.init();
+ if(store.get('IQB_MUTED',false))AU.mute(true);
+ wireLanding();
+}
+addEventListener('keydown',e=>{
+ if(G.screen!=='play'||G.answered)return;
+ const n=+e.key;
+ if(n>=1&&n<=8)$$('#opts-grid .opt-btn')[n-1]?.click();
+});
+addEventListener('pointerdown',()=>AU.init(),{once:true});
+boot();
+</script>
+</body>
+</html>

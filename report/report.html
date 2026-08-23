@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@page{size:A4;margin:15mm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;color:#1a1620;font-size:10pt;line-height:1.5;background:#fff}
+h1{font-size:23pt;font-weight:900;letter-spacing:-.5px;margin-bottom:2mm}
+h1 span{background:linear-gradient(90deg,#3f7dff,#ff2e88);-webkit-background-clip:text;background-clip:text;color:transparent}
+h1 em{font-style:normal;background:linear-gradient(90deg,#e01030,#00b86e);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:#77707e;font-size:9pt;letter-spacing:2px;text-transform:uppercase;margin-bottom:7mm}
+h2{font-size:12.5pt;font-weight:900;color:#c0182c;margin:6mm 0 2mm;padding-bottom:1mm;border-bottom:2px solid #f0dde0}
+h3{font-size:10pt;font-weight:800;margin:3mm 0 1.2mm;color:#3a2030}
+p{margin-bottom:2mm}
+table{width:100%;border-collapse:collapse;margin:2mm 0 3mm;font-size:8.6pt}
+th{background:#2a1020;color:#fff;text-align:left;padding:1.5mm 2.4mm;font-size:7.6pt;letter-spacing:.8px;text-transform:uppercase}
+td{padding:1.5mm 2.4mm;border-bottom:1px solid #eee2e6;vertical-align:top}
+tr:nth-child(even) td{background:#faf6f7}
+code{font-family:Consolas,monospace;background:#f4ecf0;padding:.3mm 1mm;border-radius:2px;font-size:8.2pt}
+.kv{display:flex;gap:3.5mm;margin:2mm 0 4mm}
+.kv>div{flex:1;background:#faf5f6;border-left:3px solid #c0182c;padding:1.8mm 2.6mm}
+.kv b{display:block;font-size:14pt;color:#c0182c}
+.kv small{color:#77707e;font-size:7.6pt;text-transform:uppercase;letter-spacing:.7px}
+.tag{display:inline-block;background:#fbeaec;color:#c0182c;border:1px solid #eecdd3;border-radius:8px;padding:.2mm 2mm;font-size:7.2pt;font-weight:700;margin-right:1.4mm}
+.pass{color:#0d7a43;font-weight:700}.warn{color:#b46a00;font-weight:700}.bad{color:#c0182c;font-weight:700}
+ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
+.footer{margin-top:7mm;padding-top:2mm;border-top:1px solid #ddd;color:#999;font-size:7.4pt}
+</style>
+</head>
+<body>
+
+<h1>IQ <span>VERSUS</span> → IQ VERSUS: <em>SHADOW</em></h1>
+<div class="sub">Rebuild report · reverse-engineered from iqversus.com · delivered 2026-08-23</div>
+
+<div class="kv">
+<div><b>2,400+</b><small>lines of code</small></div>
+<div><b>∞</b><small>puzzles (procedural)</small></div>
+<div><b>8</b><small>sub-agents used</small></div>
+<div><b>~2.5 hrs</b><small>concept → delivery</small></div>
+</div>
+
+<h2>1 · What Was Asked vs What Was Built</h2>
+<p>A rebuild of IQ Versus that <b>looks and feels identical to the original at first</b> — same luxe dark-navy UI, same puzzle format, same flow — then degenerates into a chaotic evil meta-game: a mid-round-1 power-cut “zap”, subtle wrongness in round 2, and full Shadow-the-Hedgehog-flavored corruption from round 3 onward, ending as <b>IQ VERSUS: SHADOW</b>. Plus: real room-code multiplayer hostable on GitHub Pages, a puzzle forge, and far less frequent ability picks so the game stays playable.</p>
+
+<h2>2 · The Original: Findings From Live Inspection + Client-Bundle Analysis</h2>
+<table>
+<tr><th>Aspect</th><th>Finding</th></tr>
+<tr><td>Flow</td><td>Display name + room name → Create Room → invite link → lobby (Rounds=10, Timer=60s defaults) → live match. Verified by creating a real profile and playing a round.</td></tr>
+<tr><td>Puzzles</td><td>Attribute-grid matrices: colored shapes (pluses etc.) with one “?” hole; 8 candidate tiles; decoys mutate 1–2 attributes of the correct tile.</td></tr>
+<tr><td>Stack</td><td>React 19.2.8 SPA (Vite, 654 KB bundle), route <code>/room/:code</code>, “luxe” design system.</td></tr>
+<tr><td>Multiplayer</td><td><b>REST + polling, not WebSockets</b>: <code>POST /api/rooms/{code}/join</code>, <code>PATCH …/settings</code> (with <code>expectedVersion</code> optimistic concurrency), <code>banPlayer</code>, contact API.</td></tr>
+<tr><td>Authority</td><td>Server-generated puzzles (<code>questionCells/questionGrid/tileBlobs</code>, cache-keyed per round with expiry); client sends <code>selectedOptionId</code>, server returns per-option <code>isCorrect</code>. Answer key never ships to the client.</td></tr>
+<tr><td>State</td><td>localStorage: display name + recent rooms (capped 20). Sign-in disabled (“not connected yet”).</td></tr>
+</table>
+
+<h2>3 · Security Review</h2>
+<h3>iqversus.com</h3>
+<table>
+<tr><th>#</th><th>Finding</th><th>Verdict</th></tr>
+<tr><td>1</td><td>Server-authoritative answering — answer key never in client bundle; anti-replay round caching</td><td class="pass">STRONG</td></tr>
+<tr><td>2</td><td>Room codes ~8 chars uppercase alnum (~40 bits) — brute-force join impractical</td><td class="pass">OK</td></tr>
+<tr><td>3</td><td>No authentication yet: anyone with a code can join as anyone; <code>banPlayer</code> has no identity backbone</td><td class="warn">RISK (pre-auth product stage)</td></tr>
+<tr><td>4</td><td>Optimistic versioning on settings prevents host/co-host race conditions</td><td class="pass">GOOD</td></tr>
+<tr><td>5</td><td>No secrets/PII in bundle; minimal localStorage</td><td class="pass">OK</td></tr>
+</table>
+<h3>IQ Versus: Shadow</h3>
+<p>Same good pattern applied: the host broadcasts rounds <b>with the answer stripped</b> (<code>IQ.Net.sanitizeRound</code>); clients send picks; host sends reveals. Fully offline-capable; zero network calls in solo; data confined to localStorage; no eval, no external assets beyond the PeerJS CDN.</p>
+
+<h2>4 · Architecture</h2>
+<table>
+<tr><th>Module</th><th>Lines</th><th>Role</th></tr>
+<tr><td><code>index.html</code></td><td>651</td><td>Shell: landing/lobby/play/results, corruption timeline (zap @R1, subtle @R2, stages @3/5/7), scoring, demon AI, Chaos Emerald economy, forge/grimoire/settings, host-authoritative MP wiring</td></tr>
+<tr><td><code>puzzles.js</code></td><td>342</td><td>Seeded generator: 3 kinds × 5 difficulties × 5 rule families (dual rules at 3+), near-miss decoys, validator; 200-puzzle self-test passed (uniform answers, zero duplicate options)</td></tr>
+<tr><td><code>audio.js</code></td><td>451</td><td>Procedural WebAudio: 13 SFX, 3 act-reactive ambience beds</td></tr>
+<tr><td><code>chaos.js</code></td><td>330</td><td>Juice: shake/glitch/flash/invert/embers/scanlines, per-stage intensity</td></tr>
+<tr><td><code>shadow.js</code></td><td>~200</td><td>Persona: 11 quip pools, TTS voice, original SVG silhouette, deterministic per-round timeline</td></tr>
+<tr><td><code>net.js</code></td><td>406</td><td>Triple-transport multiplayer: PeerJS (internet) + BroadcastChannel + localStorage bus (same-browser), host-authoritative, answer-sanitized</td></tr>
+<tr><td><code>luxe.css</code></td><td>470</td><td>Faithful luxe clone + 4-stage visual corruption, reduced-motion + responsive + focus-visible</td></tr>
+</table>
+
+<h2 class="pb">5 · Fidelity: Original vs Clone</h2>
+<table>
+<tr><th></th><th>IQ Versus</th><th>Clone (Act 0)</th></tr>
+<tr><td>Branding/flow</td><td>Name + room → create/join by code → lobby (rounds/timer) → match</td><td>Identical flow; code-based join</td></tr>
+<tr><td>Look</td><td>Navy luxe, blue→pink accents, pill buttons, 8-tile grid, scoreboard</td><td>Pixel-matched tokens; verified by screenshot diff against live site</td></tr>
+<tr><td>Puzzle format</td><td>Matrix + “?” + 8 tiles</td><td>Same, + sequence & odd-one-out kinds; same decoy philosophy</td></tr>
+<tr><td>Difficulty</td><td>Server-side scaling (unobserved)</td><td>1–5, grids 3×3→5×5, dual rules at 3+</td></tr>
+</table>
+
+<h2>6 · The Evil Layer (new)</h2>
+<ul>
+<li><b>Slow-burn arc:</b> zap mid-R1 → one wrong thing in R2 → palette drain @R3 → crimson @R5 → full Shadow realm @R7 (title becomes <b>IQ VERSUS: SHADOW</b>).</li>
+<li><b>Shadow persona:</b> deadpan quips (“Welcome to the shadow realm.”), optional pitched-down robot voice, original silhouette avatar — no copyrighted assets.</li>
+<li><b>Chaos Emeralds</b> (only rounds 3/6/9 — unhurried by design): CHAOS CONTROL (saves you from impossible rounds), DOOM BLOOM, GRAVITY GREED, BLACK ARROW, CRIMSON VEIL, FINAL CHAOS — each a real tradeoff.</li>
+<li><b>Corrupted & impossible puzzles:</b> from R4 the house quietly breaks patterns; from R6 some rounds have <i>no valid answer</i> — survivable via emeralds, otherwise everyone bleeds together. The joke always has a counterplay.</li>
+<li><b>Cult meta-progression:</b> defeated demons join your Grimoire; corruption meter; deepest stage persists between sessions.</li>
+</ul>
+
+<h2>7 · Multiplayer & Hosting</h2>
+<ul>
+<li><b>Host-authoritative</b> room with 5-char share codes; join by code; live round sync, picks, reveals, scores — verified end-to-end with two concurrent browser tabs.</li>
+<li><b>Triple transport:</b> PeerJS WebRTC (cross-device, no server), BroadcastChannel, and a storage-event + polling bus (same-browser, bulletproof). Host keeps the room alive even when the free broker throttles.</li>
+<li><b>GitHub Pages ready:</b> static files, <code>.nojekyll</code> included, README with 3-step deploy. Cross-device play uses the free PeerJS cloud (no keys); same-browser play never needs it.</li>
+</ul>
+
+<h2>8 · Build Statistics</h2>
+<table>
+<tr><th>Metric</th><th>Value</th></tr>
+<tr><td>Code shipped</td><td>~2,850 lines across 8 files (zero build step, zero dependencies beyond PeerJS CDN)</td></tr>
+<tr><td>Main-session model</td><td><code>openrouter/qwen/qwen3.7-flash</code> — all orchestration, shell, integration, fixes</td></tr>
+<tr><td>Sub-agents (8 total)</td><td>PuzzleForge 12m54s · HellAudio 4m02s · ChaosFX 1m54s · LuxeForger 26m43s · NetWeaver 2m19s · ShadowPersona 1m40s · GauntletRunner 25m39s · ForgeTester 30m36s</td></tr>
+<tr><td>Puzzle count</td><td>Original: server bank, size unknown. Clone: infinite seeded (validated 200-sample: 100% valid, uniform answers 19–30/200 per slot, zero duplicate options) + user-forged puzzles</td></tr>
+<tr><td>Bugs caught & fixed during verification</td><td>11 — incl. a silent broadcast crash, host self-consumption of packets, a transport nonce colliding with the protocol’s round field, and an act-transition that ate playable rounds</td></tr>
+<tr><td>Automated audits</td><td>Full 10-round gauntlet (all rounds dealt, transitions at correct rounds, zero JS errors) + independent forge/grimoire/settings audit — both PASS</td></tr>
+</table>
+
+<h2>9 · What Wasn’t Possible</h2>
+<ul>
+<li><b>Their backend:</b> rooms/accounts/ELO are private server-side; cross-device play here uses PeerJS’s free public broker instead (occasionally busy — same-browser and solo unaffected).</li>
+<li><b>Their exact puzzle bank & scoring formula:</b> server-side secrets; recreated the format and designed an equivalent scoring model.</li>
+<li><b>Official Shadow the Hedgehog assets:</b> voice/imagery are IP — replaced with parody text quips, an original silhouette, and a robot voice filter.</li>
+</ul>
+
+<h2>10 · Known Limitations</h2>
+<ul>
+<li>Cross-device multiplayer depends on the free PeerJS broker’s mood; same-browser and solo are bulletproof.</li>
+<li>Mid-match joiner re-sync (joining a running game) is best-effort; freshest experience is joining before START.</li>
+<li>Forge authors matrix-kind puzzles only (by design — it matches the original’s core format).</li>
+</ul>
+
+<div class="footer">IQ Versus: Shadow rebuild report · local build at Desktop/stuff/iqbattle/ · original analyzed via live play + public client bundle (iqversus.com, 2026-08-23) · this document generated locally</div>
+
+</body>
+</html>

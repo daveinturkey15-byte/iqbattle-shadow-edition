@@ -1,0 +1,38 @@
+# IQ Versus: SHADOW
+
+A faithful-looking clone of [iqversus.com](https://www.iqversus.com/) head-to-head abstract-reasoning puzzles that starts identical to the original… and slowly rots into an evil Shadow-themed meta game. Built as a static site — no backend, no build step.
+
+## Play
+
+- **Solo**: open the site, enter a name, Create Room, START. You face house demons.
+- **Friends (same browser profile / local)**: Host creates a room (a 5-char code appears in the lobby title). Friends enter the code and Join. Transport: BroadcastChannel + localStorage bus (same-browser tabs) with PeerJS WebRTC for cross-device when the public broker cooperates.
+
+## Deploy to GitHub Pages
+
+1. Push this folder to a GitHub repo (keep the file layout flat — `index.html` must sit at the repo root).
+2. Repo → Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`.
+3. Done: `https://<you>.github.io/<repo>/`. The `.nojekyll` file skips Jekyll processing.
+
+Cross-device multiplayer uses the free PeerJS cloud broker (`unpkg.com/peerjs@1.4.7` + `0.peerjs.com`) — no keys, no server of your own. If the broker is busy, same-browser play still works via the storage bus, and solo is always fully playable.
+
+## Files
+
+| File | Role |
+|---|---|
+| `index.html` | Shell: screens, acts/corruption timeline, scoring, AI demons, emeralds, forge, grimoire |
+| `puzzles.js` | Seeded procedural puzzle generator (matrix / sequence / odd-one-out), validator |
+| `audio.js` | 100% procedural WebAudio SFX + act-reactive ambience |
+| `chaos.js` | Screen juice: shake, glitch, flash, invert, embers, scanlines |
+| `shadow.js` | Shadow persona: quips, speech, avatar, per-round corruption timeline |
+| `net.js` | PeerJS + BroadcastChannel + storage-bus multiplayer (host-authoritative) |
+| `luxe.css` | The luxe theme (stages 0-3 of visual corruption) |
+
+## The corruption arc
+
+- **Rounds 1–2**: pixel-faithful IQ Versus. A power-cut "zap" hits mid-round 1. Something tiny is off in round 2.
+- **Round 3+**: the palette drains, the title flickers, Shadow starts talking, a Chaos Emerald surfaces (pick your poison — only at rounds 3/6/9).
+- **Round 7+**: IQ VERSUS: SHADOW. Black/crimson/emerald hell, corrupted and impossible puzzles — survivable with the right emerald (CHAOS CONTROL).
+
+## Security note
+
+Multiplayer is host-authoritative: the host generates each puzzle and broadcasts it **without the answer key** (same pattern the original's server uses). Clients send picks; the host sends reveals. No accounts, no personal data, everything stays in your browser's localStorage.
