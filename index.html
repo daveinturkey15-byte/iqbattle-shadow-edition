@@ -374,7 +374,7 @@ function startRun(){
  G.timerLen=clamp(G.mpCfg&&G.mpCfg.timer!=null?G.mpCfg.timer:(+$('#cfg-timer').value||60),1,120);
  G.hookScoreMul=1;G.invertUntil=0;G.disabledOpts=null;G.spectating=false;G.hookSeq=0;
  try{G.hookSeed=(Math.random()*0xFFFFFFFF)>>>0;window.IQ&&IQ.Hooks&&IQ.Hooks.beginRun&&IQ.Hooks.beginRun(G.mp.code||('solo-'+Date.now()),G.hookSeed)}catch(e){}
- G.lms=G.mp.on?!!(G.mpCfg&&G.mpCfg.lms):false;
+ G.lms=(function(){ if(!G.mp.on)return false; if(G.mpCfg&&G.mpCfg.lms!=null)return !!G.mpCfg.lms; var e=document.getElementById('cfg-lms'); return !!(e&&e.classList.contains('on')); })();
  G.remotePicks={};G.remoteAttacks={};G.humans=[];G.lastAppliedRevealRound=null;
  G.hp=100;G.w1=null;G.prevAlign=null;renderHp();
  try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){}
