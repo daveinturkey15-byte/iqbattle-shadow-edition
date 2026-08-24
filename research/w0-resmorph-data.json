@@ -1,0 +1,578 @@
+{
+ "meta": {
+  "agent": "ResMorph",
+  "task": "W0 deep-capture live iqversus.com puzzle system",
+  "date": "2026-08-24",
+  "site": "https://www.iqversus.com/",
+  "method": "CDP JSON-RPC over WebSocket to shared headless Chrome (port 52607); page-side JS drivers; OffscreenCanvas alpha-mask decode of blob-PNG tiles; ground truth from post-answer reveal classes",
+  "rooms": [
+   "ResMorph A1",
+   "ResMorph B1(aborted)",
+   "ResMorph C1(partial)",
+   "ResMorph D1(throttled)"
+  ],
+  "localStorageKeysUsed": "rsh3_resmorph_* (harvested+deleted to free origin quota)"
+ },
+ "baseline_v1": {
+  "source": "localStorage rsh2_0..9+rsh_caps (PuzzleResearch)",
+  "modesSeen": {
+   "matrix_2x2_hole3": 3,
+   "matrix_3x3_hole8": 7,
+   "single_image_no_hole": 5
+  },
+  "note": "v1 sampled ONLY structural modes; no content-level archetype analysis"
+ },
+ "coverage_this_run": {
+  "total_rounds_captured_with_full_stats": 7,
+  "underSampledOrMorphRounds": 7,
+  "breakdown": {
+   "rotation_morph": 1,
+   "dotLattice_positional_morph": 1,
+   "innerGlyph_morph": 1,
+   "setCompletion_checkerboard": 1,
+   "multiAttribute_composite": 1,
+   "singlePanel_fused": 1,
+   "colorStep_geometryInvariant": 1
+  }
+ },
+ "rounds": [
+  {
+   "id": "A1r1",
+   "room": "ResMorph A1",
+   "round": "Round 1/10",
+   "mode": "single-image-fused",
+   "gridCls": "luxe-game-question-grid-single-image",
+   "natSize": [
+    660,
+    660
+   ],
+   "cols": 1,
+   "holeIdx": [],
+   "timer": "01:00",
+   "timerElCls": "luxe-game-round-status-time",
+   "groundTruth": "opt4 correct (we picked opt0 wrong)",
+   "panelMetrics": {
+    "w": 660,
+    "h": 660,
+    "fill": 0.889,
+    "cx": 0.527,
+    "cy": 0.527,
+    "color": "#ee2266",
+    "hue": 340,
+    "sat": 86,
+    "lum": 53,
+    "perimRatio": 5.65
+   },
+   "components": [
+    {
+     "areaPct": 0.889,
+     "cx": 0.525,
+     "cy": 0.525,
+     "w": 660,
+     "h": 660
+    }
+   ],
+   "options": "all solid squares fill=1.0 aspect=1 color #ee2266 except opt6 #8811dd (hue275); correct=idx4 (color match)",
+   "finding": "fused single-panel round: options are geometrically degenerate SOLID tiles differing only in color; question tests dominant-color identity of fused panel"
+  },
+  {
+   "id": "A1r2",
+   "room": "ResMorph A1",
+   "round": "Round 2/10",
+   "mode": "matrix-3x3",
+   "holeIdx": [
+    8
+   ],
+   "timer": "01:00",
+   "groundTruth": "opt5 correct (picked opt0 wrong)",
+   "archetype": "inner-glyph morph inside outline frame",
+   "cells": [
+    {
+     "i": 0,
+     "sil": "0000000000000000001ffffc18000c140814121c24111c44109c84104104102204101404100804101404102204104104109c84111c44121c2414081418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.189,
+     "aspect": 0.994,
+     "cx": 0.498,
+     "cy": 0.498,
+     "color": "#778899",
+     "hue": 210,
+     "perimRatio": 28.86
+    },
+    {
+     "i": 1,
+     "sil": "0000000000000000001ffffc18000c140814121c24111c44109c8410410410220413940417880413940410220410410410808411004412002414001418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.188,
+     "aspect": 0.994,
+     "cx": 0.461,
+     "cy": 0.461,
+     "perimRatio": 28.87
+    },
+    {
+     "i": 2,
+     "sil": "0000000000000000001ffffc18000c140814121c24111c44109c8410410410220410140410080410140410220410410410808411004412002414001418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.157,
+     "aspect": 0.994,
+     "cx": 0.498,
+     "cy": 0.452,
+     "perimRatio": 30.27
+    },
+    {
+     "i": 3,
+     "sil": "0000000000000000001ffffc18000c140014120024110044108084104104102204139404178804139404102204104104109c84111c44121c2414081418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.188,
+     "aspect": 0.994,
+     "cx": 0.461,
+     "cy": 0.535,
+     "perimRatio": 28.88
+    },
+    {
+     "i": 4,
+     "sil": "0000000000000000001ffffc18000c14001412002411004410808410410410220413940417880413940410220410410410808411004412002414001418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.157,
+     "aspect": 0.994,
+     "cx": 0.453,
+     "cy": 0.498,
+     "perimRatio": 30.25
+    },
+    {
+     "i": 5,
+     "sil": "0000000000000000001ffffc18000c140814121c24111c44109c8410410410220413940417880413940410220410410410808411004412002414001418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.188,
+     "aspect": 0.994,
+     "cx": 0.461,
+     "cy": 0.461,
+     "perimRatio": 28.87
+    },
+    {
+     "i": 6,
+     "sil": "0000000000000000001ffffc18000c140014120024110044108084104104102204101404100804101404102204104104109c84111c44121c2414081418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.157,
+     "aspect": 0.994,
+     "cx": 0.498,
+     "cy": 0.543,
+     "perimRatio": 30.25
+    },
+    {
+     "i": 7,
+     "sil": "0000000000000000001ffffc18000c140014120024110044108084104104102204139404178804139404102204104104109c84111c44121c2414081418000c1ffffc000000000000",
+     "w": 170,
+     "h": 171,
+     "fill": 0.188,
+     "aspect": 0.994,
+     "cx": 0.461,
+     "cy": 0.535,
+     "perimRatio": 28.88
+    }
+   ],
+   "finding": "constant outer square OUTLINE frame (~170px, thin strokes pr~29); inner glyph morphs per cell (silhouettes show inner X/arrow/line variants) and frame edge-notches alternate sides; fill drops .188->.157 when glyph variant changes"
+  },
+  {
+   "id": "A1r3",
+   "room": "ResMorph A1",
+   "round": "Round 3/10",
+   "mode": "matrix-3x3",
+   "holeIdx": [
+    8
+   ],
+   "timer": "01:00",
+   "groundTruth": "opt4 correct (picked opt0 wrong)",
+   "archetype": "ROTATION MORPH (teardrop/comet shape rotating ~45deg per step)",
+   "aspectSequenceRowMajor": [
+    1.196,
+    0.995,
+    0.832,
+    1.005,
+    1.196,
+    0.995,
+    1.005,
+    "HOLE"
+   ],
+   "cells": [
+    {
+     "i": 0,
+     "sil": "0000000000000800000c00301f00703fc1f83ffffe7fffffffffffffffffffffffffffffffffff7fffff3ffffe3ffffc1ffff80ffff007fff003ffc000ff80003e00000800000000",
+     "w": 220,
+     "h": 184,
+     "aspect": 1.196,
+     "cx": 0.488,
+     "cy": 0.48,
+     "fill": 0.682,
+     "color": "#0099aa",
+     "hue": 186,
+     "perimRatio": 3.51
+    },
+    {
+     "i": 1,
+     "sil": "000000000c00001f8007ffe00ffff81ffff81ffffc1ffffc1ffffe1ffffe1ffffe3fffff7fffff0fffff01fffe003ffe003ffe003ffe001ffe001ffc001ff8000ff0000fe0000c00",
+     "w": 207,
+     "h": 208,
+     "aspect": 0.995,
+     "cx": 0.55,
+     "cy": 0.459,
+     "fill": 0.643,
+     "perimRatio": 3.72
+    },
+    {
+     "i": 2,
+     "sil": "000f80001fc0007ff000fff803fffc03fffc07fff807fff80ffff00ffff01fffe01fffe03fffc01fffe01fffe00ffff00ffff007fff803fffc03fffc00fff0007fe0003fc0001fc0",
+     "w": 183,
+     "h": 220,
+     "aspect": 0.832,
+     "cx": 0.515,
+     "cy": 0.488,
+     "fill": 0.686,
+     "perimRatio": 3.51
+    },
+    {
+     "i": 3,
+     "sil": "000000000800000c00000ff0001ff8001ffc001ffc003ffc003ffc003ffc01fffc0ffffe7fffff7fffff3ffffe3ffffe3ffffe3ffffc3ffffc1ffff80ffff807ffe003ff80001c00",
+     "w": 208,
+     "h": 207,
+     "aspect": 1.005,
+     "cx": 0.537,
+     "cy": 0.55,
+     "fill": 0.643,
+     "perimRatio": 3.72
+    },
+    {
+     "i": 4,
+     "sil": "000000000000000800003e0000ff8003ffc007fff807fff80ffffc1ffffe3ffffe7fffffffffffffffffffffffffffffffffff7fffff1ff7fe0fc1fe07007c040038000008000000",
+     "w": 220,
+     "h": 184,
+     "aspect": 1.196,
+     "cx": 0.507,
+     "cy": 0.515,
+     "fill": 0.682,
+     "perimRatio": 3.51
+    },
+    {
+     "i": 5,
+     "sil": "00000000180003f80007f8000ffc001ffc003ffc003ffe003ffe003ffe003fffc07ffff87fffff7ffffe3ffffc3ffffc3ffffc1ffffc1ffffc0ffffc0ffff803fff000fc00001800",
+     "w": 207,
+     "h": 208,
+     "aspect": 0.995,
+     "cx": 0.445,
+     "cy": 0.537,
+     "fill": 0.643,
+     "perimRatio": 3.72
+    },
+    {
+     "i": 6,
+     "sil": "000000001c0000ffe003fff00ffff80ffffc1ffffe1ffffe3ffffe3ffffe3ffffe7fffff7fffff3ffff81fffc01ffe001ffe001ffe001ffc001ffc000ffc0007f800001800000800",
+     "w": 208,
+     "h": 207,
+     "aspect": 1.005,
+     "cx": 0.459,
+     "cy": 0.445,
+     "fill": 0.643,
+     "perimRatio": 3.72
+    },
+    {
+     "i": 7,
+     "sil": "0000000000000800000c00301f00703fc1f83ffffe7fffffffffffffffffffffffffffffffffff7fffff3ffffe3ffffc1ffff80ffff007fff003ffc000ff80003e00000800000000",
+     "w": 220,
+     "h": 184,
+     "aspect": 1.196,
+     "cx": 0.488,
+     "cy": 0.48,
+     "fill": 0.682,
+     "perimRatio": 3.51
+    }
+   ],
+   "finding": "PARAMETER AXIS = rotation angle ~45deg/cell; bbox aspect oscillates .83<->1.20 with period 4 (180-deg bbox symmetry over 4 steps => 360deg cycle = 8 cells); centroid orbits center +-0.05 as tail swings; magnitude |w-h| up to 37px of 220; start state tail pointing down-right; constant hue/fill family"
+  },
+  {
+   "id": "A1r4",
+   "room": "ResMorph A1",
+   "round": "Round 4/10",
+   "mode": "matrix-2x2",
+   "holeIdx": [
+    3
+   ],
+   "timer": "01:00",
+   "groundTruth": "opt4 correct (picked opt0 wrong)",
+   "archetype": "dot-lattice positional morph (sub-pattern occupancy on 3x3 micro-grid)",
+   "cells": [
+    {
+     "i": 0,
+     "sil": "0000000007e00000000007e000000000000000000000000000000000000000000000000000000000000003f00000000003f00003f00003f7e003f7e000000003f7e000000003f7e0",
+     "w": 120,
+     "h": 212,
+     "aspect": 0.566,
+     "cx": 0.498,
+     "cy": 0.625,
+     "fill": 0.293,
+     "color": "#ddbb11",
+     "hue": 50,
+     "perimRatio": 19.66
+    },
+    {
+     "i": 1,
+     "sil": "00000003f7e00000000007e00000000007e00007e000000000000000000000000000000000000000000000000000000003f00003f00003f00003f00000000003f7e000000003f7e0",
+     "w": 120,
+     "h": 212,
+     "aspect": 0.566,
+     "cx": 0.498,
+     "cy": 0.539,
+     "fill": 0.293,
+     "perimRatio": 19.82
+    },
+    {
+     "i": 2,
+     "sil": "00000003f7e000000003f7e00000000007e00007e000000000000000000000000000000000000000000000000000000000000000000003f00003f00000000003f7e000000003f7e0",
+     "w": 120,
+     "h": 212,
+     "aspect": 0.566,
+     "cx": 0.498,
+     "cy": 0.497,
+     "fill": 0.293,
+     "perimRatio": 19.84
+    }
+   ],
+   "finding": "tile = 3x3 lattice of small square dots (~40px each in 212px tile); frames differ ONLY in which sub-slots are occupied; w/h/area/fill constant while centroid cy drifts monotonically UP: 0.625 -> 0.539 -> 0.497 (delta -0.086 then -0.042; decelerating upward drift); predicted next cy ~0.46"
+  },
+  {
+   "id": "A1r5",
+   "room": "ResMorph A1",
+   "round": "Round 5/10",
+   "mode": "matrix-3x3",
+   "holeIdx": [
+    8
+   ],
+   "timer": "01:00",
+   "groundTruth": "opt0 CORRECT (predictor scored exact match)",
+   "archetype": "SET-COMPLETION checkerboard of two outline classes",
+   "classes": {
+    "ringOutlineTeal": {
+     "w": 188,
+     "h": 188,
+     "fill": 0.266,
+     "aspect": 1,
+     "perimRatio": 9.99,
+     "color": "#0099aa",
+     "hue": 186
+    },
+    "squareFrameOrange": {
+     "w": 172,
+     "h": 172,
+     "fill": 0.356,
+     "aspect": 1,
+     "perimRatio": 12.04,
+     "color": "#ee6611",
+     "hue": 23
+    }
+   },
+   "arrangement": "strict checkerboard parity (row+col even = teal ring, odd = orange frame); hole at idx8 needs teal ring class; answer idx0 was teal ring -> correct",
+   "finding": "two-class set completion bound to color; silhouette confirms c0=circle outline, c1=square outline"
+  },
+  {
+   "id": "A1r6",
+   "room": "ResMorph A1",
+   "round": "Round 6/10",
+   "mode": "matrix-3x3",
+   "holeIdx": [
+    8
+   ],
+   "timer": "01:00",
+   "groundTruth": "opt4 correct (picked opt0 wrong)",
+   "archetype": "multi-attribute composite (color x fill x position)",
+   "cells": [
+    {
+     "i": 0,
+     "sil": "000000000000000000000c00000c00093c901ffffc04df6c000c00000c000018000934901ffffc049e48000c000018000010001b7db01fdf6c049e48001800001000000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.356,
+     "cx": 0.498,
+     "cy": 0.498,
+     "color": "#ee2266",
+     "hue": 340,
+     "perimRatio": 13.65
+    },
+    {
+     "i": 1,
+     "sil": "000000000000000000020860061860073dbc0f7bfc1fde70030c30030860061840030c30020860061840030c30030860061840073dfc1fef781ede70030c30030820000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.429,
+     "cx": 0.498,
+     "cy": 0.498,
+     "color": "#ee2266",
+     "hue": 340,
+     "perimRatio": 14.57
+    },
+    {
+     "i": 2,
+     "sil": "0000000000000000000008200008200008201ffffc000820000820000820000820000820000820000820000820000820000820000820000820000820000820000820000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.225,
+     "cx": 0.573,
+     "cy": 0.429,
+     "color": "#ddbb11",
+     "hue": 50,
+     "perimRatio": 12.05
+    },
+    {
+     "i": 3,
+     "sil": "0000000000000000000200200200200631ac0f7bfc1bce700200200200200200200200200200200200200200200200200200200739ec1fef781ac630020020020020000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.315,
+     "cx": 0.498,
+     "cy": 0.498,
+     "color": "#8811dd",
+     "hue": 275,
+     "perimRatio": 12.98
+    },
+    {
+     "i": 4,
+     "sil": "0000000000000000000100000300000600000600000300000100000300000600000600000300000100000300000600000600000300001ffffc030000060000060000000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.164,
+     "cx": 0.37,
+     "cy": 0.6,
+     "color": "#8811dd",
+     "hue": 275,
+     "perimRatio": 9.85
+    },
+    {
+     "i": 5,
+     "sil": "0000000000000000000208600618600b2cb01ffffc06db6c030c300308600618400b2cb01ffffc069a48030c300308600618401b6db01fdf6c069a48030c30030820000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.463,
+     "cx": 0.498,
+     "cy": 0.498,
+     "color": "#ee2266",
+     "hue": 340,
+     "perimRatio": 16.12
+    },
+    {
+     "i": 6,
+     "sil": "000000000000000000020860061860030c301ffffc061860030c30030860061840030c30020860061840030c30030860061840030c30030860061840030c30030820000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.336,
+     "cx": 0.498,
+     "cy": 0.458,
+     "color": "#ee2266",
+     "hue": 340,
+     "perimRatio": 14.22
+    },
+    {
+     "i": 7,
+     "sil": "0000000000000000000200200200200b24b01ffffc06d36c0200200200200200200b24b01ffffc0692680200200200200200201b6db01fdf6c069268020020020020000000000000",
+     "w": 168,
+     "h": 168,
+     "fill": 0.392,
+     "cx": 0.498,
+     "cy": 0.498,
+     "color": "#ee2266",
+     "hue": 340,
+     "perimRatio": 14.81
+    }
+   ],
+   "finding": "geometry constant (168px box, aspect 1) while FILL (.164-.463), HUE (340/275/50) and OFF-CENTER centroids (cells 2,4 displaced toward corners) vary independently => composite multi-axis matrix; perimRatio scales with fill (same stroke family)"
+  },
+  {
+   "id": "C1r2",
+   "room": "ResMorph C1",
+   "round": "Round 2/10",
+   "mode": "matrix-2x2",
+   "holeIdx": [
+    3
+   ],
+   "timer": null,
+   "groundTruth": "opt5 correct (we picked opt4 wrong)",
+   "archetype": "color-step / geometry-invariant oddity",
+   "cells": [
+    {
+     "i": 0,
+     "w": 201,
+     "h": 199,
+     "fill": 0.457,
+     "aspect": 1.01,
+     "cx": 0.497,
+     "cy": 0.498,
+     "color": "#8811dd",
+     "hue": 275,
+     "lum": 47,
+     "perimRatio": 11.84
+    },
+    {
+     "i": 1,
+     "w": 201,
+     "h": 199,
+     "fill": 0.458,
+     "aspect": 1.01,
+     "cx": 0.497,
+     "cy": 0.498,
+     "color": "#8811dd",
+     "hue": 275,
+     "lum": 47,
+     "perimRatio": 11.81
+    },
+    {
+     "i": 2,
+     "w": 201,
+     "h": 199,
+     "fill": 0.457,
+     "aspect": 1.01,
+     "cx": 0.497,
+     "cy": 0.498,
+     "color": "#11bb33",
+     "hue": 132,
+     "lum": 40,
+     "perimRatio": 11.84
+    }
+   ],
+   "finding": "pixel geometry IDENTICAL across cells (fill delta 0.001, pr delta 0.03); only hue changes 275->275->132 => rule lives purely on the color axis; correct option idx5"
+  }
+ ],
+ "mechanics": {
+  "structuralModes": {
+   "matrix": "2x2 (easy, hole always bottom-right idx3) and 3x3 (hole always bottom-right idx8); single-image 660x660 fused panel with NO hole slot",
+   "answerGrid": ".luxe-game-answer-grid > 8x .luxe-game-answer-option, tiles 220x220 blob PNGs",
+   "revealTaxonomy": [
+    "luxe-game-answer-option-correct-reveal",
+    "luxe-game-answer-option-self-wrong-reveal (your wrong pick)",
+    "luxe-game-answer-option-dimmed (others)"
+   ],
+   "timers": "solo gauntlet: Round1 01:00; observed 00:56-01:00 for matrix rounds; early v1 sample also saw 18-31s short rounds on easier sets",
+   "flow": [
+    "landing #display-name+#room-name -> Create Room (POST /api/rooms; room title regex: letters/numbers/spaces/apostrophes else 400 invalid_room_title)",
+    "-> /room/<CODE> lobby -> Start",
+    "Get Ready 3-2-1 countdown before each round",
+    "answer locks on first click; next round auto-advances after reveal"
+   ],
+   "rendering": "tiles are runtime-generated blob: PNGs (not sprites); natural size 220x220 per cell, 660x660 fused"
+  },
+  "keyDiscoveries": [
+   "1. Morph sequences are ROTATION-driven: an elongated comet shape steps ~45deg per cell; observable signature = bbox aspect oscillation (0.83..1.20, period 4) plus small centroid orbit; engine can synthesize and grade these via angle-stepped variants without any sprite art.",
+   "2. Positional morphs are OCCUPANCY shifts on a 3x3 micro-dot lattice: bbox w/h/area stay constant while the mask centroid travels (observed monotonic upward cy drift 0.625->0.497, decelerating); engines should model sub-slot occupancy rather than whole-shape translation.",
+   "3. Option grids are NOT isometric with the board: fused rounds show solid-fill degenerate option tiles graded purely on color identity, while set-completion boards bind shape class to color (ring-outline teal vs square-frame orange in strict checkerboard parity) - a generator must support per-role tile grammars, not one uniform tile schema."
+  ]
+ },
+ "infra_gotchas": [
+  "origin localStorage quota ~5MB shared with prior researchers keys: silent setItem failures; harvest+delete own keys between rounds",
+  "background-tab throttling freezes game rendering: keep Page.bringToFront + Emulation.setFocusEmulationEnabled alive during play",
+  "shared headless Chrome among parallel researchers: cross-agent tab interference observed (spontaneous reloads); use dedicated fresh tab per run",
+  "node_repl cannot write under Desktop/stuff (AppContainer EPERM): file delivery via broker-spawned node writer"
+ ]
+}

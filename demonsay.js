@@ -70,7 +70,7 @@
     'text-shadow:0 0 8px rgba(200,16,46,.9);}',
     '.iqds-title{font-size:clamp(18px,3vw,26px);font-weight:900;color:#fff;',
     'text-shadow:0 0 10px rgba(200,16,46,.95),0 0 26px rgba(200,16,46,.6);letter-spacing:.08em;}',
-    '.iqds-text{font-size:clamp(22px,5vw,38px);font-weight:900;line-height:1.12;color:#fff;',
+    '.iqds-text{font-size:clamp(24px,5.5vw,40px);font-weight:900;line-height:1.12;color:#fff;',
     'text-shadow:0 0 12px rgba(200,16,46,.95),0 0 34px rgba(200,16,46,.65);} ',
     '#iqDemonSay.tier2 .iqds-text{text-shadow:0 0 12px rgba(200,16,46,.95),0 0 30px rgba(40,255,140,.75);} ',
     '#iqDemonSay.tier2{border-color:rgba(40,255,140,.6);box-shadow:0 0 26px rgba(200,16,46,.45),0 0 40px rgba(40,255,140,.3);}',

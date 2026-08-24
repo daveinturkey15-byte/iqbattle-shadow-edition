@@ -3,3 +3,4 @@
 {"step":"edited","clickedEdit":true,"editorPrefill":{"name":"QA_SIGIL_V4","prompt":"QA PROMPT V4"},"afterEdit":{"count":5,"id":"f178755191920623","name":"QA_EDITED_V4","prompt":"QA PROMPT V4"}}
 {"step":"burned","clickedBurn":true,"afterBurn":{"count":4,"gone":true},"listCountText":"","errsFinal":null}
 {"step":"done","verdict":"OK"}
+{"step":"watchdog"}

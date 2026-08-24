@@ -102,9 +102,9 @@
   }
 
   function build(stage) {
+    var d = root.document.createElement('div');
     d.className = 'live ' + STAGES[stage].cls;
     d.id = 'iq-trans';
-    d.className = STAGES[stage].cls;
     var html = '';
     if (stage === 0) {
       html = '<div class="iqt-fade"></div>';
