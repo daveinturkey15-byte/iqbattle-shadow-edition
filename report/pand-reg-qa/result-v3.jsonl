@@ -1,0 +1,17 @@
+{"step":"start","pid":22880,"t":1787551705090}
+{"step":"boot","boot":{"g":true,"v":true,"trapLive":true,"errs":[]}}
+{"step":"forgeCreated","before":3,"header":"PUZZLE FORGE","editorUp":true,"created":{"count":4,"id":"f1787551708306788","name":"QA_SIGIL_8305","kind":"matrix","diff":2,"opts":8},"errsAfterCreate":0}
+{"step":"forgeEdited","prefillName":null,"edited":{"__err":"ReferenceError: fCreated is not defined\n    at <anonymous>:1:102\n    at <anonymous>:1:173"}}
+{"step":"forgeBurned","burned":{"__err":"ReferenceError: fCreated is not defined\n    at <anonymous>:1:105\n    at <anonymous>:1:162"},"errsAfterForge":0}
+{"step":"settings","initial":{"sound":{"on":true,"muted":false},"motion":{"on":true,"motion":true},"voice":{"__err":"TypeError: Cannot read properties of null (reading 'classList')\n    at <anonymous>:1:41"}},"soundT1":{"on":false,"muted":true},"soundT2":{"on":true,"muted":false},"motionT1":{"on":false,"motion":false},"motionT2":{"on":true,"motion":true},"voiceT1":{"__err":"TypeError: Cannot read properties of null (reading 'classList')\n    at <anonymous>:1:41"},"voiceT2":{"__err":"TypeError: Cannot read properties of null (reading 'classList')\n    at <anonymous>:1:41"}}
+{"step":"stub","cleanseDisabled":true}
+{"step":"lobby","lobbyOk":true}
+{"step":"interlude","atRound":3,"title":"a chaos emerald surfaces","cards":3,"gotEmeralds":"doom_bloom"}
+{"step":"interlude","atRound":6,"title":"a chaos emerald surfaces","cards":3,"gotEmeralds":"doom_bloom,crimson_veil"}
+{"step":"interlude","atRound":9,"title":"a chaos emerald surfaces","cards":3,"gotEmeralds":"doom_bloom,crimson_veil,black_arrow"}
+{"step":"results","text":"MATCH TERMINATED\nSHADOW BOWS. YOU WON.\n454\nSCORE\n10\nROUNDS\nNEW CULT MEMBERS\nBEELZEBOT\nMALGORATH\nBACK TO LOBBY\nDESCEND AGAIN","finalRound":10,"totalRounds":10,"screen":"center"}
+{"step":"runEnd","ended":true,"stable":{"screen":"center","round":10,"stillResults":true,"resultsText":"MATCH TERMINATED\nSHADOW BOWS. YOU WON.\n454\nSCORE\n10\nROUNDS\nNEW CULT MEMBERS\nBEELZEBOT\nMALGORATH\nBACK TO LOBBY\nDESCEND AG","nOpts":8},"lastSnap":{"screen":"center","round":10,"total":10,"stage":3,"body":"act-0 iqgb-motion act-3 corr-3 gxt-stage3","answered":true,"interlude":false,"nOpts":8,"results":true}}
+{"step":"grimoire","grim":{"heading":"GRIMOIRE","meter":true,"meterWidth":"77%","text":"← BACK\nGRIMOIRE\n🜃\nQAREG\nRUNS 3 · WINS 1 · BEST 454 · DEEPEST STAGE 3\nCORRUPTION\n2\nFRAGMENTS SOLVED\n19\nSINS\n2\nCULT MEMBERS\nBEELZEBOT\nMALGORATH\nEMERALDS TOUCHED: 4/6"}}
+{"step":"errors","errsFinal":[],"cerrsFinal":[],"stageMap":{"1":{"stage":0,"body":"act-0 iqgb-motion"},"2":{"stage":0,"body":"act-0 iqgb-motion"},"3":{"stage":1,"body":"act-0 iqgb-motion act-1 corr-1"},"4":{"stage":1,"body":"act-0 iqgb-motion act-1 corr-1"},"5":{"stage":2,"body":"act-0 iqgb-motion act-2 corr-2"},"6":{"stage":2,"body":"act-0 iqgb-motion act-2 corr-2"},"7":{"stage":3,"body":"act-0 iqgb-motion act-3 corr-3 gxt-stage3"},"8":{"stage":3,"body":"act-0 iqgb-motion act-3 corr-3 gxt-stage3"},"9":{"stage":3,"body":"act-0 iqgb-motion act-3 corr-3 gxt-stage3"},"10":{"stage":3,"body":"act-0 iqgb-motion act-3 corr-3 gxt-stage3"}}}
+{"step":"done","verdict":"COMPLETED"}
+{"step":"watchdog"}

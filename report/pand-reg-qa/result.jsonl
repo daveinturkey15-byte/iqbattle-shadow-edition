@@ -1,0 +1,5 @@
+{"step":"runEnd","ended":false,"stable":null,"lastSnap":{"screen":"play","round":5,"total":10,"stage":2,"body":"act-0 iqgb-motion act-2 corr-2 cleanse","answered":true,"interlude":false,"nOpts":8,"results":false}}
+{"step":"grimoire","grim":{"heading":"GRIMOIRE","meter":true,"meterWidth":"44%","text":"← BACK\nGRIMOIRE\n🜃\nQAREG\nRUNS 1 · WINS 0 · BEST 0 · DEEPEST STAGE 2\nCORRUPTION\n0\nFRAGMENTS SOLVED\n10\nSINS\n0\nCULT MEMBERS\nEMERALDS TOUCHED: 2/6"}}
+{"step":"errors","errsFinal":[],"cerrsFinal":[],"stageMap":{"1":{"stage":0,"body":"act-0 iqgb-motion"},"2":{"stage":0,"body":"act-0 iqgb-motion"},"3":{"stage":1,"body":"act-0 iqgb-motion act-1 corr-1"},"4":{"stage":1,"body":"act-0 iqgb-motion act-1 corr-1"},"5":{"stage":2,"body":"act-0 iqgb-motion act-2 corr-2"}}}
+{"step":"done","verdict":"RUN_TIMEOUT"}
+{"step":"watchdog"}

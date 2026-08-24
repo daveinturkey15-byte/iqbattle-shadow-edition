@@ -185,16 +185,6 @@
       setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 350);
     }, 4000);
 
-    // dark rumble voice
-    if (opts.voice && typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined') {
-      try {
-        window.speechSynthesis.cancel();
-        var u = new window.SpeechSynthesisUtterance(text || '');
-        u.rate = 0.82;
-        u.pitch = 0.35;
-        window.speechSynthesis.speak(u);
-      } catch (e) { /* voice unavailable */ }
-    }
   };
 
   // Per-round corruption effects. Deterministic via mulberry32(round*7919)

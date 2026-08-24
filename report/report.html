@@ -5,6 +5,7 @@
 <style>
 @page{size:A4;margin:15mm}
 *{box-sizing:border-box;margin:0;padding:0}
+
 body{font-family:'Segoe UI',sans-serif;color:#1a1620;font-size:10pt;line-height:1.5;background:#fff}
 h1{font-size:23pt;font-weight:900;letter-spacing:-.5px;margin-bottom:2mm}
 h1 span{background:linear-gradient(90deg,#3f7dff,#ff2e88);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -29,6 +30,16 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 </style>
 </head>
 <body>
+<div style="background:#0d0710;color:#f2dfdf;border-radius:10px;padding:5mm 6mm;margin-bottom:6mm">
+<div style="font-size:8pt;letter-spacing:2px;color:#ff2e88;font-weight:800;margin-bottom:2mm">ADDENDUM — POST-RELEASE GAUNTLET (same day)</div>
+<div style="font-size:9.5pt;line-height:1.5;color:#e8dcd2">
+<b style="color:#00e68a">iPhone blocker fixed.</b> Play-testing on iPhone revealed the landing overflowed small screens and Create Room hung on the broker. Landing rebuilt mobile-first: <b>PLAY SOLO</b> / <b>HOST ROOM</b> (join-by-code tucked away), 3.5s broker timeout race, iOS-zoom-safe inputs. Verified on emulated iPhone 390×844 with real touch events: landing fits with zero overflow, all 8 options tappable, solo + host + join flows PASS on the live deployment.<br><br>
+<b style="color:#00e68a">Multiplayer scoring rebuilt host-authoritative.</b> Swarm testing exposed that clients could never truly score (picks unwired, name-collision score crossover). Now: clients send uid-stamped picks; host computes and broadcasts accumulated scores; clients apply by uid (same-name tabs can never cross-apply). Verified 2-player mobile-viewport end-to-end on live: 280/240 scoreboards identical cross-tab.<br><br>
+<b style="color:#00e68a">Puzzles rebuilt from captured ground truth.</b> 20 live iqversus rounds captured with per-tile data and reveal-verified answers. Real recipe decoded: 2×2/3×3 grids, bottom-right hole, six archetypes (color-by-row/column, Latin-square, diagonal hue-step, morph sequences, categorical completion), 7-hue flat palette, duplicates-allowed decoys. New primary generator implements this; six competing variant generators (color-latin, rotation, count, shape-cycle, dual-axis, wild-corruption) stage-gated behind it.<br><br>
+<b style="color:#00e68a">Fidelity + a11y + graphics.</b> Oxanium webfont, 4-stop signature gradient, near-black panels, black option cells with hairline borders, 30px round header — top-10 visual deltas from a computed-style side-by-side audit applied. Animated hellscape background, board corner-brackets, deal-in tile staggers, title drips. Keyboard/touch/ARIA fixes: relic cards and options now keyboard-reachable, modifier-guarded number keys, idempotent reveals.<br><br>
+<b style="color:#00e68a">Swarm total:</b> 36 sub-agents across 3 mega-waves. Live verification: full solo gauntlet (10 rounds, all stages, emeralds, results, zero JS errors), 2-player MP (join→sync→pick→reveal→scores by uid), mobile 375px + 390×844 passes.
+</div></div>
+
 
 <h1>IQ <span>VERSUS</span> → IQ VERSUS: <em>SHADOW</em></h1>
 <div class="sub">Rebuild report · reverse-engineered from iqversus.com · delivered 2026-08-23</div>

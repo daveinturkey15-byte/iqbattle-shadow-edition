@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;700;800&display=swap">
 <link rel="stylesheet" href="./luxe.css">
+<link rel="stylesheet" href="./board-skins.css">
 <style>
 #fx-layer{position:fixed;inset:0;pointer-events:none;z-index:60}
 </style>
@@ -89,7 +90,7 @@
 <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js" crossorigin="anonymous"></script>
 <script src="./net.js"></script>
 <script src="./room-ui.js"></script>
-<script src="./fun.js"></script>
+<script src="./transitions.js"></script>
 <script src="./gfx-title.js"></script>
 <script src="./gfx-background.js"></script>
 <script src="./gen_latin.js"></script><script>window.IQ.Gens=window.IQ.Gens||{};window.IQ.Gens.latin=window.IQ.GenV;</script>
@@ -102,7 +103,16 @@
 <script src="./content_quips.js"></script>
 <script src="./content_prompts.js"></script>
 <script src="./onboard.js"></script>
+<script src="./demonsay.js"></script>
+<script src="./taunts.js"></script>
+<script src="./demon-audio.js"></script>
+<script src="./horror.js"></script>
+<script src="./cleanse.js"></script>
+<script src="./intro.js"></script>
+<link rel="stylesheet" href="./board-skins.css">
 <script src="./gfx-board.js"></script>
+<script src="./emerald-fx.js"></script>
+<script src="./cursor.js"></script>
 <script>
 'use strict';
 /* ============================================================
@@ -134,7 +144,7 @@ const CX={ok:false,
 const S={voiceOn:store.get('IQB_VOICE',false),shadowOn:true};
 const SH={ok:false,
  q(c){try{return this.ok?IQ.Shadow.quip(c):''}catch(e){return''}},
- say(t,voice){try{this.ok&&IQ.Shadow.say(t,{voice:voice&&S.voiceOn})}catch(e){}}};
+ say(t,voice){try{if(!this.ok)return;const ds=window.IQ&&IQ.DemonSay;if(ds){ds.say(t,{tier:G.stage>=3?2:1})}else{IQ.Shadow.say(t,{voice:false})}}catch(e){}}};
 
 /* ---------- palettes ---------- */
 const PAL=[
@@ -198,7 +208,7 @@ function setStage(n){
  P.deepestStage=Math.max(P.deepestStage,n);saveP();
  document.body.classList.remove('act-1','act-2','act-3','corr-1','corr-2','corr-3');
  if(n>=1)document.body.classList.add('act-'+n,'corr-'+n);
- CX.cact(n);AU.act(n);if(store.get('IQB_MOTION',true))CX.inten([.15,.4,.7,1][n]);CX.embers(n>=3);try{window.IQ&&IQ.GfxBg&&IQ.GfxBg.setStage(n)}catch(e){}
+ CX.cact(n);AU.act(n);if(store.get('IQB_MOTION',true))CX.inten([.15,.4,.7,1][n]);CX.embers(n>=3);try{window.IQ&&IQ.GfxBg&&IQ.GfxBg.setStage(n)}catch(e){};try{window.IQ&&IQ.Horror&&IQ.Horror.setStage(n)}catch(e){};try{window.IQ&&IQ.DemonAudio&&IQ.DemonAudio.setStage(n)}catch(e){};try{window.IQ&&IQ.BoardMove&&IQ.BoardMove.setStage(n)}catch(e){}
  updateTitle();
  if(n>=3)SH.say(SH.q('appear'),true);
 }
@@ -215,12 +225,15 @@ function timeline(){
 
 /* ---------- nav ---------- */
 function nav(to){
- if(G.screen==='play'&&to!=='play'){cancelAnimationFrame(G.raf);clearInterval(G.shuffleIv);G.answered=true}
- $$('#app > section').forEach(x=>x.classList.add('hidden'));
- $('#topbar').classList.toggle('hidden',to!=='play');
- G.screen=to;
- $({'landing':'#scr-boot','lobby':'#scr-lobby','play':'#scr-play','center':'#scr-center'}[to]).classList.remove('hidden');
- AU.p('click');
+  const apply=()=>{
+    if(G.screen==='play'&&to!=='play'){cancelAnimationFrame(G.raf);clearInterval(G.shuffleIv);G.answered=true}
+    $$('#app > section').forEach(x=>x.classList.add('hidden'));
+    $('#topbar').classList.toggle('hidden',to!=='play');
+    G.screen=to;
+    $({'landing':'#scr-boot','lobby':'#scr-lobby','play':'#scr-play','center':'#scr-center'}[to]).classList.remove('hidden');
+  };
+  AU.p('click');
+  try{window.IQ&&IQ.Transitions?IQ.Transitions.to(apply):apply()}catch(e){apply()}
 }
 function banner(txt){const b=document.createElement('div');b.className='event-banner';b.textContent=txt;document.body.appendChild(b);CX.shake(6,180);setTimeout(()=>b.remove(),1700)}
 
@@ -454,8 +467,9 @@ function answer(pos){
   if(G.mp.on&&!G.mp.host)return; // clients idle — host deals the next round
   if(G.round>=G.totalRounds){if(G.mp.host)endMatchBroadcast();endRun();return}
   if(G.opps.length>0&&(G.round===3||G.round===6||G.round===9)&&G.usedEmeralds.size<EMERALDS.length)emeraldPick();
+  else if(window.IQ&&IQ.Cleanse&&IQ.Cleanse.maybeTrigger(G.stage,G.round,G.totalRounds)){IQ.Cleanse.trigger&&IQ.Cleanse.trigger();try{window.IQ&&IQ.BoardMove&&IQ.BoardMove.pause(1800)}catch(e){};nextRound();return}
   else nextRound();
- },1700);
+},1700);
 }
 function scoreMe(pts,good,silent){
  G.score+=pts;renderScores();
@@ -735,12 +749,11 @@ function openSettings(){
   '<div class="panel" style="width:min(560px,94vw)">'+
   '<div class="sw-row"><div class="sw '+(muted?'':'on')+'" id="sw-sound"></div><div>Sound</div></div>'+
   '<div class="sw-row"><div class="sw '+(motion?'on':'')+'" id="sw-motion"></div><div>Screen chaos</div></div>'+
-  '<div class="sw-row"><div class="sw '+(voice?'on':'')+'" id="sw-voice"></div><div>Shadow speaks (robot voice)</div></div>'+
+  '<div class="sw-row"><div style="flex:1"></div></div>'+
   '<div class="sw-row"><div style="flex:1"></div><button class="btn btn-danger" id="wipe-btn" style="font-size:12px;padding:10px 18px">Burn All Records</button></div></div>';
  bindNav();
  $('#sw-sound').onclick=e=>{muted=!muted;store.set('IQB_MUTED',muted);e.target.classList.toggle('on',!muted);AU.mute(muted)};
  $('#sw-motion').onclick=e=>{motion=!motion;store.set('IQB_MOTION',motion);e.target.classList.toggle('on',motion);CX.inten(motion?.5:0)};
- $('#sw-voice').onclick=e=>{S.voiceOn=!S.voiceOn;store.set('IQB_VOICE',S.voiceOn);e.target.classList.toggle('on',S.voiceOn)};
  $('#wipe-btn').onclick=()=>{if(confirm('Erase every record?')){localStorage.removeItem('IQB_PROFILE_V1');localStorage.removeItem('IQB_PUZZLES_V1');location.reload()}};
 }
 

@@ -1,0 +1,95 @@
+/* ============================================================
+   IQ VERSUS — board-skins.css
+   Stage-reactive board skins keyed PURELY on body act/corr
+   classes + .board-frame. No JS, no new markup hooks.
+     stage 0 (.act-0)            : clean luxe card (untouched)
+     stage 1 (.act-1/.corr-1)    : hairline cracks creep from corners
+     stage 2 (.act-2/.corr-2)    : board darkens, faint red pulse on '?'
+     stage 3 (.act-3/.corr-3)    : '?' = glowing emerald socket, charred edges
+   The '?' glyph is the ONLY <svg><text> ever rendered inside
+   #board-frame (index.html tileSVG, showQ), so it is targetable
+   with plain CSS. Loads after luxe.css.
+   ============================================================ */
+
+/* ---------- shared overlay host ---------- */
+.board-frame{position:relative}
+.board-frame::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;
+  pointer-events:none;z-index:1}
+
+/* ============================================================
+   STAGE 1 — hairline cracks creeping from the corners
+   Four corner blocks, each a cold glassy hairline cut across
+   the corner diagonal, plus a fainter secondary fracture.
+   ============================================================ */
+body.act-1 .board-frame::before,
+body.corr-1 .board-frame::before{
+  background-image:
+    /* top-left: main cut + branch */
+    linear-gradient(135deg,rgba(205,220,250,.26) 0 1.5px,transparent 1.5px),
+    linear-gradient(127deg,rgba(205,220,250,.12) 0 1px,transparent 1px),
+    /* top-right */
+    linear-gradient(225deg,rgba(205,220,250,.26) 0 1.5px,transparent 1.5px),
+    linear-gradient(233deg,rgba(205,220,250,.12) 0 1px,transparent 1px),
+    /* bottom-left */
+    linear-gradient(45deg,rgba(205,220,250,.26) 0 1.5px,transparent 1.5px),
+    linear-gradient(53deg,rgba(205,220,250,.12) 0 1px,transparent 1px),
+    /* bottom-right */
+    linear-gradient(315deg,rgba(205,220,250,.26) 0 1.5px,transparent 1.5px),
+    linear-gradient(307deg,rgba(205,220,250,.12) 0 1px,transparent 1px);
+  background-repeat:no-repeat;
+  background-size:36% 36%;
+  background-position:
+    left top,left top,
+    right top,right top,
+    left bottom,left bottom,
+    right bottom,right bottom}
+body.act-1 .board-frame,
+body.corr-1 .board-frame{
+  transition:box-shadow 1.2s ease}
+
+/* ============================================================
+   STAGE 2 — board drains darker; the missing cell pulses a
+   faint crimson warning
+   ============================================================ */
+body.act-2 .board-frame,
+body.corr-2 .board-frame{
+  background:
+    repeating-linear-gradient(115deg,rgba(255,255,255,.01) 0 2px,transparent 2px 7px),
+    radial-gradient(120% 90% at 50% 40%,rgba(24,6,14,.55),transparent 70%),
+    rgba(9,3,12,.92);
+  border-color:rgba(160,40,80,.32)}
+body.act-2 #board-frame svg text,
+body.corr-2 #board-frame svg text{
+  fill:#ff2e4d;
+  animation:bsk-q-red 1.7s ease-in-out infinite}
+@keyframes bsk-q-red{
+  0%,100%{opacity:.42}
+  50%{opacity:1}}
+
+/* ============================================================
+   STAGE 3 — Shadow realm: the '?' becomes a glowing Chaos-
+   Emerald socket; the frame edges char via border-image
+   ============================================================ */
+body.act-3 .board-frame,
+body.corr-3 .board-frame{
+  background:
+    radial-gradient(130% 100% at 50% 45%,rgba(20,4,16,.5),transparent 72%),
+    rgba(8,2,8,.95);
+  border:2px solid transparent;
+  border-image:linear-gradient(135deg,
+    #2b070c 0%,#5c1018 22%,#17090e 48%,#0a1a12 72%,#03301e 88%,#00e68a 100%) 1;
+  box-shadow:0 14px 40px rgba(0,0,0,.7),0 0 34px -6px rgba(224,16,48,.35)}
+body.act-3 #board-frame svg text,
+body.corr-3 #board-frame svg text{
+  fill:#00e68a;
+  filter:drop-shadow(0 0 5px rgba(0,230,138,.9)) drop-shadow(0 0 16px rgba(0,230,138,.55));
+  animation:bsk-q-socket 2.2s ease-in-out infinite}
+@keyframes bsk-q-socket{
+  0%,100%{opacity:.7}
+  50%{opacity:1}}
+
+/* ---------- reduced motion: freeze pulses, keep looks ---------- */
+@media (prefers-reduced-motion:reduce){
+  body.act-2 #board-frame svg text,body.corr-2 #board-frame svg text{animation:none;opacity:.9}
+  body.act-3 #board-frame svg text,body.corr-3 #board-frame svg text{animation:none;opacity:1}}
