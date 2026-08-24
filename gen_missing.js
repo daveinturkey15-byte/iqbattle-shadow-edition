@@ -35,16 +35,21 @@ root.IQ.Gens=root.IQ.Gens||{};
 function mul(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 
 var SHAPES=['square','diamond','plus','ring','triangle','cross'];
-var TEMPLATES=['solid','lattice','checker'];
+var TEMPLATES=['solid','lattice','checker','bar'];
 var COLOR_RULES=['rowColor','colColor','checker','latin','diagStep'];
 
 /* ---- slot occupancy per spacing template ---- */
 function slotFilled(template,x,y,w,h){
   if(template==='solid')return true;
+  if(template==='bar')return y===0;
   var corner=(x===0||x===w-1)&&(y===0||y===h-1);
-  if(template==='lattice')return !corner;
+  /* lattice = corners empty. On a 2x2 every slot is a corner -> would
+     leave an ALL-EMPTY section (degenerate + hangs decoy fill), so 2x2
+     blocks fall back to the checker cut. */
+  if(template==='lattice')return (w===2&&h===2)?(x+y)%2===0:!corner;
   return (x+y)%2===0; /* checker */
 }
+function templatesFor(w,h){return (w===2&&h===2)?['solid','checker','bar']:TEMPLATES.slice();}
 
 function buildBlock(rule,pal,h0,sx,sy,rotA,rotB,shape,template,bw,bh,bx,by){
   var leaves=new Array(bw*bh);
@@ -100,7 +105,7 @@ function generate(opts){
   var rotA=wantRot?(r()<.5?0:1):0, rotB=wantRot?(rotA===1?Math.floor(r()*2):1):0;
   if(!wantRot){rotA=0;rotB=0;}
 
-  var templates=d>=3?TEMPLATES.slice():['solid','lattice'];
+  var templates=d>=3?templatesFor(bw,bh):templatesFor(bw,bh).filter(function(t){return t!=='checker'});
   /* flower motifs favor petal gaps, lattice favors holes */
   var template=templates[Math.floor(r()*templates.length)];
 
@@ -143,7 +148,7 @@ function generate(opts){
   var east=solveSection(meta,(holeBX+1)%BGX,holeBY);
   var south=solveSection(meta,holeBX,(holeBY+1)%BGY);
   var diag=solveSection(meta,(holeBX+1)%BGX,(holeBY+1)%BGY);
-  var otherTemplate=TEMPLATES.filter(function(t){return t!==template});
+  var otherTemplate=templates.filter(function(t){return t!==template});
   var pool2=[
     function(){return shift(truth,1)},
     function(){return shift(truth,3)},
@@ -162,7 +167,7 @@ function generate(opts){
   cand(idx.map(function(i){return pool2[i]}));
   /* deterministic filler: fresh color shifts guarantee completion */
   var off=1;
-  while(options.length<8){
+  while(options.length<8&&off<=64){
     var sec=shift(truth,off%8);off++;
     var key=JSON.stringify(sec);
     if(seen[key])continue;

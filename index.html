@@ -130,6 +130,7 @@
 <script src="./gen_logic1.js?v=w1a"></script>
 <script src="./gen_logic2.js?v=w1a"></script>
 <script src="./gen_seqpack.js?v=w1a"></script>
+<script src="./gen_missing.js?v=w1a"></script>
 <script>
 'use strict';
 /* ============================================================
@@ -365,7 +366,7 @@ try{
   else pz=makePuzzle(clamp(G.diff+(G.round>G.totalRounds*.6?1:0)+(G.w1&&G.w1.amp?1:0),1,5));
 function makePuzzle(diff){
  const G_=(window.IQ&&IQ.Gens)||{};const S=G.stage;
- const table=S<=0?['iqvs','iqvs','latin','cycle']:S===1?['iqvs','iqvs','latin','cycle','rotate','count','logicA']:S===2?['iqvs','latin','cycle','rotate','count','dual','dual','logicA','logicB','seqPack']:['wild','wild','dual','iqvs','latin','rotate','logicA','logicB','seqPack'];
+ const table=S<=0?['iqvs','iqvs','latin','cycle']:S===1?['iqvs','iqvs','latin','cycle','rotate','count','logicA','missingSec']:S===2?['iqvs','latin','cycle','rotate','count','dual','dual','logicA','logicB','seqPack','missingSec']:['wild','wild','dual','iqvs','latin','rotate','logicA','logicB','seqPack','missingSec'];
   let gname=table[ri(0,table.length-1)];
   if(S>=2&&(G_.retroA||G_.retroB)&&Math.random()<.12)gname=(G_.retroA&&(!G_.retroB||Math.random()<.5))?'retroA':'retroB';
   const gen=G_[gname];
