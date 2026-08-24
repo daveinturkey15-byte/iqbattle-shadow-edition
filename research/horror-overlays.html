@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>pack-horror overlays</title>
+<style>
+body{margin:0;background:#101018;font-family:Oxanium,monospace;color:#eee}
+.stage{position:relative;width:100vw;height:260px;border-bottom:1px solid #333}
+.hook-overlay{position:absolute;left:0;right:0;top:40%;display:flex;justify-content:center;pointer-events:none;z-index:90}
+h3{position:absolute;left:8px;top:4px;margin:0;font-size:12px;color:#8ff;z-index:99}
+</style></head><body>
+<div id="host"></div>
+<script src="../worlds.js"></script>
+<script src="../hooks.js"></script>
+<script src="../pack-horror.js"></script>
+<script>
+var H = window.IQ.Hooks;
+function mb(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+H.beginRun('prev', 7);
+var host = document.getElementById('host');
+function addSection(title, mods, bg){
+  var s = document.createElement('div'); s.className='stage'; s.style.background=bg||'#141420';
+  s.innerHTML = '<h3>'+title+'</h3>';
+  (mods||[]).forEach(function(m){ if(m && m.overlayHTML){ var d=document.createElement('div'); d.className='hook-overlay'; d.innerHTML=m.overlayHTML; s.appendChild(d);} });
+  host.appendChild(s);
+}
+function pack(id, world){ var r = H.active(world).filter(function(x){return x.id===id;})[0]; return r && r.handlers; }
+
+/* SANDMAN: idle 5s -> ~62% meter (drive smLastMove via the pack's own pointer hook is
+   impossible here, so call onTick right after a synthetic roundStart: fill ~0 is fine,
+   we instead poke the module through a long idle by waiting on the real clock). */
+H.dispatch('roundStart',{round:1,runId:'prev',world:'sandman-dream',rng:mb(1),optCount:8});
+addSection('SANDMAN sleep meter (idle-driven)', [pack('sandman-jolt','sandman-dream').onTick({round:1,runId:'prev',world:'sandman-dream',rng:mb(2),optCount:8})], '#171233');
+
+/* GRIEF: force a qualifying fast solve; find a seed whose first rng draw passes the gate */
+var seed=1; while(mb(seed)()>0.34) seed++;
+H.dispatch('roundStart',{round:1,runId:'p2',world:'grief-box',rng:mb(1),optCount:8,timerLen:60});
+var ggMods = H.dispatch('answer',{round:1,runId:'p2',world:'grief-box',res:{correct:true},rng:mb(seed),timerLen:60,optCount:8});
+addSection('GRIEF gamble overlay (keys 1/2/3, ESC declines)', ggMods, '#26233c');
+
+/* ACID: roundStart seeds bursts at >=2s; fake the clock by calling roundStart then
+   waiting is slow — instead re-seed with timerLen 3 so burst.at lands ~2-3s and tick
+   after a real 2.5s wait below. */
+H.dispatch('roundStart',{round:1,runId:'p3',world:'hive-acid',rng:mb(9),optCount:8,timerLen:8});
+setTimeout(function(){
+  var am = pack('hive-acid','hive-acid').onTick({round:1,runId:'p3',world:'hive-acid',dtSec:0.016,optCount:8});
+  addSection('HIVE acid drips + disableWrongRandom', am?[am]:[], '#1a160a');
+  document.head.insertAdjacentHTML('beforeend','<style>.iqh-drip{position:absolute;top:0;width:3px;border-radius:0 0 3px 3px;background:linear-gradient(180deg,#d2ff70,#5f8f1e)}@keyframes iqhDripFall{0%{opacity:0;height:0}10%{opacity:.9}80%{opacity:.85}100%{opacity:0;height:64px}}.iqh-drip{height:40px;opacity:.9}</style>');
+  window.__ready = true;
+}, 2600);
+</script>
+</body></html>
