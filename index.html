@@ -40,8 +40,9 @@
   <section id="scr-lobby" class="hidden" style="flex:1;display:flex;align-items:center;justify-content:center">
     <div class="panel">
       <h2 id="lobby-title">Room</h2>
-      <div class="cfg-row"><label>Rounds</label><input type="number" id="cfg-rounds" min="5" max="20" value="10"></div>
-      <div class="cfg-row"><label>Round Timer (s)</label><input type="number" id="cfg-timer" min="15" max="120" value="60"></div>
+      <div class="cfg-row"><label>Rounds</label><input type="number" id="cfg-rounds" min="1" max="30" value="10"></div>
+      <div class="cfg-row"><label>Round Timer (s)</label><input type="number" id="cfg-timer" min="1" max="120" value="60"></div>
+      <div class="cfg-row"><label>Last Man Standing</label><div class="sw" id="cfg-lms"></div></div>
       <div class="cfg-row"><label>Torment</label><div class="seg" id="cfg-diff">
         <button data-v="1">Gentle</button><button data-v="2" class="on">Standard</button><button data-v="3">Hard</button><button data-v="4">Brutal</button><button data-v="5">Impossible</button>
       </div></div>
@@ -123,6 +124,12 @@
 <script src="./lms.js?v=w1a"></script>
 <script src="./gen_retro_a.js?v=w1a"></script>
 <script src="./gen_retro_b.js?v=w1a"></script>
+<script src="./review.js?v=w1a"></script>
+<script src="./accolades.js?v=w1a"></script>
+<script src="./music-pack.js?v=w1a"></script>
+<script src="./gen_logic1.js?v=w1a"></script>
+<script src="./gen_logic2.js?v=w1a"></script>
+<script src="./gen_seqpack.js?v=w1a"></script>
 <script>
 'use strict';
 /* ============================================================
@@ -177,9 +184,10 @@ function applyW1Effects(){
   if(w&&w.theme&&G.round>2)IQ.Worlds.apply(w.theme);
   else IQ.Worlds.clear();
  }catch(e){}
- if(w&&w.heal&&G.round>2)healHp(30);
+ if(w&&w.heal&&G.round>2){healHp(30);try{window.IQ&&IQ.Music&&IQ.Music.sting('heal')}catch(e){}}
  if(w&&w.amp&&G.prevAlign&&align!==G.prevAlign&&G.round>2)painBeat();
  if(align)G.prevAlign=align;
+ try{window.IQ&&IQ.Music&&w&&IQ.Music.setAlignment(w.align)}catch(e){}
  try{ if(w&&w.dim&&w.dim!=='2d'&&G.round>2&&window.IQ&&IQ.Dims)IQ.Dims.apply(w.dim); else if(window.IQ&&IQ.Dims)IQ.Dims.clear(); }catch(e){}
 }
 function painBeat(){
@@ -284,25 +292,38 @@ function banner(txt){const b=document.createElement('div');b.className='event-ba
 /* ---------- scoreboard ---------- */
 function renderScores(){
  const sp=$('#side-panel');if(!sp)return;
- const rows=[{me:1,name:P.name||'YOU',ava:'🜃',pts:G.score},...G.opps.map(o=>({name:o.n,ava:o.ava,pts:o.pts})),...(G.humans||[]).map(h=>({name:h.n,ava:'🜂',pts:h.pts}))];
+ const rows=[{me:1,name:P.name||'YOU',ava:'🜃',pts:G.score},...(G.opps||[]).map(o=>({name:o.n,ava:o.ava,pts:o.pts})),...(G.humans||[]).map(h=>({name:h.n,ava:'🜂',pts:h.pts,uid:h.uid,elim:h.elim}))];
  rows.sort((a,b)=>b.pts-a.pts);
  sp.innerHTML=rows.map((o,i)=>`<div class="score-card ${o.me?'me':''} ${i===0?'leader':''}">
   <div class="sc-ava">${o.ava}</div><div style="flex:1;min-width:0"><div class="sc-name">${esc(o.name)}</div>
-  <div class="sc-sub">${o.me?(G.streak>1?'streak ×'+G.streak:'you'):'rival'}</div></div>
+  <div class="sc-sub">${o.me?(G.streak>1?'streak ×'+G.streak:(o.elim?'ELIMINATED':'you')):(o.elim?'ELIMINATED':'rival')}</div></div>
   <div class="sc-pts">${o.pts}</div></div>`).join('');
+ if(G.lms&&G.mp.on){const cards=sp.querySelectorAll('.score-card:not(.me)');const targets=rows.filter(r=>!r.me&&r.uid);cards.forEach((c,i)=>{const row=targets[i];if(row)c.onclick=()=>tryAttack(row.uid)})}
 }
 
+function tryAttack(uid){
+ if(!(G.lms&&G.mp.on&&window.IQ))return;
+ const weapons={rotten:{cost:80,dmg:120},curse:{cost:150,dmg:200}};
+ const w=(prompt('ATTACK '+uid+' — type rotten or curse')||'').trim().toLowerCase();
+ if(!weapons[w])return void banner('UNKNOWN WEAPON');
+ if(G.score<weapons[w].cost)return void banner('NOT ENOUGH POINTS — COSTS '+weapons[w].cost);
+ const myUid=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():'host';
+ IQ.Net.send({t:'attack',from:myUid,targetUid:uid,weapon:w,n:P.name});
+ banner('ATTACK SENT — '+w.toUpperCase());
+}
 /* ---------- run flow ---------- */
 function startRun(){
  $('#center-content').innerHTML='';
  G.round=0;G.score=0;G.streak=0;G.stage=-1;setStage(0);
  try{window.IQ&&IQ.Fun&&IQ.Fun.reset()}catch(e){}
- G.totalRounds=clamp(G.mpCfg?G.mpCfg.total:(+$('#cfg-rounds').value||10),5,20);
- G.timerLen=clamp(G.mpCfg?G.mpCfg.timer:(+$('#cfg-timer').value||60),15,120);
- G.remotePicks={};G.humans=[];G.lastAppliedRevealRound=null;
+ G.totalRounds=clamp(G.mpCfg&&G.mpCfg.total!=null?G.mpCfg.total:(+$('#cfg-rounds').value||10),1,30);
+ G.timerLen=clamp(G.mpCfg&&G.mpCfg.timer!=null?G.mpCfg.timer:(+$('#cfg-timer').value||60),1,120);
+ G.lms=G.mp.on?!!(G.mpCfg&&G.mpCfg.lms):false;
+ G.remotePicks={};G.remoteAttacks={};G.humans=[];G.lastAppliedRevealRound=null;
  G.hp=100;G.w1=null;G.prevAlign=null;renderHp();
  try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){}
  try{window.IQ&&IQ.Align&&IQ.Align.begin(G.mp.code||('solo-'+Date.now()),G.totalRounds)}catch(e){}
+ try{window.IQ&&IQ.Review&&IQ.Review.beginMatch(G.totalRounds)}catch(e){}
  G.emeralds=[];G.usedEmeralds=new Set();G.chaosControlLeft=0;G.blackArrowLeft=0;G.zapFired=false;
  G.forgery=$('#cfg-forged').classList.contains('on');
  S.shadowOn=$('#cfg-shadow').classList.contains('on');
@@ -344,7 +365,7 @@ try{
   else pz=makePuzzle(clamp(G.diff+(G.round>G.totalRounds*.6?1:0)+(G.w1&&G.w1.amp?1:0),1,5));
 function makePuzzle(diff){
  const G_=(window.IQ&&IQ.Gens)||{};const S=G.stage;
- const table=S<=0?['iqvs','iqvs','latin','cycle']:S===1?['iqvs','iqvs','latin','cycle','rotate','count']:S===2?['iqvs','latin','cycle','rotate','count','dual','dual']:['wild','wild','dual','iqvs','latin','rotate'];
+ const table=S<=0?['iqvs','iqvs','latin','cycle']:S===1?['iqvs','iqvs','latin','cycle','rotate','count','logicA']:S===2?['iqvs','latin','cycle','rotate','count','dual','dual','logicA','logicB','seqPack']:['wild','wild','dual','iqvs','latin','rotate','logicA','logicB','seqPack'];
   let gname=table[ri(0,table.length-1)];
   if(S>=2&&(G_.retroA||G_.retroB)&&Math.random()<.12)gname=(G_.retroA&&(!G_.retroB||Math.random()<.5))?'retroA':'retroB';
   const gen=G_[gname];
@@ -400,7 +421,7 @@ function renderBoard(){
  else if(pz.kind==='sequence'){const cs=SZ/(pz.seq.length+1);
   html=`<div style="display:flex;gap:10px;align-items:center">${pz.seq.map(c=>tileSVG({cols:1,rows:1,cells:[c]},cs*.8,pal(),false)).join('')}${tileSVG({cols:1,rows:1,cells:[null]},cs*.8,pal(),true)}</div>`;}
  else html=tileSVG(pz.oddBoard,SZ,pal(),false)+'<div style="text-align:center;margin-top:8px;font-size:11px;letter-spacing:.2em;opacity:.6">ONE FRAGMENT IS AN IMPOSTOR</div>';
- $('#board-frame').innerHTML=html;
+ $('#board-frame').innerHTML=html;G.boardSVGLast=html;
  drawOptions();
  maybeZap();
 }
@@ -469,7 +490,7 @@ function simOpponent(o){
 /* ---------- answering ---------- */
 function answer(pos){
  if(G.answered||!G.puzzle||!G.puzzle.options)return;G.answered=true;
- cancelAnimationFrame(G.raf);clearInterval(G.shuffleIv);
+ if(pos>=0)G.myPickIdx=G.optOrder[pos];else G.myPickIdx=-1;
  const pz=G.puzzle;
  const clientPick=G.mp.on&&!G.mp.host;
  const impossible=clientPick?!!G.impossibleNow:(pz.answer===-99||pz.impossible);
@@ -529,7 +550,8 @@ function answer(pos){
      const gh=(G.humans||[]).find(x=>x.uid===pk.uid);
      return {uid:pk.uid,name:pk.n||'PLAYER',pts:(gh?(gh.pts||0):0)+delta};
     });
-    humans.forEach(h=>{const gh=(G.humans||[]).find(x=>x.uid===h.uid);if(gh){gh.pts=h.pts;gh.n=h.name||h.n}});
+   humans.forEach(h=>{const gh=(G.humans||[]).find(x=>x.uid===h.uid);if(gh){gh.pts=h.pts;gh.n=h.name||h.n}});
+   try{window.IQ&&IQ.Review&&IQ.Review.snap({round:G.round,boardSVGString:G.boardSVGLast||'',options:[],ord:G.optOrder||[],correctIdx:pz.impossible?-1:pz.answer,pickedIdxByUid:(function(){const m={};m[myUid]=(typeof G.myPickIdx==='number')?G.myPickIdx:-1;(G.humans||[]).forEach(h=>{const pk=(G.remotePicks||{})[h.uid];m[h.uid]=pk?((typeof G.myPickIdx==='number'&&pk.pos>=0)?pk.pos:-1):-1});return m})(),timesMsByUid:{}})}catch(e){}
     renderScores(); // broadcast echoes locally but host reveal handler self-guards
     IQ.Net.broadcast({t:'reveal',answer:pz.impossible?-99:pz.answer,imp:pz.impossible?1:0,scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...humans]});
    }catch(e){}
@@ -539,7 +561,26 @@ function answer(pos){
  },1400);
  setTimeout(()=>{
   if(G.mp.on&&!G.mp.host)return; // clients idle — host deals the next round
-  if(G.round>=G.totalRounds){if(G.mp.host)endMatchBroadcast();endRun();return}
+  if(G.lms&&G.mp.host&&window.IQ&&IQ.LMS){
+   /* W1 MP: resolve queued point-attacks before revealing standings */
+   const myUid=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():'host';
+   const table=[{uid:myUid,pts:G.score},...(G.humans||[]).map(h=>({uid:h.uid,pts:h.pts}))];
+   let attacked=false;
+   for(const [att,w] of Object.entries(G.remoteAttacks||{})){
+    const res=IQ.LMS.attackResult({scores:table.map(s=>({...s})),attackerUid:att,targetUid:w.targetUid,weapon:w.weapon});
+    if(res){attacked=true;
+     for(const row of res){const me2=row.uid===myUid;if(me2)G.score=row.pts;else{const h=(G.humans||[]).find(x=>x.uid===row.uid);if(h)h.pts=row.pts}}
+     banner((w.targetUid===myUid?'YOU WERE HIT':'STRIKE LANDED')+' — '+w.weapon.toUpperCase());}
+     delete G.remoteAttacks[att];
+   }
+   if(attacked)renderScores();
+  }
+  if(G.round>=G.totalRounds&&!G.lms){if(G.mp.host)endMatchBroadcast();endRun();return}
+  if(G.round>=G.totalRounds&&G.lms){
+   if(!G.mp.on||!G.mp.host){endRun();return}
+   const alive=window.IQ&&IQ.LMS?IQ.LMS.remaining((G.humans||[]).map(h=>({uid:h.uid,pts:h.pts})).concat([{uid:'host',pts:G.score}])):null;
+   if(alive&&alive.length<=1){endMatchBroadcast();endRun();return}
+  }
   if(G.opps.length>0&&(G.round===3||G.round===6||G.round===9)&&G.usedEmeralds.size<EMERALDS.length)emeraldPick();
   else if(window.IQ&&IQ.Cleanse&&IQ.Cleanse.maybeTrigger(G.stage,G.round,G.totalRounds)){IQ.Cleanse.trigger&&IQ.Cleanse.trigger();try{window.IQ&&IQ.BoardMove&&IQ.BoardMove.pause(1800)}catch(e){};nextRound();return}
   else nextRound();
@@ -594,11 +635,12 @@ function endRun(deathMsg){
   '<div class="stat-grid">'+
   `<div class="stat-cell"><div class="stat-val">${G.score}</div><div class="stat-lbl">score</div></div>`+
   `<div class="stat-cell"><div class="stat-val">${G.totalRounds}</div><div class="stat-lbl">rounds</div></div></div>`+
+  (function(){let ach='';try{if(window.IQ&&IQ.Accolades&&IQ.Review){const rec=IQ.Review.matchRecord();const list=IQ.Accolades.compute(rec);ach=list.length?'<div style="font-size:11px;letter-spacing:.2em;opacity:.6;margin:14px 0 6px">ACCOLADES</div><div class="followers-strip">'+list.map(a=>'<div class="follower-chip">'+esc(a.label)+'</div>').join('')+'</div>':'';}}catch(e){}return ach;})()+
   (newF.length?'<div style="font-size:11px;letter-spacing:.2em;opacity:.6;margin-bottom:8px">NEW CULT MEMBERS</div><div class="followers-strip">'+newF.map(f=>`<div class="follower-chip">${esc(f)}</div>`).join('')+'</div>':'')+
+  '<div id="review-slot" style="margin-top:16px;width:100%"></div>'+
   '<div style="display:flex;gap:12px;margin-top:22px">'+
   '<button class="btn btn-primary" id="home-btn">Back To Lobby</button>'+
   '<button class="btn btn-danger" id="again-btn">Descend Again</button></div>';
- $('#again-btn').onclick=()=>startRun();
  $('#home-btn').onclick=()=>nav('landing');
  AU.p(won?'laugh':'scream');CX.shake(10,380);
  if(G.stage>=3)SH.say(SH.q(won?'win':'lose'),true);
@@ -645,13 +687,14 @@ function wireLanding(){
  bindSeg('#cfg-diff',v=>G.diff=+v);
  $('#cfg-start').onclick=()=>{
   if(G.mp.on&&!G.mp.host){alertEv('WAITING FOR HOST TO START…');return}
-  if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin',total:clamp(+$('#cfg-rounds').value||10,5,20),timer:clamp(+$('#cfg-timer').value||60,15,120)})}catch(e){}}
+  if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin',total:clamp(+$('#cfg-rounds').value||10,1,30),timer:clamp(+$('#cfg-timer').value||60,1,120),lms:document.getElementById('cfg-lms').classList.contains('on')?1:0})}catch(e){}}
   startRun();};
  $('#tb-lobby').onclick=()=>{try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){};nav('landing')};
  $('#lobby-back').onclick=()=>{leaveMp();nav('landing')};
  $('#tb-leave').onclick=()=>location.reload();
  $('#cfg-forged').onclick=e=>e.target.classList.toggle('on');
  $('#cfg-shadow').onclick=e=>e.target.classList.toggle('on');
+ $('#cfg-lms').onclick=e=>e.target.classList.toggle('on');
  bindNav();
  }
 function onRemotePick(pk){if(!(G.mp.host&&pk))return;
@@ -685,8 +728,10 @@ function listenNet(){
  try{
   IQ.Net.on('lobby',pl=>{G.players=(pl.players||[]);$('#lobby-count').textContent=G.players.length;});
   IQ.Net.on('pick',pk=>onRemotePick(pk));
-  IQ.Net.on('begin',m=>{if(G.mp.on&&!G.mp.host){G.mpCfg={total:m&&m.total||10,timer:m&&m.timer||60};startRun()}});
+  IQ.Net.on('begin',m=>{if(G.mp.on&&!G.mp.host){G.mpCfg={total:m&&m.total||10,timer:m&&m.timer||60,lms:!!(m&&m.lms)};startRun()}});
   IQ.Net.on('round',pl=>{if(G.mp.host)return;applyIncomingRound(pl)});
+  IQ.Net.on('attack',a=>{if(!(G.mp.host&&a))return;const uid=a.from||a.uid||('anon-'+(a.n||''));G.remoteAttacks[uid]={targetUid:a.targetUid,weapon:a.weapon,n:a.n}});
+  IQ.Net.on('elim',m=>{if(!m||!m.uids)return;m.uids.forEach(u=>{const h=(G.humans||[]).find(x=>x.uid===u);if(h)h.elim=true});alertEv('ELIMINATED: '+(m.uids.length?m.uids.length:0)+' PLAYER(S)');renderScores()});
   IQ.Net.on('reveal',rv=>{if(G.mp.host)return;
    if(G.lastAppliedRevealRound===G.round)return; // idempotent: never double-apply a reveal
    G.lastAppliedRevealRound=G.round;
@@ -854,7 +899,7 @@ addEventListener('keydown',e=>{
  const n=+e.key;
  if(n>=1&&n<=8)$$('#opts-grid .opt-btn')[n-1]?.click();
 });
-addEventListener('pointerdown',()=>AU.init(),{once:true});
+addEventListener('pointerdown',()=>{AU.init();try{window.IQ&&IQ.Music&&IQ.Music.userGesture()}catch(e){}},{once:true});
 boot();
 </script>
 </body>

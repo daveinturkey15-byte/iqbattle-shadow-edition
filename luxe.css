@@ -11,11 +11,11 @@
   --panel:#020e20;
   --panel-2:#0a1428;
   --tile:#000000;
-  --ink:#eef2fb;
+  --ink:#f5f8ff; /* PARITY: original global text rgb(245,248,255), was #eef2fb */
   --muted:#9aa7ba;
   --acc-a:#2d7cff;
   --acc-b:#ef4cc8;
-  --grad:linear-gradient(90deg,#ef4cc8,#9b6dff 40%,#2d7cff 60%,#2ce8ff);
+  --grad:linear-gradient(90deg,rgba(43,116,235,.28),rgba(53,125,244,.28)); /* PARITY: original active wash, was 4-stop magenta #ef4cc8/#9b6dff/#2d7cff/#2ce8ff */
   --ok:#22d3a5;
   --bad:#ff2e88;
   --shadow:0 12px 34px rgba(0,20,60,.26),0 2px 10px rgba(0,10,40,.18);
@@ -53,12 +53,12 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 .btn{
   cursor:pointer;border:none;font-family:inherit;font-weight:500;
   text-transform:uppercase;letter-spacing:.18em;font-size:12.5px;
-  padding:14px 26px;border-radius:14px;background:rgba(2,10,22,.52);color:var(--ink);
+  padding:14px 26px;border-radius:8px;background:rgba(2,10,22,.52);color:var(--ink); /* PARITY: button radius 14px -> 8px per baseline */
   box-shadow:var(--shadow);transition:transform .08s,box-shadow .15s,filter .15s;
 }
 .btn:hover{transform:translateY(-2px);filter:brightness(1.12)}
 .btn:active{transform:translateY(1px)}
-.btn-primary{background:var(--grad);color:#fff;box-shadow:0 10px 30px rgba(63,125,255,.35)}
+.btn-primary{background:var(--grad);color:#fff;box-shadow:0 10px 30px rgba(63,125,255,.35)} /* PARITY: magenta grad -> blue wash via token */
 .btn-danger{background:linear-gradient(135deg,#e0245e,#ff2e88);color:#fff}
 .btn-ghost{background:transparent;box-shadow:inset 0 0 0 2px rgba(255,255,255,.25);opacity:.85}
 
@@ -66,8 +66,8 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 #scr-boot{flex:1;display:flex;align-items:center;justify-content:center}
 .boot-card{
   text-align:center;padding:52px 58px;border-radius:var(--radius);
-  background:var(--panel);box-shadow:var(--shadow);
-  border:1px solid rgba(255,255,255,.06);max-width:min(520px,92vw)}
+  background:linear-gradient(135deg,rgba(43,116,235,.14),transparent 36%),var(--panel);box-shadow:var(--shadow); /* PARITY: added original panel sheen over #020e20 */
+  border:1px solid rgba(64,137,238,.16);max-width:min(520px,92vw)} /* PARITY: neutral white border -> accent rgba(64,137,238,.16) */
 .boot-logo{
   font-size:36px;font-weight:900;letter-spacing:.02em;
   background:linear-gradient(90deg,var(--acc-a),var(--acc-b));
@@ -90,7 +90,7 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 #topbar{
   order:-1;display:flex;align-items:center;gap:16px;padding:12px 22px;z-index:5;
   background:rgba(11,17,32,.72);backdrop-filter:blur(8px);
-  border-bottom:1px solid rgba(255,255,255,.06)}
+  border-bottom:1px solid rgba(64,137,238,.16)} /* PARITY: neutral white border -> accent rgba(64,137,238,.16) */
 .logo-mini{font-weight:900;font-size:17px;letter-spacing:.04em}
 .logo-mini em{
   font-style:normal;background:linear-gradient(90deg,var(--acc-a),var(--acc-b));
@@ -113,7 +113,7 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 
 /* ---------- lobby / panels ---------- */
 .panel{
-  background:var(--panel);border:1px solid rgba(255,255,255,.06);
+  background:linear-gradient(135deg,rgba(43,116,235,.14),transparent 36%),var(--panel);border:1px solid rgba(64,137,238,.16); /* PARITY: panel sheen + neutral border -> accent rgba(64,137,238,.16) */
   border-radius:var(--radius);padding:28px 32px;box-shadow:var(--shadow);
   width:min(680px,94vw)}
 .cfg-row{display:flex;gap:14px;margin:14px 0;align-items:center}
@@ -129,7 +129,7 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
   font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
   transition:all .15s}
 .seg button:hover{border-color:var(--acc-a);color:var(--ink)}
-.seg button.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(255,46,136,.3)}
+.seg button.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(43,116,235,.3)} /* PARITY: magenta grad+glow -> blue wash/glow */
 .opp-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
 .opp-chip{
   padding:8px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.14);
@@ -155,16 +155,16 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 .round-strip{
   display:flex;align-items:center;gap:18px;padding:15px 18px;border-radius:16px;
   background:rgb(2,12,29);border:1px solid rgba(64,137,238,.16);box-shadow:var(--shadow)}
-.round-label{font-weight:500;font-size:30px;letter-spacing:.02em;color:#fff}
+.round-label{font-weight:500;font-size:30px;letter-spacing:.02em;color:var(--ink)} /* PARITY: literal #fff -> inherit original text rgb(245,248,255) */
 .timer-bar{
   height:5px;border-radius:3px;flex:1;overflow:hidden;
   background:rgba(64,137,238,.1)}
-.timer-bar>i{display:block;height:100%;width:100%;background:var(--grad);transform-origin:left}
+.timer-bar>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#2b74eb,#357df4);transform-origin:left} /* PARITY: timer fill magenta var(--grad) -> original blue accent */
 .timer-num{
   margin-left:auto;font-family:'Oxanium',ui-monospace,'Cascadia Mono',Consolas,monospace;
   font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
   letter-spacing:.02em;font-weight:400;
-  font-size:30px;color:#fff}
+  font-size:30px;color:var(--ink)} /* PARITY: literal #fff -> inherit original text rgb(245,248,255) */
 .timer-low .timer-num{color:var(--bad);animation:blinklow .5s steps(2) infinite}
 @keyframes blinklow{50%{opacity:.35}}
 .board-zone{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
@@ -263,7 +263,7 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
 .relic-row{display:flex;gap:16px;margin-top:26px;flex-wrap:wrap;justify-content:center}
 .relic-card{
   flex:1;max-width:220px;min-width:170px;background:var(--panel);
-  border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:20px 16px;
+  border:1px solid rgba(64,137,238,.16);border-radius:14px;padding:20px 16px; /* PARITY: neutral white border -> accent rgba(64,137,238,.16) */
   cursor:pointer;text-align:center;box-shadow:var(--shadow);
   transition:transform .15s,box-shadow .15s,border-color .15s}
 .relic-card:hover{
@@ -306,7 +306,7 @@ h1,h2,h3{font-weight:900;letter-spacing:.06em;color:var(--ink)}
   flex:1;overflow:auto;padding:20px;width:100%;
   display:flex;flex-direction:column;align-items:center;gap:12px}
 .forge-item{
-  width:min(680px,94vw);background:var(--panel);border:1px solid rgba(255,255,255,.06);
+  width:min(680px,94vw);background:linear-gradient(135deg,rgba(43,116,235,.14),transparent 36%),var(--panel);border:1px solid rgba(64,137,238,.16); /* PARITY: forge-item panel sheen + neutral border -> accent rgba(64,137,238,.16) */
   border-radius:12px;padding:14px 20px;display:flex;align-items:center;gap:16px;
   box-shadow:var(--shadow)}
 .editor-grid{
