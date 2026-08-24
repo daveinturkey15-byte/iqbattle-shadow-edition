@@ -67,6 +67,7 @@
           <div class="round-label" id="round-label">Round 1/10</div>
           <div class="timer-bar"><i id="timer-fill"></i></div>
           <div class="timer-num" id="timer-num">60</div>
+        <div class="hp-bar" id="hp-bar" style="height:4px;border-radius:2px;background:rgba(127,127,127,.15);overflow:hidden;margin:-4px 0 8px" title="Vitality"><i id="hp-fill" style="display:block;height:100%;width:100%;background:#00e68a;transition:width .3s"></i></div>
         </div>
         <div class="board-zone"><div class="board-frame" id="board-frame"></div></div>
         <div class="opts-grid" id="opts-grid"></div>
@@ -113,6 +114,15 @@
 <script src="./gfx-board.js"></script>
 <script src="./emerald-fx.js"></script>
 <script src="./cursor.js"></script>
+<script src="./alignment.js?v=w1c"></script>
+<script src="./worlds.js?v=w1b"></script>
+<script src="./worlds-pop.js?v=w1a"></script>
+<script src="./worlds-mind.js?v=w1a"></script>
+<script src="./dims.js?v=w1a"></script>
+<script src="./curse-pack.js?v=w1a"></script>
+<script src="./lms.js?v=w1a"></script>
+<script src="./gen_retro_a.js?v=w1a"></script>
+<script src="./gen_retro_b.js?v=w1a"></script>
 <script>
 'use strict';
 /* ============================================================
@@ -146,6 +156,40 @@ const SH={ok:false,
  q(c){try{return this.ok?IQ.Shadow.quip(c):''}catch(e){return''}},
  say(t,voice){try{if(!this.ok)return;const ds=window.IQ&&IQ.DemonSay;if(ds){ds.say(t,{tier:G.stage>=3?2:1})}else{IQ.Shadow.say(t,{voice:false})}}catch(e){}}};
 
+/* ---------- W1 runtime (research/w1-contracts.md C2-C4, C8) ---------- */
+function PALROW(){try{const r=window.IQ&&IQ.Worlds&&IQ.Worlds.palRow();if(r)return r}catch(e){}return null}
+function renderHp(){
+ const f=$('#hp-fill');if(!f)return;
+ const p=clamp(G.hp,0,100);
+ f.style.width=p+'%';
+ f.style.background=p>60?'#00e68a':(p>30?'#ffb01e':'#ff2038');
+}
+function hurtHp(n){
+ if(!(n>0))return;
+ G.hp=clamp(G.hp-n,0,100);renderHp();
+ if(G.hp<=0&&!G.mp.on&&G.screen==='play'){endRun('THE DARK CLAIMS YOU')}
+}
+function healHp(n){G.hp=clamp(G.hp+n,0,100);renderHp();}
+function applyW1Effects(){
+ const w=G.w1;
+ const align=w?w.align:null;
+ try{
+  if(w&&w.theme&&G.round>2)IQ.Worlds.apply(w.theme);
+  else IQ.Worlds.clear();
+ }catch(e){}
+ if(w&&w.heal&&G.round>2)healHp(30);
+ if(w&&w.amp&&G.prevAlign&&align!==G.prevAlign&&G.round>2)painBeat();
+ if(align)G.prevAlign=align;
+ try{ if(w&&w.dim&&w.dim!=='2d'&&G.round>2&&window.IQ&&IQ.Dims)IQ.Dims.apply(w.dim); else if(window.IQ&&IQ.Dims)IQ.Dims.clear(); }catch(e){}
+}
+function painBeat(){
+ banner('PAIN — THE PLAN SHIFTS');
+ CX.shake(10,320);AU.p('glitch');
+ const a=$('#app');
+ if(a){a.style.transition='filter .25s';a.style.filter='saturate(.2) contrast(1.15)';
+  setTimeout(()=>{a.style.filter=''},650);}
+}
+
 /* ---------- palettes ---------- */
 const PAL=[
  ['#38bdf8','#f472b6','#facc15','#34d399','#a78bfa','#fb7185','#60a5fa','#2dd4bf'],
@@ -174,12 +218,12 @@ const G={stage:0,screen:'landing',round:0,totalRounds:10,timerLen:60,timeLeft:0,
  diff:2,opps:[],players:[],score:0,streak:0,puzzle:null,picked:null,answered:false,optOrder:[],
  emeralds:[],usedEmeralds:new Set(),forgery:false,chaosControlLeft:0,blackArrowLeft:0,
  pendingDebt:0,lastTick:99,shuffleIv:null,zapFired:false,impossibleNow:false,
- mp:{on:false,host:false,code:''},awaitingRound:false};
+ mp:{on:false,host:false,code:''},awaitingRound:false,w1:null,prevAlign:null,hp:100};
 
 /* ---------- svg renderer ---------- */
 function pal(){return Math.min(G.stage,3)}
 function cellSVG(c,x,y,s,palIdx){
- const col=PAL[palIdx][c.color%PAL[palIdx].length],cx=x+s/2,cy=y+s/2,u=s;
+ const row=(window.IQ&&IQ.Worlds&&IQ.Worlds.palRow())||PAL[palIdx];const col=row[c.color%row.length],cx=x+s/2,cy=y+s/2,u=s;
  const rot=`transform="rotate(${(c.rot||0)*90} ${cx} ${cy})"`;let inner='';
  switch(c.shape){
   case 'plus':{const w=u*.13,l=u*.33;inner=`<rect x="${cx-w}" y="${cy-l}" width="${w*2}" height="${l*2}" rx="${u*.05}"/><rect x="${cx-l}" y="${cy-w}" width="${l*2}" height="${w*2}" rx="${u*.05}"/>`;break}
@@ -256,6 +300,9 @@ function startRun(){
  G.totalRounds=clamp(G.mpCfg?G.mpCfg.total:(+$('#cfg-rounds').value||10),5,20);
  G.timerLen=clamp(G.mpCfg?G.mpCfg.timer:(+$('#cfg-timer').value||60),15,120);
  G.remotePicks={};G.humans=[];G.lastAppliedRevealRound=null;
+ G.hp=100;G.w1=null;G.prevAlign=null;renderHp();
+ try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){}
+ try{window.IQ&&IQ.Align&&IQ.Align.begin(G.mp.code||('solo-'+Date.now()),G.totalRounds)}catch(e){}
  G.emeralds=[];G.usedEmeralds=new Set();G.chaosControlLeft=0;G.blackArrowLeft=0;G.zapFired=false;
  G.forgery=$('#cfg-forged').classList.contains('on');
  S.shadowOn=$('#cfg-shadow').classList.contains('on');
@@ -272,20 +319,39 @@ function nextRound(){
  G.answered=false;G.zapFired=false;G.impossibleNow=false;
  // slow-burn stage gates
  if(G.round===3)setStage(1);else if(G.round===5)setStage(2);else if(G.round===7)setStage(3);
+/* W1: host computes the plan slice here; MP clients receive it via the frame */
+if(!G.mp.on||G.mp.host){try{G.w1=(window.IQ&&IQ.Align)?IQ.Align.at(G.round):null}catch(e){G.w1=null}}
+applyW1Effects();
+/* W1: curse/blessing roll (host+solo only; presentation + flag consumption) */
+try{
+ if(window.IQ&&IQ.Curses&&G.w1){
+  const ev=IQ.Curses.roll({align:G.w1.align,round:G.round});
+  G.curseMul=null;
+  if(ev){
+   IQ.Curses.apply(ev);
+   const f=ev.flags||{};
+   if(f.hpDelta<0)hurtHp(-f.hpDelta); else if(f.hpDelta>0)healHp(f.hpDelta);
+   if(f.scoreMul)G.curseMul=f.scoreMul;
+   if(f.forgiveNext)G.forgiveNext=true;
+  }
+ }
+}catch(e){}
 
  let pz=null;
  if(!G.mp.on||G.mp.host){
   const useForged=G.forgery&&store.get('IQB_PUZZLES_V1',[]).length&&(G.round<=2||Math.random()<.5);
   if(useForged){pz={...store.get('IQB_PUZZLES_V1',[])[ri(0,store.get('IQB_PUZZLES_V1',[]).length-1)]}}
-  else pz=makePuzzle(clamp(G.diff+(G.round>G.totalRounds*.6?1:0),1,5));
+  else pz=makePuzzle(clamp(G.diff+(G.round>G.totalRounds*.6?1:0)+(G.w1&&G.w1.amp?1:0),1,5));
 function makePuzzle(diff){
  const G_=(window.IQ&&IQ.Gens)||{};const S=G.stage;
  const table=S<=0?['iqvs','iqvs','latin','cycle']:S===1?['iqvs','iqvs','latin','cycle','rotate','count']:S===2?['iqvs','latin','cycle','rotate','count','dual','dual']:['wild','wild','dual','iqvs','latin','rotate'];
- const pick=table[ri(0,table.length-1)];const gen=G_[pick];
+  let gname=table[ri(0,table.length-1)];
+  if(S>=2&&(G_.retroA||G_.retroB)&&Math.random()<.12)gname=(G_.retroA&&(!G_.retroB||Math.random()<.5))?'retroA':'retroB';
+  const gen=G_[gname];
  const kinds=S>=2?['matrix','sequence','oddone']:['matrix','matrix','sequence'];
  if(gen&&gen.generate){try{
    const p=gen.generate({difficulty:diff,kinds});
-   const okShape=p&&p.options&&p.options.length===8&&Number.isFinite(p.difficulty)&&(p.board||p.seq||p.oddBoard);
+   const okShape=p&&p.options&&p.options.length===8&&Number.isFinite(p.difficulty)&&(p.board||p.seq||p.oddBoard||(p.kind==='retro'&&p.retro));
    if(okShape&&(!gen.validate||gen.validate(p).ok!==false))return p;
  }catch(e){}}
  try{return IQ.Puzzles.generate({difficulty:diff})}catch(e){return fallbackPuzzle()}
@@ -298,6 +364,7 @@ function makePuzzle(diff){
   if(pz.options&&tl.impossibleChance&&Math.random()<tl.impossibleChance){
    const a=pz.answer;pz.options[a]=JSON.parse(JSON.stringify(pz.options[(a+3)%8]));pz.impossible=true;}
   G.puzzle=pz;
+  pz.w1=G.w1||undefined;
   // ONE shuffled option order per round, fixed by the host and shipped in the
   // round frame — otherwise each tab shuffles locally and a client's `pos`
   // maps to a DIFFERENT tile on the host (picks scored against wrong option).
@@ -322,7 +389,7 @@ function broadcastRound(){
  try{
   const pz=G.puzzle;
   const ob=pz.oddBoard?{cols:pz.oddBoard.cols,rows:pz.oddBoard.rows,cells:pz.oddBoard.cells}:undefined;
-  IQ.Net.broadcast({t:'round',n:G.round,total:G.totalRounds,timerLen:G.timerLen,kind:pz.kind,board:pz.board,oddBoard:ob,seq:pz.seq,options:pz.options,ord:pz.ord,imp:pz.impossible?1:0});
+  IQ.Net.broadcast({t:'round',n:G.round,total:G.totalRounds,timerLen:G.timerLen,kind:pz.kind,board:pz.board,oddBoard:ob,seq:pz.seq,options:pz.options,ord:pz.ord,imp:pz.impossible?1:0,w1:(pz.w1||undefined)});
  }catch(e){ try{localStorage.setItem('iqvs-neterr',String(e&&e.message||e))}catch(_e){} }
 }
 function renderBoard(){
@@ -353,6 +420,7 @@ function drawOptions(){
 function applyIncomingRound(pl){
  G.awaitingRound=false;G.round=pl.n;G.totalRounds=pl.total||G.totalRounds;G.timerLen=pl.timerLen;G.answered=false;G.impossibleNow=!!pl.imp;
  G.puzzle={kind:pl.kind,board:pl.board,oddBoard:pl.oddBoard,seq:pl.seq,options:pl.options,ord:pl.ord,answer:-99};
+ G.w1=pl.w1||null;applyW1Effects();
  renderBoard();startTimer();
 }
 
@@ -429,16 +497,22 @@ function answer(pos){
   if(G.emeralds.includes('doom_bloom'))pts=Math.round(pts*1.3);
   if(G.emeralds.includes('gravity_greed')){const lead=[...G.opps].sort((a,b)=>b.pts-a.pts)[0];if(lead){lead.pts=Math.max(0,lead.pts-60);pts+=60}}
   if(G.emeralds.includes('final_chaos')&&G.round===G.totalRounds)pts*=2;
+  if(G.curseMul)pts=Math.round(pts*G.curseMul);
   scoreMe(pts,true);AU.p('sting');CX.flash('rgba(34,211,165,.10)',130);
   if(G.streak>=4&&Math.random()<.5)SH.say(SH.q('right'),true);
  }else if(pos===-3&&G.blackArrowLeft>0){
   G.blackArrowLeft--;banner('BLACK ARROW SPENT — SIN FORGIVEN');scoreMe(10,true);
  }else{
-  G.streak=0;let pts=-40;
-  if(G.emeralds.includes('doom_bloom'))G.opps.forEach(o=>o.pts-=20);
-  if(G.emeralds.includes('final_chaos')&&G.round===G.totalRounds){G.score=Math.round(G.score*.5);banner('FINAL CHAOS PUNISHES')}
-  scoreMe(pts,false);AU.p('buzz');CX.shake(12,280);AU.p('laugh',{vol:.3});
-  if(Math.random()<.35&&G.stage>=2)SH.say(SH.q('wrong'),true);
+  if(G.forgiveNext){
+   G.forgiveNext=false;banner('GRACE — THIS SIN IS FORGIVEN');
+   scoreMe(0,true);
+  }else{
+   G.streak=0;const pts=-40;
+   if(G.emeralds.includes('doom_bloom'))G.opps.forEach(o=>o.pts-=20);
+   if(G.emeralds.includes('final_chaos')&&G.round===G.totalRounds){G.score=Math.round(G.score*.5);banner('FINAL CHAOS PUNISHES')}
+   scoreMe(pts,false);hurtHp(15);AU.p('buzz');CX.shake(12,280);AU.p('laugh',{vol:.3});
+   if(Math.random()<.35&&G.stage>=2)SH.say(SH.q('wrong'),true);
+  }
  }
 
  setTimeout(()=>{
@@ -507,16 +581,16 @@ function endMatchBroadcast(){
   IQ.Net.broadcast({t:'end',scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...Object.values(G.remotePicks||{}).map(p=>({uid:p.uid,name:p.n||'PLAYER',pts:p.pts||0}))]});
  }catch(e){}
 }
-function endRun(){
+function endRun(deathMsg){
  nav('center');
  const topRival=G.opps.reduce((m,o)=>Math.max(m,o.pts),0);
- const won=G.score>topRival;
+ const won=!deathMsg&&G.score>topRival;
  P.runs++;if(won)P.wins++;P.bestScore=Math.max(P.bestScore,G.score);
  const newF=G.opps.filter(o=>o.pts<G.score&&won).map(o=>o.n);
  newF.forEach(n=>{if(!P.followers.includes(n))P.followers.push(n)});saveP();
  $('#center-content').innerHTML=
   '<div style="font-size:11px;letter-spacing:.34em;opacity:.5;text-transform:uppercase">match terminated</div>'+
-  `<div class="rank-big" style="margin:10px 0;color:${won?'#00e68a':'#e01030'}">${won?(G.stage>=3?'SHADOW BOWS. YOU WON.':'YOU OUTSCORED THE ROOM'):'THE ROOM OUTSCORED YOU'}</div>`+
+  `<div class="rank-big" style="margin:10px 0;color:${deathMsg||!won?'#e01030':'#00e68a'}">${deathMsg?deathMsg:(won?(G.stage>=3?'SHADOW BOWS. YOU WON.':'YOU OUTSCORED THE ROOM'):'THE ROOM OUTSCORED YOU')}</div>`+
   '<div class="stat-grid">'+
   `<div class="stat-cell"><div class="stat-val">${G.score}</div><div class="stat-lbl">score</div></div>`+
   `<div class="stat-cell"><div class="stat-val">${G.totalRounds}</div><div class="stat-lbl">rounds</div></div></div>`+
@@ -573,8 +647,8 @@ function wireLanding(){
   if(G.mp.on&&!G.mp.host){alertEv('WAITING FOR HOST TO START…');return}
   if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin',total:clamp(+$('#cfg-rounds').value||10,5,20),timer:clamp(+$('#cfg-timer').value||60,15,120)})}catch(e){}}
   startRun();};
+ $('#tb-lobby').onclick=()=>{try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){};nav('landing')};
  $('#lobby-back').onclick=()=>{leaveMp();nav('landing')};
- $('#tb-lobby').onclick=()=>nav('landing');
  $('#tb-leave').onclick=()=>location.reload();
  $('#cfg-forged').onclick=e=>e.target.classList.toggle('on');
  $('#cfg-shadow').onclick=e=>e.target.classList.toggle('on');
