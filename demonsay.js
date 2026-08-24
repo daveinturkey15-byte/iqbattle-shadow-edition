@@ -8,6 +8,19 @@
   var TYPE_MS = 22;          // ms per character
   var HOLD_MS = 4500;        // dismiss delay after typing completes
 
+  /* --- Speech budget (research/chaos-balance.md §5) ---
+     Shell passes no timer info, so "never speak in the last 5 s of a round" is
+     approximated by a >=8 s time-since-last-say throttle. Round budget: max
+     1 speech per 2 rounds before stage 3, every round allowed at stage 3.
+     Same-round priority arbitration: impossible > emerald > streak > ambient. */
+  var THROTTLE_MS = 8000;    // min gap between any two speeches (~ last-5s guard)
+  var DEDUPE_MS = 30000;     // identical text within 30 s is always suppressed
+  var PRIORITY = { impossible: 4, emerald: 3, streak: 2, ambient: 1 };
+  var lastSayAt = -Infinity;
+  var recent = [];           // [{ text, at }] for 30 s dedupe
+  var roundInfo = null;      // { round, stage } via noteRound()
+  var spoken = [];           // [{ round, prio }] recent speech placements
+
   /* Built-in fallback pools (Shadow-paraphrase, original fan-art persona only). */
   var FALLBACK = {
     appear: [
@@ -115,9 +128,45 @@
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
   }
 
+  /* --- Budget helpers --- */
+  function normPriority(opts) {
+    return opts && PRIORITY[opts.priority] ? opts.priority : 'ambient';
+  }
+  function spokeIn(rnd) {
+    var best = null;
+    for (var i = 0; i < spoken.length; i++) {
+      var s = spoken[i];
+      if (s.round === rnd && (!best || PRIORITY[s.prio] > PRIORITY[best.prio])) best = s;
+    }
+    return best;
+  }
+  function budgetAllows(prio, t) {
+    if (t - lastSayAt < THROTTLE_MS) return false;           // >=8 s since last say
+    if (!roundInfo) return true;                             // no round info: throttle-only
+    var same = spokeIn(roundInfo.round);
+    if (same) return PRIORITY[prio] > PRIORITY[same.prio];   // arbitration within round
+    if (roundInfo.stage < 3 && prio !== 'impossible' && spokeIn(roundInfo.round - 1)) return false; // 1 per 2 rounds pre-stage-3 (impossible always speaks, §4)
+    return true;
+  }
+  function noteSpeech(prio, t) {
+    lastSayAt = t;
+    spoken.push({ round: roundInfo ? roundInfo.round : -1, prio: prio });
+    if (spoken.length > 4) spoken.shift();
+  }
   /* Public: show one line. Replaces whatever was showing. */
   function say(text, opts) {
     opts = opts || {};
+    var full = String(text == null ? '' : text);
+    var t = Date.now();
+    var prio = normPriority(opts);
+    var d;
+    for (d = 0; d < recent.length; d++) {
+      if (recent[d].text === full && t - recent[d].at < DEDUPE_MS) return false; // dedupe
+    }
+    if (!opts.force && !budgetAllows(prio, t)) return false;
+    noteSpeech(prio, t);
+    recent.push({ text: full, at: t });
+    if (recent.length > 16) recent.shift();
     var box = ensureEl();
     clearTimers();
 
@@ -139,14 +188,13 @@
     }
 
     var out = box.querySelector('.iqds-text');
-    var full = String(text == null ? '' : text);
     void out.offsetWidth; // restart fade
     box.classList.add('on');
 
     if (reducedMotion()) {
       out.textContent = full;
       holdTimer = setTimeout(hide, HOLD_MS);
-      return;
+      return true;
     }
     var i = 0;
     out.textContent = '';
@@ -159,11 +207,12 @@
         holdTimer = setTimeout(hide, HOLD_MS);
       }
     }, TYPE_MS);
+    return true;
   }
 
   /* Public: big announcement line ("STAGE 3", etc.) above the text. */
   function announce(title, text) {
-    say(text || '', { title: title, tier: 2 });
+    say(text || '', { title: title, tier: 2, force: true }); // stage-entry lines are mandatory/uncounted (§5)
   }
 
   function hide() {
@@ -186,7 +235,16 @@
     announce: announce,
     pool: pool,
     sayPool: sayPool,
-    hide: hide,
+    /* Budget API: shell calls noteRound(round, stage) each deal; reset() at startRun. */
+    noteRound: function (round, stage) {
+      roundInfo = { round: Math.floor(Number(round) || 0), stage: Math.floor(Number(stage) || 0) };
+    },
+    reset: function () {
+      lastSayAt = -Infinity;
+      recent.length = 0;
+      spoken.length = 0;
+      roundInfo = null;
+    },
     _fallback: FALLBACK
   };
 })();

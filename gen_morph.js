@@ -2,8 +2,10 @@
  * Every fragment is one animation frame of a SINGLE transformation axis,
  * advanced along reading order; the color never changes. Axes:
  *   scale    — the mark swells/shrinks step by step (nested-tile span 4→1),
- *   rotate   — a triangle spins by a constant step (visible rot only),
- *   position — the mark drifts through a tiny frame (nested-tile padding),
+ *   rotate   — an elongated twin-dot comet sweeps ~45° per cell (wide, SE-diagonal,
+ *              tall, NE-diagonal — the live bbox-aspect oscillation, A1-R3),
+ *   position — lit sub-slots of a 3×3 micro-dot lattice climb upward with a
+ *              decelerating centroid drift at constant fill (A1-R4),
  *   squash   — the frame squashes wide↔tall (width≠height nested tiles).
  * Board is always 3×3, hole bottom-right (index 8); cell p shows frame
  * (p mod L) for L ∈ {3,4}. Options: the true next frame + 7 decoys that are
@@ -82,10 +84,33 @@
       'THE FRAME NEVER STOPPED MOVING. IT WAS ONLY EVER WAITING FOR YOU TO LOOK AWAY. CHOOSE.',
     ],
   ];
-
-  // Position-axis orbits: 3 frames slide along a top-row strip, 4 frames
-  // orbit the corners of a 2×2 viewfinder clockwise.
-  const POS_PATHS = { 3: { dims: [3, 1], path: [0, 1, 2] }, 4: { dims: [2, 2], path: [0, 1, 3, 2] } };
+  // Rotation-comet orientations (ResMorph A1-R3): an elongated two-dot comet
+  // advanced in ~45° steps — wide, SE-diagonal, tall, NE-diagonal — the discrete
+  // analogue of the live bbox-aspect oscillation (0.83 <-> 1.20, period 4).
+  // Encoded structurally as nested domino/diagonal tiles; leaf rot stays unused.
+  const dot = (color) => leaf('square', color, 0);
+  function cometMark(o, color) {
+    switch (((o % 4) + 4) % 4) {
+      case 0: return mkTile(2, 1, [dot(color), dot(color)]); // wide
+      case 1: return mkTile(2, 2, [dot(color), null, null, dot(color)]); // SE diagonal
+      case 2: return mkTile(1, 2, [dot(color), dot(color)]); // tall
+      default: return mkTile(2, 2, [null, dot(color), dot(color), null]); // NE diagonal
+    }
+  }
+  // Occupancy-lattice paths (ResMorph A1-R4): a 3×3 micro-dot lattice whose lit
+  // sub-slots climb upward while the dot count stays fixed — centroid dy
+  // -0.75, -0.5, -0.25 mirrors the live decelerating cy drift (.625→.539→.497).
+  const OCC_SEQS = {
+    3: [[4, 6, 7, 8], [1, 3, 4, 7], [0, 1, 3, 4]],
+    4: [[4, 6, 7, 8], [1, 3, 4, 7], [0, 1, 3, 4], [0, 1, 2, 3]],
+  };
+  const latticeTile = (set, color) => {
+    const cells = new Array(9).fill(null);
+    for (const i of set) cells[i] = dot(color);
+    return mkTile(3, 3, cells);
+  };
+  const sameSet = (a, b) => a.slice().sort().join() === b.slice().sort().join();
+  const reflectRows = (set) => set.map((i) => (2 - Math.floor(i / 3)) * 3 + (i % 3));
   const SQUASH_SEQS = {
     3: [[3, 1], [2, 2], [1, 3]],
     4: [[3, 1], [2, 1], [1, 2], [1, 3]],
@@ -94,13 +119,14 @@
   function frameTile(axis, p, L, st) {
     switch (axis) {
       case 'scale': return paddedTile(st.spans[p % L], 0, st.mark);
-      case 'rotate': return singleTile(leaf('triangle', st.color, (st.baseRot + st.rotStep * p) % 4));
-      case 'position': {
-        const { dims, path } = POS_PATHS[L];
-        const cells = new Array(dims[0] * dims[1]).fill(null);
-        cells[path[p % L]] = { ...st.mark };
-        return mkTile(dims[0], dims[1], cells);
+      case 'rotate': {
+        // ~45°-per-cell sweep of the elongated comet, wrapped in a fixed glass frame.
+        const o = ((st.dir * p) % 4 + 4) % 4;
+        return paddedTile(3, 4, cometMark(o, st.color));
       }
+      case 'position':
+        // Occupancy shift on the micro-dot lattice — the whole cluster never translates.
+        return latticeTile(OCC_SEQS[L][p % L], st.color);
       default: { // squash
         let [c, rw] = SQUASH_SEQS[L][p % L];
         if (st.flip) [c, rw] = [rw, c];
@@ -113,15 +139,15 @@
     const head = `one fragment repeats as animation frames — `;
     const body = {
       scale: `it ${st.spans[0] > st.spans[L - 1] ? 'swells' : 'shrinks'} by equal attention, frame after frame`,
-      rotate: `the triangle turns the same amount every step (${st.rotStep === 1 ? 'clockwise' : 'counter-clockwise'})`,
-      position: `the mark advances one notch along its little viewfinder, wrapping as it goes`,
+      rotate: `the twin-dot comet sweeps ${st.dir > 0 ? 'clockwise' : 'counter-clockwise'}, turning the same amount every frame`,
+      position: `the lit cells of its little dot-lattice climb upward, slowing as they rise, then begin afresh`,
       squash: `the frame squeezes steadily from wide to tall`,
     }[axis];
     return head + body + '; the color never changes' + kindTail;
   }
 
   // Decoys = wrong continuations of the SAME parameter (nearest misses first),
-  // then off-rule corruptions (tint / extra mark / stray rot). Never the truth.
+  // then off-rule corruptions (tint / collapsed comet / wrong dot count). Never the truth.
   function decoys(axis, st, L, frames, expected, r) {
     const want = 7;
     const seen = new Set([canon(expected)]);
@@ -137,18 +163,24 @@
     if (axis === 'scale') {
       for (const s of shuffle(r, [1, 2, 3, 4])) if (s !== expSpan) push(paddedTile(s, 0, st.mark));
     } else if (axis === 'rotate') {
-      for (const v of shuffle(r, [0, 1, 2, 3])) {
-        if (v !== expected.cells[0].rot) push(singleTile(leaf('triangle', st.color, v)));
+      const expO = ((st.dir * 8) % 4 + 4) % 4;
+      for (const o of shuffle(r, [0, 1, 2, 3])) {
+        if (o !== expO) push(paddedTile(3, 4, cometMark(o, st.color)));
+      }
+      push(paddedTile(3, 4, singleTile(dot(st.color)))); // right phase, comet collapsed to a lone dot
+      let g = 0;
+      while (pool.length < want && g++ < 100) {
+        push(paddedTile(3, 4, cometMark(r.int(4), (st.color + r.range(1, 7)) % 8))); // tinted comet
       }
     } else if (axis === 'position') {
-      const { dims, path } = POS_PATHS[L];
-      const n = dims[0] * dims[1];
-      for (let i = 0; i < n; i++) {
-        if (!path.includes(i) || path.indexOf(i) !== (8 % L)) {
-          const cells = new Array(n).fill(null);
-          cells[i] = { ...st.mark };
-          push(mkTile(dims[0], dims[1], cells));
-        }
+      const seq = OCC_SEQS[L];
+      const expSet = seq[8 % L];
+      for (const s of shuffle(r, seq)) if (!sameSet(s, expSet)) push(latticeTile(s, st.color));
+      push(latticeTile(reflectRows(expSet), st.color)); // reversal: the drift sinks instead of climbing
+      let g = 0;
+      while (pool.length < want && g++ < 100) {
+        const n = 2 + r.int(4); // wrong dot count breaks the constant-fill occupancy law
+        push(latticeTile(shuffle(r, [0, 1, 2, 3, 4, 5, 6, 7, 8]).slice(0, n), st.color));
       }
     } else { // squash
       const cand = [[1, 1], [2, 1], [1, 2], [2, 2], [3, 1], [1, 3]];
@@ -157,25 +189,17 @@
         if (!(c === ec && rw === er)) push(filledTile(st.flip ? rw : c, st.flip ? c : rw, st.mark));
       }
     }
-    // Tier 2 — corrupt the truth itself: tinted, spun, doubled.
+    // Tier 2 for scale/squash — corrupt the truth itself: tinted / stray rot.
     let guard = 0;
     while (pool.length < want && guard++ < 400) {
-      const marks = expected.cells.filter(Boolean);
-      const m = { ...marks[r.int(marks.length)] };
-      const w = r.int(3);
-      if (w === 0) m.color = (st.color + r.range(1, 7)) % 8;
-      else if (w === 1 && axis !== 'rotate') m.rot = (m.rot + r.range(1, 3)) % 4;
+      const m = { ...st.mark };
+      if (r.chance(0.5)) m.color = (st.color + r.range(1, 7)) % 8;
+      else m.rot = (m.rot + r.range(1, 3)) % 4;
+      if (axis === 'scale') push(paddedTile(expected.cols, 0, m));
       else {
-        // doubled mark: clone the frame with an extra mark in a free slot
-        const t = { cols: expected.cols, rows: expected.rows, cells: expected.cells.map((c) => (c ? { ...c } : null)) };
-        const free = t.cells.map((c, i) => (c ? -1 : i)).filter((i) => i >= 0);
-        if (!free.length || expected.cells.length < 2) { m.color = (st.color + r.range(1, 7)) % 8; push(singleTile(m)); continue; }
-        t.cells[free[r.int(free.length)]] = { ...marks[0] };
-        continue;
+        const [ec, er] = [expected.cols, expected.rows];
+        push(filledTile(ec, er, m));
       }
-      if (axis === 'rotate') push(singleTile(m));
-      else if (axis === 'scale') push(paddedTile(expected.cols, 0, m));
-      else push(mkTile(expected.cols, expected.rows, expected.cells.map((c, i) => (i === expected.cells.findIndex(Boolean) ? { ...m } : (c ? { ...c } : null)))));
     }
     // Paranoia fill.
     while (pool.length < want) push(paddedTile(1 + (pool.length % 4), 0, { ...st.mark, color: (st.color + 1 + pool.length) % 8 }));
@@ -191,8 +215,8 @@
     const axis = r.pick(AXES);
     const color = r.int(8);
     const L = difficulty <= 2 ? 3 : r.pick([3, 4]);
-    const st = { color, mark: leaf(r.pick(['square', 'diamond', 'ring']), color, 0), baseRot: r.int(4), rotStep: 1, flip: false, spans: [] };
-    if (axis === 'rotate') st.rotStep = difficulty >= 4 && r.chance(0.5) ? 3 : 1;
+    const st = { color, mark: leaf(r.pick(['square', 'diamond', 'ring']), color, 0), dir: 1, flip: false, spans: [] };
+    if (axis === 'rotate') st.dir = difficulty >= 4 && r.chance(0.5) ? -1 : 1;
     if (axis === 'scale') {
       const dir = r.chance(0.5) ? 1 : -1;
       st.spans = shuffle(r, [1, 2, 3, 4]).slice(0, L).sort((a, b) => dir * (a - b));
@@ -228,17 +252,23 @@
     && typeof c.shape === 'string'
     && Number.isInteger(c.color) && c.color >= 0 && c.color < 8
     && Number.isInteger(c.rot) && c.rot >= 0 && c.rot < 4;
-  const isTile = (t) => !!t && typeof t === 'object'
-    && Number.isInteger(t.cols) && t.cols >= 1 && t.cols <= 4
-    && Number.isInteger(t.rows) && t.rows >= 1 && t.rows <= 4
-    && Array.isArray(t.cells) && t.cells.length === t.cols * t.rows
-    && t.cells.every((c) => c === null || isLeaf(c));
+  const isTile = (t, depth) => {
+    if (depth == null) depth = 2; // board cell -> nested mark tile -> leaves
+    return !!t && typeof t === 'object'
+      && Number.isInteger(t.cols) && t.cols >= 1 && t.cols <= 4
+      && Number.isInteger(t.rows) && t.rows >= 1 && t.rows <= 4
+      && Array.isArray(t.cells) && t.cells.length === t.cols * t.rows
+      && t.cells.every((c) => c === null || isLeaf(c) || (depth > 1 && isTile(c, depth - 1)));
+  };
 
   function tileColors(t, acc) {
-    for (const c of t.cells) if (c) acc.add(c.color);
+    for (const c of t.cells) {
+      if (!c) continue;
+      if (c.cells) tileColors(c, acc);
+      else acc.add(c.color);
+    }
     return acc;
   }
-
   // Detect the frame period L ∈ {3,4} purely from the visible cells.
   function detectPeriod(cells) {
     for (const L of [3, 4]) {
@@ -293,6 +323,23 @@
         const hits = p.options.map((o, i) => ({ o, i })).filter(({ o }) => canon(o) === canon(expected));
         if (hits.length !== 1) push(`rule-uniqueness broken: ${hits.length} options satisfy the continuation`);
         else if (hits[0].i !== p.answer) push(`answer index ${p.answer} is not the unique continuation (index ${hits[0].i})`);
+        // Options must be pairwise distinct — a repeated decoy is a grading ambiguity.
+        if (new Set(p.options.map(canon)).size !== 8) push('options must be pairwise distinct');
+        // Per-axis structural laws (ResMorph): comets stay elongated, lattices hold fill.
+        const am = /^iq-morph-([a-z]+)-/.exec(p.id || '');
+        const axis = am ? am[1] : '';
+        if (axis === 'rotate') {
+          const okComet = per.frames.every((f) => {
+            const solid = f.cells.filter(Boolean);
+            return solid.length === 1 && solid[0].cells && solid[0].cells.filter(Boolean).length === 2;
+          });
+          if (!okComet) push('rotate frames must each carry one nested two-dot comet');
+        } else if (axis === 'position') {
+          const cnt = (f) => f.cells.filter(Boolean).length;
+          if (!per.frames.every((f) => cnt(f) === cnt(per.frames[0]))) {
+            push('lattice frames must keep dot count constant (fill-invariant occupancy)');
+          }
+        }
       }
     }
     return { ok: errors.length === 0, errors };
@@ -302,19 +349,21 @@
   // continuation, and generation is deterministic under a fixed seed.
   function selfTest(iterations = 100) {
     const failures = [];
+    const axesSeen = new Set();
     for (let i = 0; i < iterations; i++) {
       const seed = (0x9E3779B9 ^ (i * 0x85EBCA6B)) >>> 0;
       const difficulty = (i % 5) + 1;
       let pz;
       try { pz = generate({ difficulty, seed }); } catch (e) { failures.push({ i, stage: 'generate', error: String(e) }); continue; }
+      axesSeen.add(pz.id.split('-')[2]);
       const v = validate(pz);
       if (!v.ok) failures.push({ i, stage: 'validate', errors: v.errors, id: pz.id });
       const dup = generate({ difficulty, seed });
       if (canon(dup) !== canon(pz)) failures.push({ i, stage: 'determinism', id: pz.id });
     }
-    return { name: 'morph', ok: failures.length === 0, iterations, checked: iterations * 2, failures };
+    for (const a of AXES) if (!axesSeen.has(a)) failures.push({ stage: 'coverage', missing: a });
+    return { name: 'morph', ok: failures.length === 0, iterations, checked: iterations * 2, axes: [...axesSeen], failures };
   }
-
   const GenMorph = { name: 'morph', generate, validate, selfTest };
   root.IQ.Gens2.morph = GenMorph;
   if (typeof module !== 'undefined' && module.exports) module.exports = GenMorph;
