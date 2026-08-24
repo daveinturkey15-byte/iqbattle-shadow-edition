@@ -43,3 +43,25 @@ Host `broadcastRound()` adds ONE optional field:
 
 ## C8 · Parity rule (first rounds identical)
 While `G.round <= 2 && !anyW1Flagged`: no world skins, no dim modes, no retro, no amp beats — pure baseline clone matching iqversus.com tokens (research/w1-original-recon.md). Divergence begins round 3+ (or immediately if host toggles W1 OFF→ shadow classic).
+
+---
+
+## REVISION 2 (2026-08-24, evening) — Dave's hard orders + Hooks backbone
+
+**Flow orders (supersede C8 flow bits):**
+- Difficulty/Torment selector: REMOVED. Depth curve replaces it: effDiff = 1+floor(round/6), cap 5.
+- Round limit: REMOVED. Solo = infinite rounds, run ends only at hp<=0. MP LMS = open-ended while >1 alive.
+- Grimoire/Forge entry points removed from landing; Settings reduced to mute/motion gear.
+- Emerald interludes every 4 rounds.
+- Round UI shows DEPTH N (no N/M).
+
+**C9 · Hooks backbone (hooks.js -> window.IQ.Hooks):**
+- `Hooks.add({id, worlds[]|always:true, weight?, handlers:{onRoundStart,onTick,onPreAnswer,onAnswer,onReveal,onInterlude}})`
+- `Hooks.dispatch(evt, ctx)` -> array of modifiers; throwing packs swallowed+logged.
+- Modifier vocabulary: hpDelta, scoreMul(clamped>0), timerDelta, disableOptionIdx(keep>=1), invertControlsMs, overlayHTML, bannerText, pickup{kind,value}, sfx, flag. Unknown fields ignored (forward-compatible).
+- ctx: {round, world, align, hp, score, streak, timerLen, optCount, rng, runId, seed, res?}.
+- `Hooks.state` per-match store wiped on beginRun(runId,seed); makeRng exported.
+- Engine dispatch points owned by GameFlow (index.html), defensive-wired.
+- Fairness rails unchanged: IQB_MOTION/IQB_MUTED gates, flash caps, readability floor, escapable overlays, host-authoritative scoring, no pre-reveal answer leakage.
+
+**Army pack ownership:** each pack file self-registers via Hooks.add and (where needed) Worlds.register; exclusive file ownership per agent; index.html single-writer = GameFlow during remake wave.
