@@ -273,13 +273,13 @@ var BLESSINGS = [
     id: 'lollipop',
     bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS',
     flags: function () { return {}; },
-    theater: function () { grantFlair(); }
+    theater: function (_m, evt) { grantFlair(evt && evt._fp != null ? function () { return evt._fp; } : undefined); }
   },
   {
     id: 'sticker',
     bannerText: '🌟 STICKER — WEAR IT PROUDLY',
     flags: function () { return {}; },
-    theater: function () { grantFlair(); }
+    theater: function (_m, evt) { grantFlair(evt && evt._fp != null ? function () { return evt._fp; } : undefined); }
   },
   {
     id: 'grace',
@@ -313,21 +313,22 @@ var Curses = (function () {
     }
     if (align === 'good') {
       if (rng() >= 0.25) return null;
-      return materialize(BLESSINGS[Math.floor(rng() * BLESSINGS.length)], 'blessing');
+      return materialize(BLESSINGS[Math.floor(rng() * BLESSINGS.length)], 'blessing', rng);
     }
     if (align === 'bad' || align === 'chaotic') {
       if (rng() >= 0.18) return null;
-      return materialize(CURSES[Math.floor(rng() * CURSES.length)], 'curse');
+      return materialize(CURSES[Math.floor(rng() * CURSES.length)], 'curse', rng);
     }
     return null; /* neutral rounds are quiet */
   }
 
-  function materialize(def, kind) {
+  function materialize(def, kind, rng) {
     return {
       id: def.id,
       kind: kind,
       bannerText: def.bannerText,
-      flags: def.flags()
+      flags: def.flags(),
+      _fp: (typeof rng === 'function') ? rng() : 0.5 /* seeded flair pick */
     };
   }
 
@@ -355,8 +356,7 @@ var Curses = (function () {
     }
 
     showBanner(evt.bannerText || def.bannerText, 1700);
-
-    if (typeof def.theater === 'function') def.theater(motion);
+    if (typeof def.theater === 'function') def.theater(motion, evt);
   }
 
   return {

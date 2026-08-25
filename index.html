@@ -957,11 +957,12 @@ function wireLanding(){
  bindNav();
  }
 function onRemotePick(pk){if(!(G.mp.host&&pk))return;
+ if(pk.n!=null&&typeof pk.n==='number'&&pk.n!==G.round)return; // stale pick from a previous depth — drop (D5)
  // key by stable uid — NEVER by display name (same-profile tabs collide)
- const uid=pk.uid||pk.from||('anon-'+pk.n);
- G.remotePicks[uid]={uid,n:pk.name||pk.n||'PLAYER',pos:pk.pos};
+ const uid=pk.uid||pk.from||('anon-'+(pk.name||'P'));
+ G.remotePicks[uid]={uid,n:pk.name||('PLAYER'),pos:pk.pos};
  G.humans=G.humans||[];
- if(!G.humans.find(h=>h.uid===uid))G.humans.push({uid,n:pk.name||pk.n||'PLAYER',pts:0});
+ if(!G.humans.find(h=>h.uid===uid))G.humans.push({uid,n:pk.name||'PLAYER',pts:0});
 }
 function hostMp(code){ /* host path: after Create Room with code */ }
 /* Apply a host-authored scores array ({uid,name,pts}[...]) onto local state.
