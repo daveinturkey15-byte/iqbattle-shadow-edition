@@ -653,7 +653,8 @@
           peekReels: window.__IQ_SMOKE__
             ? function () {
                 return { strips: strips.map(function (a) { return a.slice(); }),
-                  salts: salts.slice(), pairPay: pairPay, stake: stake };
+                  salts: salts.slice(), pairPay: pairPay, triplePay: triplePay,
+                  jackpotPay: jackpotPay, stake: stake };
               }
             : null
         };

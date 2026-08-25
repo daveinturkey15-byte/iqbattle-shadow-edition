@@ -42,6 +42,8 @@ function makePuzzle(ctx){
  let gname=table[Math.floor(ctx.rng()*table.length)];
  if(ctx.depth>=7&&G_.compound&&ctx.rng()<.07)gname='compound';
  else if(ctx.depth>=8&&G_.relay&&ctx.rng()<.06)gname='relay';
+ else if(ctx.depth>=9&&G_.parquet&&ctx.rng()<.06)gname='parquet';
+ else if(ctx.depth>=9&&G_.pendulum&&ctx.rng()<.06)gname='pendulum';
  if(ctx.tier>=2&&(G_.retroA||G_.retroB)&&ctx.rng()<.12)gname=(G_.retroA&&(!G_.retroB||ctx.rng()<.5))?'retroA':'retroB';
  const gen=G_[gname];
  const kinds=ctx.tier>=2?['matrix','sequence','oddone']:['matrix','matrix','sequence'];

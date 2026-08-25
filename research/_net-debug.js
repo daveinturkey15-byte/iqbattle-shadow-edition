@@ -246,16 +246,17 @@
       var ep = s.slice(0, ci), num = Number(s.slice(ci + 1));
       if (ep && isFinite(num) && num >= 0) {
         var w = sqWM[ep];
-        if (!w) w = sqWM[ep] = { hi: 0, hole: {}, hc: 0 };
+        if (!w) { if (globalThis.__trace) globalThis.__trace("wm-NEW "+ep); w = sqWM[ep] = { hi: 0, hole: {}, hc: 0 }; }
         // Drop if already swept by the contiguous watermark OR already seen
         // out-of-order (hole set == seen-beyond-hi). Without the hole check a
         // replayed frame whose original is itself still out-of-order would be
         // accepted twice — exactly the D5 duplication this table exists to kill.
-        if (num <= w.hi || w.hole[num]) return true;
+        if (num <= w.hi || w.hole[num]) { if (globalThis.__trace) globalThis.__trace("wm-DROP "+n); return true; }
+        if (globalThis.__trace) globalThis.__trace("wm-ACC "+n+" hi="+w.hi+" hc="+w.hc);
         // Memory guard ONLY: a sender that dies mid-stream could otherwise pin
         // holes forever. Clearing needs >32k frames concurrently out of order —
         // unreachable in a browser tab (a full round burst is ~1e3 frames).
-        if (w.hc > WM_HOLE_CAP) { w.hole = {}; w.hc = 0; }
+        if (w.hc > WM_HOLE_CAP) { if (globalThis.__trace) globalThis.__trace("wm-VALVE "+ep+" hc="+w.hc); w.hole = {}; w.hc = 0; }
         return false;
       }
     }

@@ -237,7 +237,7 @@ async function smokeBattleshipCurve() {
     'identical fleet sink pays strictly more deeper (' + w.join('<') + ')');
 }
 
-function linePayoutRef(line, pairPay) {
+function linePayoutRef(line, pairPay, triplePay, jackpotPay) {
   let stars = 0, skull = false; const rest = {};
   for (const s of line) {
     if (s === 'skull') skull = true;
@@ -245,11 +245,11 @@ function linePayoutRef(line, pairPay) {
     else rest[s] = (rest[s] || 0) + 1;
   }
   if (skull) return 0;
-  if (stars === 3) return 600;
+  if (stars === 3) return jackpotPay;                 // W5: depth-scaled tables
   let bestN = 0, bestSym = null;
   for (const k in rest) if (rest[k] > bestN) { bestN = rest[k]; bestSym = k; }
   if (!bestSym) return 0;
-  if (bestN + stars >= 3) return ({ eye: 90, moon: 120, key: 160, crown: 260 })[bestSym];
+  if (bestN + stars >= 3) return triplePay[bestSym];
   if (bestN + stars === 2) return pairPay;
   return 0;
 }
@@ -291,7 +291,7 @@ async function smokeGodSolo(depth, align, label) {
       const land = (st.ticks[sp * 3 + r] * 7 + view.salts[r]) % 20;
       line.push(view.strips[r][land]);
     }
-    let pay = linePayoutRef(line, view.pairPay);
+    let pay = linePayoutRef(line, view.pairPay, view.triplePay, view.jackpotPay);
     if (sp === 2 && depth >= 30) pay *= 2;
     expect += pay;
   }

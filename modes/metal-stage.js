@@ -227,7 +227,7 @@ function makeAudio() {
 root.Stage.register({
   id: 'forge-set',
   name: 'FORGE SET',
-  weight: 2,
+  weight: 4,
   worlds: ['metal-forge'],
   net: 'seed',
 

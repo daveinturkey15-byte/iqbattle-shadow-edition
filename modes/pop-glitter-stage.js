@@ -210,7 +210,7 @@ function makeAudio() {
 root.Stage.register({
   id: 'glitter-set',
   name: 'CHART TOPPER',
-  weight: 2,
+  weight: 4,
   worlds: ['pop-glitter'],
   net: 'seed',
 

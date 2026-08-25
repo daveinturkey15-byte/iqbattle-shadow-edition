@@ -26,7 +26,7 @@ const def = pending.find(d => d.id === 'phoenix-ritual');
 ok(def, 'queued registration under __stagePending');
 if (def) {
   ok(typeof def.mount === 'function', 'mount(container, ctx) is a function');
-  eq(def.weight, 4, 'weight');
+  eq(def.weight, 6, 'weight'); // W5: boosted 4->6 so the ritual actually fires
   eq(def.net, 'seed', 'net mode');
   ok(Array.isArray(def.worlds) && def.worlds.includes('heaven') &&
      def.worlds.includes('womb') && def.worlds.includes('stair-of-heaven'),

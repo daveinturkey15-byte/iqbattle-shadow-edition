@@ -205,7 +205,7 @@
   var DEF = {
     id: 'phoenix-ritual',
     name: 'PHOENIX RITUAL',
-    weight: 4,
+    weight: 6,
     worlds: ['heaven', 'womb', 'stair-of-heaven'],
     net: 'seed',
     mount: mount,

@@ -72,6 +72,7 @@ const ABYSS_THEME = 'abyss-void';
 const Align = (function(){
  let plan = [];
  let pendingForce = null;     /* one-shot forced-align request (nuke) */
+ let recentThemes = [];       /* feel-stats rail: last two themes, anti-repeat */
  let forcedConsumedAt = -1;
 
  function themesFor(align){
@@ -80,7 +81,17 @@ const Align = (function(){
   }catch(e){}
   return [];
  }
- function pick(arr, r){ return arr.length ? arr[Math.floor(r()*arr.length)] : null; }
+ function pick(arr, r){
+  if (!arr.length) return null;
+  if (arr.length > 1 && recentThemes.length){
+    /* feel-stats rail: avoid the last two themes when an alternative exists */
+    const fresh = arr.filter(function(t){ return recentThemes.indexOf(t) === -1; });
+    if (fresh.length) arr = fresh;
+  }
+  const t = arr[Math.floor(r()*arr.length)];
+  recentThemes.push(t); if (recentThemes.length > 2) recentThemes.shift();
+  return t;
+ }
  function poolFor(align, prefs){
   const reg = themesFor(align);
   const wanted = (prefs || []).filter(function(t){ return reg.indexOf(t) >= 0; });

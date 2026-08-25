@@ -185,9 +185,11 @@
 <script src="./pack-popcult-b.js?v=w4"></script>
 <script src="./pack-story.js?v=w4"></script>
 <script src="./pack-quips-w4.js?v=w4"></script>
+<script src="./pack-fate-w4.js?v=w5"></script>
 <script src="./cameo-pack.js?v=w4"></script>
 <script src="./pack-funny.js?v=w4"></script>
 <script src="./pack-cavern.js?v=w4"></script>
+<script src="./pack-density-a.js?v=w5"></script>
 <script src="./pack-interludes.js?v=w1a"></script>
 <script src="./pack-hunters.js?v=w1a"></script>
 <script src="./pack-realm.js?v=w1a"></script>
@@ -207,6 +209,7 @@
 <script src="./gen_seqpack.js?v=w1a"></script>
 <script src="./gen_missing.js?v=w1a"></script>
 <script src="./gen_depth.js?v=w4"></script>
+<script src="./gen_depth2.js?v=w5"></script>
 <script>
 'use strict';
 /* ============================================================
@@ -244,7 +247,7 @@ const CX={ok:false,
 window.IQ=window.IQ||{};
 IQ.Stage=(function(){
  const stages=new Map();
- let lastTakeover=-99;
+ let lastTakeover=-99, recentStages=[];
  function normalize(def){
   return {
    id:String(def.id||'').trim(),name:String(def.name||def.id||'stage'),
@@ -279,7 +282,7 @@ function eligible(depth,world,align){
  }
  /* Director rails (QA): DEPTH 1-2 are ALWAYS the classic puzzle; takeovers
   * require minDepth>=3; at most ONE takeover per any 3 consecutive depths. */
- function take(s,depth){lastTakeover=depth;return s}
+ function take(s,depth){lastTakeover=depth;recentStages.push(s.id);if(recentStages.length>3)recentStages.shift();return s}
  function pick(rng,depth,world,align){
   depth=Math.max(1,Math.round(+depth||1));
   if(depth<3)return get('puzzle');
@@ -287,20 +290,22 @@ function eligible(depth,world,align){
   const pool=eligible(depth,world,align);
   if(!pool.length)return get('puzzle');
   const pz=pool.find(s=>s.id==='puzzle');
-  const rest=pool.filter(s=>s.id!=='puzzle'&&Math.max(3,s.minDepth)<=depth);
+  let rest=pool.filter(s=>s.id!=='puzzle'&&Math.max(3,s.minDepth)<=depth);
   if(!rest.length)return pz||get('puzzle');
   if(!pz)return take(rest[0],depth);
-  const share=depth<=10?.70:.55;
+  /* feel-stats: deprioritize the last 3 played takeovers when any fresh option exists */
+  const fresh=rest.filter(s=>!recentStages.includes(s.id));
+  if(fresh.length)rest=fresh;
+  const share=depth<=10?.64:.48;
   const r=(rng?rng():Math.random());
   const restW=rest.reduce((a,s)=>a+s.weight,0);
   const pzW=restW*share/(1-share);
   let x=r*(pzW+restW);
   if(x<pzW)return pz;
   x-=pzW;
-  for(const s of rest){x-=s.weight;if(x<=0)return take(s,depth)}
   return take(rest[rest.length-1],depth);
  }
- return {register,get,list,pick,eligible,reset(){lastTakeover=-99}};
+ return {register,get,list,pick,eligible,reset(){lastTakeover=-99;recentStages=[]}};
 })();
 const S={voiceOn:store.get('IQB_VOICE',false),shadowOn:true};
 const SH={ok:false,
@@ -464,7 +469,7 @@ function setStage(n){
 }
 function updateTitle(){
  const t=$('#room-title');if(!t)return;
- const base=G.mp.code?('Room '+G.mp.code):'Private Room';
+ const base=(G.mp.roomName&&G.mp.code)?(G.mp.roomName+' · '+G.mp.code):(G.mp.code?('Room '+G.mp.code):'Private Room');
  t.textContent=G.stage>=3?'IQ VERSUS: SHADOW':base;
  document.title=(G.stage>=3?'IQ Versus Shadow':'IQ Versus')+' | Abstract Reasoning Puzzles';
 }
@@ -924,7 +929,7 @@ function wireLanding(){
    (window.IQ&&IQ.Net&&IQ.Net.available())?IQ.Net.host(code,P.name).catch(()=>null):Promise.resolve(null),
    new Promise(res=>setTimeout(()=>res(null),3500))
   ]);
-  if(hosted&&hosted.code){G.mp={on:true,host:true,code:hosted.code};listenNet()}
+  if(hosted&&hosted.code){G.mp={on:true,host:true,code:hosted.code};G.mp.roomName=$('#boot-room').value.trim()||'Room';listenNet();try{IQ.Net.broadcast({t:'meta',rn:G.mp.roomName})}catch(e){}}
   else{G.mp={on:false,host:false,code:''};alertEv('PEER LINK SLOW — SOLO ROOM OPENED')}
   openLobby(G.mp.code?((($('#boot-room').value.trim())||'Room')+' '+G.mp.code+' — share this code!'):'Solo Gauntlet');
  };
@@ -946,7 +951,7 @@ function wireLanding(){
  };
  $('#cfg-start').onclick=()=>{
   if(G.mp.on&&!G.mp.host){alertEv('WAITING FOR HOST TO START…');return}
-  if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin',timer:clamp(+$('#cfg-timer').value||60,1,120),lms:document.getElementById('cfg-lms').classList.contains('on')?1:0})}catch(e){}}
+  if(G.mp.host){try{G.remotePicks={};IQ.Net.broadcast({t:'begin',timer:clamp(+$('#cfg-timer').value||60,1,120),lms:document.getElementById('cfg-lms').classList.contains('on')?1:0,rn:G.mp.roomName||undefined})}catch(e){}}
   startRun();};
  $('#tb-lobby').onclick=()=>{try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){};nav('landing')};
  $('#lobby-back').onclick=()=>{leaveMp();nav('landing')};
@@ -984,9 +989,23 @@ function applyScoresFrame(scores){
 }
 function leaveMp(){try{if(G.mp.on&&window.IQ&&IQ.Net)IQ.Net.leave()}catch(e){}G.mp={on:false,host:false,code:''};G.players=[];G.begunOnce=false}
 function openLobby(title){$('#lobby-title').textContent=title;updateTitle();nav('lobby');G.begunOnce=false}
+function applyRoomMeta(rn){ // client-side: host told us the room name
+ if(!rn)return;
+ G.mp.roomName=rn;
+ if(G.screen==='lobby')refreshLobbyTitle();
+ else updateTitle();
+}
+function refreshLobbyTitle(){ // clients only — host lobby title carries the share hint
+ if(G.screen!=='lobby'||!G.mp.on||G.mp.host)return;
+ $('#lobby-title').textContent=G.mp.roomName?(G.mp.roomName+' · '+(G.mp.code||'')):'Room';
+}
 function listenNet(){
  try{
-  IQ.Net.on('lobby',pl=>{G.players=(pl.players||[]);$('#lobby-count').textContent=G.players.length;});
+  IQ.Net.on('lobby',pl=>{G.players=(pl.players||[]);$('#lobby-count').textContent=G.players.length;
+   if(G.mp.on&&!G.mp.host&&!G.mp.roomName){try{IQ.Net.send({t:'metaReq'})}catch(e){}}}); // race-proof: ask host for room name if the push missed us
+  IQ.Net.on('meta',m=>{if(G.mp.host)return;if(m&&m.rn)applyRoomMeta(String(m.rn).slice(0,24))});
+  IQ.Net.on('peer-join',()=>{if(!(G.mp.host&&window.IQ&&IQ.Net))return;try{IQ.Net.broadcast({t:'meta',rn:G.mp.roomName||undefined})}catch(e){}});
+  IQ.Net.on('metaReq',()=>{if(!(G.mp.host&&window.IQ&&IQ.Net))return;try{IQ.Net.broadcast({t:'meta',rn:G.mp.roomName||undefined})}catch(e){}});
   IQ.Net.on('peer-leave',g=>{const id=g&&(g.id||g.uid);if(!id)return;
    G.humans=(G.humans||[]).filter(h=>h.uid!==id);
    if(G.remotePicks)delete G.remotePicks[id];
@@ -1000,7 +1019,7 @@ function listenNet(){
   G.remotePicks[uid]={uid,n:m.name||'PLAYER',sr:m.sr||null};
   G.humans=G.humans||[];
   if(!G.humans.find(h=>h.uid===uid))G.humans.push({uid,n:m.name||'PLAYER',pts:0})});
-  IQ.Net.on('begin',m=>{if(G.mp.on&&!G.mp.host){if(G.begunOnce)return;G.begunOnce=true;G.mpCfg={timer:m&&m.timer||60,lms:!!(m&&m.lms)};startRun()}});
+  IQ.Net.on('begin',m=>{if(G.mp.on&&!G.mp.host){if(G.begunOnce)return;G.begunOnce=true;if(m&&m.rn)G.mp.roomName=String(m.rn).slice(0,24);G.mpCfg={timer:m&&m.timer||60,lms:!!(m&&m.lms)};startRun()}});
   IQ.Net.on('round',pl=>{if(G.mp.host)return;
    if(G.screen!=='play'){G.mpCfg=G.mpCfg||{timer:(pl&&pl.timerLen)||60,lms:false};try{startRun(true)}catch(e){}}
    applyIncomingRound(pl)});
@@ -1082,6 +1101,7 @@ boot();
 <script src="./modes/floorfall.js?v=w3"></script>
 <script src="./modes/hunterdodge.js?v=w3"></script>
 <script src="./modes/laserstorm.js?v=w3"></script>
+<script src="./modes/lanternguard.js?v=w5"></script>
 <script src="./modes/dronedodge.js?v=w3"></script>
 <script src="./modes/fractalsolve.js?v=w3"></script>
 <script src="./modes/hypercube606.js?v=w3"></script>
@@ -1090,6 +1110,7 @@ boot();
 <script src="./modes/sniperstage.js?v=w3"></script>
 <script src="./modes/pop-glitter-stage.js?v=w3"></script>
 <script src="./modes/metal-stage.js?v=w3"></script>
+<script src="./modes/tidepool.js?v=w5"></script>
 <script src="./modes/terminator.js?v=w3"></script>
 <script src="./modes/skylaser.js?v=w3"></script>
 <script src="./modes/madmax.js?v=w3"></script>

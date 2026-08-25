@@ -244,7 +244,7 @@
     return {
       id: 'sky-laser-strike',
       name: 'SKY FIRE',
-      weight: 3,
+      weight: 6,
       worlds: ['sky-laser'],
       aligns: ['good'],
       net: 'seed',

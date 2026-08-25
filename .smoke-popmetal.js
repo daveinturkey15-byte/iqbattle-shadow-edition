@@ -157,9 +157,9 @@ const failPts = d => -(10 + 10 * d);
   ok('glitter-set registered', !!registeredStages['glitter-set']);
   ok('forge-set registered', !!registeredStages['forge-set']);
   const gs = registeredStages['glitter-set'], fs = registeredStages['forge-set'];
-  ok('glitter meta', gs.name === 'CHART TOPPER' && gs.weight === 2 &&
+  ok('glitter meta', gs.name === 'CHART TOPPER' && gs.weight === 4 &&
      JSON.stringify(gs.worlds) === '["pop-glitter"]' && gs.net === 'seed');
-  ok('forge meta', fs.name === 'FORGE SET' && fs.weight === 2 &&
+  ok('forge meta', fs.name === 'FORGE SET' && fs.weight === 4 &&
      JSON.stringify(fs.worlds) === '["metal-forge"]' && fs.net === 'seed');
 
   /* worlds auto-registered */
