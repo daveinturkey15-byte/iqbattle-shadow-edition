@@ -422,6 +422,10 @@ export function createNet(opts: NetOpts = {}): NetApi {
 
   /* ---- event bus (callbacks no-throw: a broken UI never kills a session) -- */
   function emit(payload: Frame): void {
+    try {
+      const w = globalThis as { __frames?: Array<{ t: string; dir: string }> };
+      const fr = w.__frames || (w.__frames = []); fr.push({ t: payload.t, dir: 'in' }); if (fr.length > 200) fr.shift();
+    } catch { /* dev trace only */ }
     const list = handlers.get(payload.t);
     if (!list) return;
     for (const fn of [...list]) {
@@ -889,6 +893,8 @@ export function createNet(opts: NetOpts = {}): NetApi {
     if (role !== 'host') return false;
     let anyOpen = false;
     try {
+      const w = globalThis as { __frames?: Array<{ t: string; dir: string }> };
+      const fo = w.__frames || (w.__frames = []); fo.push({ t: obj?.t ?? '?', dir: 'out' }); if (fo.length > 200) fo.shift();
       obj._sq = sqEp + ':' + ++sqOut; // clients dedupe cross-transport copies
       stampNonce(obj);
       for (const c of conns.values()) {

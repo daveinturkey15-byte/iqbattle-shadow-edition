@@ -314,7 +314,15 @@ export class MpSession {
     const listen = (type: string, fn: (f: Frame) => MpEvent | null): void => {
       this.offs.push(
         net.on(type, (f) => {
-          const e = fn(f);
+          let e: MpEvent | null = null;
+          try {
+            e = fn(f);
+          } catch (err) {
+            const w = globalThis as { __sessErr?: string[] };
+            w.__sessErr = w.__sessErr || [];
+            w.__sessErr.push('listen ' + type + ': ' + String(err).slice(0, 160));
+            return;
+          }
           if (e) this.fire(e);
         }),
       );
@@ -411,8 +419,10 @@ export class MpSession {
     for (const sub of [...this.subs]) {
       try {
         sub(e);
-      } catch {
-        /* a broken listener never kills the session */
+      } catch (err) {
+        const w = globalThis as { __sessErr?: string[] };
+        w.__sessErr = w.__sessErr || [];
+        w.__sessErr.push('sub ' + e.t + ': ' + String(err).slice(0, 160));
       }
     }
     try {

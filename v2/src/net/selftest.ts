@@ -492,7 +492,8 @@ async function transportScenario(): Promise<void> {
   check(
     'client event stream saw the full protocol in order',
     (() => {
-      const want = ['lobby', 'begin', 'round', 'reveal', 'elim', 'end'];
+      // m1 subscribes post-join, so its first observed frame is begin.
+      const want = ['begin', 'round', 'reveal', 'elim', 'end'];
       let wi = 0;
       for (const t of cliEv) {
         if (wi < want.length && t === want[wi]) wi++;

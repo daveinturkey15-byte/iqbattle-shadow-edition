@@ -15,6 +15,7 @@ import { setLayer as setDreadLayer } from './audio/beds.ts';
 import { initShadow, say, announce, noteRound } from './shadow/shadow.ts';
 import { maybeFate } from './fate/fate.ts';
 import { emeraldPick, buildInterlude } from './scenes/interlude.ts';
+import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, foldScore, evaluateElimination, type MpSession, type MpEvent } from './scenes/mp.ts';
 import { mountRedLight, type StageResult } from './scenes/takeovers/redlight.ts';
 import { mountTidePool } from './scenes/takeovers/tidepool.ts';
 import { mountSerpent } from './scenes/takeovers/serpent.ts';
@@ -60,33 +61,107 @@ function mulberry(seed: number): () => number {
 type Screen = Container | null;
 let current: Screen = null;
 function show(s: Screen): void {
-  if (current) { app.stage.removeChild(current); current.destroy({ children: true }); }
+  clearCurrent();
   current = s;
   if (s) app.stage.addChild(s);
+}
+function clearCurrent(): void {
+  if (current) { app.stage.removeChild(current); current.destroy({ children: true }); current = null; }
 }
 function toastNow(root: Container, msg: string, color: string): void {
   const bar = panel(root, 40, 820, 920, 40);
   text(bar, msg.slice(0, 90), 16, 10, 15, color, true);
 }
 
-/* ---------- landing / lobby ---------- */
+/* ---------- landing / lobby / MP ---------- */
+let mp: MpSession | null = null;
+let mpRole: 'host' | 'client' | null = null;
+let myName = 'PLAYER';
+(window as any).__DBG = { begin: 0, rounds: 0, startRuns: 0, mounts: 0, errors: [] as string[] };
+const DBG = (window as any).__DBG as any;
+function advance(): void { if (!run) return; run.depth++; DBG.rounds++; deal(); }
+
 function toLanding(): void {
   initAudio();
+  mp?.leave(); mp = null; mpRole = null;
   show(buildLanding({
-    onCreateRoom: (name, roomName) => toLobby(name || 'PLAYER', roomName),
+    onCreateRoom: (name, roomName) => { myName = name || 'PLAYER'; void toLobbyHost(myName, roomName); },
+    onJoin: (code, name) => { myName = name || 'PLAYER'; void toLobbyJoin(code, myName); },
     onHowToPlay: () => toastNow(current ?? new Container(), 'Spot the rule across rows and columns; one tile completes it. Speed pays.', T.accentB),
     onSignIn: () => toastNow(current ?? new Container(), 'NO ACCOUNTS. NO MERCY.', T.muted),
   }));
 }
 
-function toLobby(name: string, roomName: string): void {
-  show(buildLobby({
-    roomName: roomName || (name + "'s Room"),
-    code: code5(),
-    players: [name],
-    onStart: (seconds) => startRun(name, roomName, seconds),
-    onLeave: () => toLanding(),
-  }));
+async function toLobbyHost(name: string, roomName: string): Promise<void> {
+  let res: Awaited<ReturnType<typeof MPHost.start>>;
+  try {
+    res = await MPHost.start(code5(), name, roomName, {
+    onStart: (seconds) => {
+      const sd = ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1)) >>> 0;
+      mp?.begin(seconds, true, roomName, sd);
+      startRun(myName, roomName, seconds, sd);
+    },
+      onLeave: () => { mp?.leave(); mp = null; toLanding(); },
+    });
+  } catch {
+    toastNow(current ?? new Container(), 'ROOM HOST FAILED — THE BROKER BLINKED. TRY AGAIN.', T.bad);
+    return;
+  }
+  mp = res.mp; mpRole = 'host'; setActiveSession(mp);
+  wireMain({
+    onRound: (e: MpEvent) => { if (mpRole === 'client') mountRemoteRound(e); },
+    onReveal: () => { if (mpRole === 'client') advance(); },
+    onBegin: (e: MpEvent) => {
+      if (mpRole === 'client') {
+        const ev = e as Extract<MpEvent, { t: 'begin'; timer: number; rn?: string; sd: number }>;
+        startRun(myName, ev.rn || 'Room', ev.timer, ev.sd);
+      }
+    },
+  });
+  show(res.ui);
+}
+
+async function toLobbyJoin(code: string, name: string): Promise<void> {
+  let res: Awaited<ReturnType<typeof MPJoin.start>>;
+  try {
+    res = await MPJoin.start(code, name, {
+      onStart: () => undefined, // clients start on the host's begin frame
+      onLeave: () => { mp?.leave(); mp = null; toLanding(); },
+    });
+  } catch {
+    toastNow(current ?? new Container(), 'JOIN FAILED — CHECK THE CODE OR RETRY.', T.bad);
+    return;
+  }
+  mp = res.mp; mpRole = 'client'; setActiveSession(mp);
+  wireMain({
+    onRound: (e: MpEvent) => { mountRemoteRound(e); },
+    onReveal: () => { advance(); },
+    onBegin: (e: MpEvent) => {
+      const ev = e as Extract<MpEvent, { t: 'begin'; timer: number; rn?: string; sd: number }>;
+      startRun(myName, ev.rn || 'Room', ev.timer, ev.sd);
+    },
+  });
+  show(res.ui);
+}
+
+function mountPlan(rp: { kind: string; index: number }, seed: number): void {
+  if (rp.kind === 'takeover') { if (run) run.lastTakeover = run.depth; dealTakeover(app.stage, rp.index, seed); }
+  else dealPuzzle(app.stage, rp.index, seed, run?.depth ?? 1);
+}
+
+function mountRemoteRound(e: MpEvent): void {
+  if (e.t !== 'round') return;
+  const rp = parseStg(e.stg as unknown as string);
+  if (!rp) return;
+  const sd = (e as unknown as { seed: number }).seed ?? 0;
+  if (!run) startRun(myName, 'Room', e.timerLen, sd);
+  const r0 = run!;
+  r0.depth = e.n; r0.timerLen = e.timerLen;
+  DBG.mounts++;
+  try {
+    clearCurrent(); /* the MP lobby must not cover the mounted round */
+    mountPlan(rp, sd);
+  } catch (err) { DBG.errors.push('mount: ' + String(err).slice(0, 120)); }
 }
 
 /* ---------- run state ---------- */
@@ -99,9 +174,10 @@ interface Run {
 let run: Run | null = null;
 let lastLayer = 0;
 
-function startRun(name: string, roomName: string, timerLen: number): void {
-  const seed = ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1)) >>> 0;
+function startRun(name: string, roomName: string, timerLen: number, seed?: number): void {
+  seed = (seed ?? ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1))) >>> 0;
   run = { name, roomName, timerLen, seed, plan: planArc(seed), depth: 1, hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99 };
+  DBG.startRuns++;
   lastLayer = 0;
   initShadow(app.stage);
   deal();
@@ -176,21 +252,24 @@ function deal(): void {
   }
 
   const takeoverDue = plan.align !== 'good' && r.depth >= 4 && r.depth - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(r.depth, 2654435761)) >>> 0) % 100 < 42;
-  if (takeoverDue) { r.lastTakeover = r.depth; dealTakeover(root, plan); }
-  else dealPuzzle(root, plan);
+  const rp = roundPlan(r.seed, r.depth, ALL_FAMILIES.length, TAKEOVERS.length, (d) =>
+    plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
+  if (mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 't' + rp.index : 'p' + rp.index, rp.seed, r.timerLen);
+  if (mpRole === 'client') { show(root); return; } /* clients mount on the round frame */
+  if (rp.kind === 'takeover') { r.lastTakeover = r.depth; dealTakeover(root, rp.index, rp.seed); }
+  else dealPuzzle(root, rp.index, rp.seed, r.depth);
   show(root);
 }
 
-function dealTakeover(root: Container, plan: ArcPlan): void {
+function dealTakeover(root: Container, idx: number, planSeed: number): void {
   const r = run!;
-  const idx = ((r.seed ^ Math.imul(r.depth, 97)) >>> 0) % TAKEOVERS.length;
   announce(TAKEOVER_NAMES[idx]);
   const box = new Container();
   box.x = 40; box.y = 164;
   root.addChild(box);
   const mount = TAKEOVERS[idx];
   mount({
-    depth: r.depth, seed: (r.seed ^ Math.imul(r.depth, 0x9E37)) >>> 0, timerLen: r.timerLen,
+    depth: r.depth, seed: planSeed, timerLen: r.timerLen,
     container: box, rng: mulberry((r.seed ^ Math.imul(r.depth, 0x9E37)) >>> 0),
     onDone: (res: StageResult) => {
       r.score = Math.max(0, r.score + res.points);
@@ -203,12 +282,13 @@ function dealTakeover(root: Container, plan: ArcPlan): void {
 }
 const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL'];
 
-function dealPuzzle(root: Container, plan: ArcPlan): void {
+function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: number): void {
   const r = run!;
-  const fam = ALL_FAMILIES[(r.depth - 1) % ALL_FAMILIES.length];
-  const hue = T.boardHues[(r.depth - 1) % T.boardHues.length];
-  const diff = Math.min(5, 1 + Math.floor(r.depth / 6));
-  const p = fam.generate((r.seed ^ Math.imul(r.depth, 7919)) >>> 0, diff, hue);
+  const plan = r.plan[depth - 1];
+  const fam = ALL_FAMILIES[famIdx % ALL_FAMILIES.length];
+  const hue = T.boardHues[(depth - 1) % T.boardHues.length];
+  const diff = Math.min(5, 1 + Math.floor(depth / 6));
+  const p = fam.generate((planSeed ^ Math.imul(depth, 7919)) >>> 0, diff, hue);
   if (plan.sanctuary) sanctuaryOn(root);
 
   const scene = buildGameScene(p, (idx, correct) => {
@@ -232,7 +312,7 @@ function dealPuzzle(root: Container, plan: ArcPlan): void {
       toastNow(root, 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
     }
     setTimeout(() => { r.depth++; deal(); }, 1400);
-  }, r.depth);
+  });
   root.addChild(scene);
 }
 

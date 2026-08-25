@@ -10,6 +10,8 @@ import { edgeRect, headerBar, makeButton, makeTextInput, richLine } from './shel
 export interface LandingCallbacks {
   /** CREATE ROOM pressed; name = trimmed display name ('Player' fallback), roomName = trimmed room input ('' if left blank) */
   onCreateRoom(name: string, roomName: string): void;
+  /** JOIN pressed with a room code (uppercased, 3-12 chars) */
+  onJoin(code: string, name: string): void;
   onHowToPlay(): void;
   onSignIn(): void;
 }
@@ -92,11 +94,19 @@ export function buildLanding(cb: LandingCallbacks): Container {
     cb.onCreateRoom(nameIn.value.trim() || 'Player', roomIn.value.trim());
   }, 'primary');
 
+  /* join-by-code row (MP) */
+  const codeIn = makeTextInput(card, 40, 310, inW - 150, 46, 'Room code', 24);
+  makeButton(card, inW - 100, 310, 100, 46, 'JOIN', () => {
+    const code = codeIn.value.trim().toUpperCase();
+    if (code.length >= 3) cb.onJoin(code, nameIn.value.trim() || 'Player');
+  }, 'ghost');
+
   return root;
 }
 
 export function __preview(): Container {
   return buildLanding({
+    onJoin: () => undefined,
     onCreateRoom: (name, room) => console.log('[preview] createRoom:', JSON.stringify({ name, room })),
     onHowToPlay: () => console.log('[preview] howToPlay'),
     onSignIn: () => console.log('[preview] signIn'),
