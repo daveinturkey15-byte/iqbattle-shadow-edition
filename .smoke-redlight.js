@@ -98,15 +98,13 @@ let failures = 0, passes = 0;
 function ok(cond, msg) { if (cond) { passes++; console.log('pass: ' + msg); } else { failures++; console.error('FAIL: ' + msg); } }
 
 /* live .rl-opts handle from the most recent mount (module shares this stub) */
+const def = registered.find(d => d.id === 'redlight');
 function optsEl() { return lastRoot.querySelector('.rl-opts'); }
 let lastRoot = null;
 {
   const origMount = def.mount.bind(def);
   def.mount = (c, ctx) => { lastRoot = c; return origMount(c, ctx); };
 }
-
-(async () => {
-const def = registered.find(d => d.id === 'redlight');
 ok(def, 'stage registered');
 ok(def && def.minDepth === 3 && def.net === 'seed', 'minDepth 3, net seed');
 ok(def && typeof def.mount === 'function' && typeof def.cleanup === 'function', 'mount/cleanup present');
@@ -119,7 +117,6 @@ function mountCtx(over) {
     audio: { p() {} }, fx: { shake() {}, flash() {} }
   }, over);
 }
-let lastOpts = null;
 
 (async () => {
   /* 2+3: timing budget + determinism */
@@ -167,7 +164,7 @@ let lastOpts = null;
     const RL = global.__REDLIGHT__;
     optsEl().children[RL.correctOpt()].onclick(); /* solve green -> red begins */
     for (const fn of listeners.pointermove || []) fn({ clientX: 500, clientY: 500 });
-    for (const fn of listeners.pointermove || []) fn({ clientX: 900, clientY: 900 });
+    for (const fn of listeners.pointermove || []) fn({ clientX: 590, clientY: 605 });
     advance(1000);
     const res = await settle;
     ok(res.correct === false && res.points === -40 && res.hpDelta === -12,
@@ -183,10 +180,11 @@ let lastOpts = null;
     const RL = global.__REDLIGHT__;
     let guard = 20000, done = false;
     while (guard-- > 0) {
+      advance(50); /* timers fire first, then answer whatever pattern is live */
       const kids = optsEl().children.filter(c => typeof c.onclick === 'function');
-      if (kids.length) kids[RL.correctOpt()].onclick(); /* idempotent: T.answered guards */
-      advance(50);
+      const qa = RL.correctOpt();
       if (!timers.size) { done = true; break; }
+      if (kids.length === 4 && typeof qa === 'number' && qa >= 0) kids[qa].onclick();
     }
     ok(done, 'stage settled under stepped clock');
     const res = await settle;
@@ -198,12 +196,3 @@ let lastOpts = null;
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
 
-/* live .rl-opts handle from the most recent mount (module shares this stub) */
-function optsEl() {
-  return lastRoot.querySelector('.rl-opts');
-}
-let lastRoot = null;
-{
-  const origMount = def.mount.bind(def);
-  def.mount = (c, ctx) => { lastRoot = c; return origMount(c, ctx); };
-}

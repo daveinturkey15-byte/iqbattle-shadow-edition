@@ -146,13 +146,13 @@ function askPattern(){
 function goRed(){ /* survive the freeze, then the next light */
  const ph=T.phases[T.phase];
  T.count.style.width='100%';
- requestAnimationFrame(()=>{T.count.style.transition=`width ${ph.redMs}ms linear`;T.count.style.width='0%'});
+ requestAnimationFrame(()=>{if(T.count){T.count.style.transition=`width ${ph.redMs}ms linear`;T.count.style.width='0%'}});
  light(false,ph.redMs);
 }
 function runPhase(){
  const ph=T.phases[T.phase];
  T.count.style.width='100%';
- requestAnimationFrame(()=>{T.count.style.transition=`width ${ph.greenMs}ms linear`;T.count.style.width='0%'});
+ requestAnimationFrame(()=>{if(T.count){T.count.style.transition=`width ${ph.greenMs}ms linear`;T.count.style.width='0%'}});
  light(true,ph.greenMs);
  askPattern();
 }

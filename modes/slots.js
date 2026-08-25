@@ -419,7 +419,7 @@
           resolve({
             kind: 'score',
             correct: correct,
-            points: total,                                   // natural ceiling: 600
+            points: total,                                   // raw payout; engine clamps 500 + parity-caps
             hpDelta: jackpot ? 10 : (total === 0 ? -10 : 0),
             summary: summary
           });
