@@ -17,6 +17,15 @@
 #stage-root{position:relative;flex:1;display:flex;flex-direction:column;min-height:0;border-radius:12px;overflow:hidden}
 #stage-root .board-frame{margin:0 auto}
 #stage-root .stage-opts{display:grid;grid-template-columns:repeat(4,minmax(80px,120px));gap:10px;margin-top:14px;justify-content:center;padding-bottom:10px}
+/* ---- QA pass: banner placement + takeover goal card ---- */
+.event-banner{top:150px} /* drop BELOW the round-header strip, never overlap it */
+.stage-goal-card{position:fixed;inset:0;z-index:85;display:flex;align-items:center;justify-content:center;background:rgba(4,4,10,.72);animation:sgcin .3s ease}
+.stage-goal-card.sgc-out{opacity:0;transition:opacity .28s}
+.sgc-inner{max-width:540px;padding:26px 36px;border-radius:16px;background:rgba(10,14,26,.95);border:1px solid rgba(63,125,255,.35);text-align:center;font-family:'Oxanium',sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.sgc-stage{font-size:22px;font-weight:900;letter-spacing:.18em;color:#fff;text-transform:uppercase}
+.sgc-goal{margin-top:10px;font-size:14px;color:#dfe6f5;line-height:1.5}
+.sgc-controls{margin-top:12px;font-size:11px;letter-spacing:.14em;color:#7fdbca;text-transform:uppercase}
+@keyframes sgcin{from{opacity:0}}
 .stage-view{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-family:'Oxanium',sans-serif;color:#f4e9ec;z-index:5;text-align:center;background:radial-gradient(ellipse at 50% 18%,#221019 0%,#0b0709 72%)}
 .rl-dollwrap{transition:transform .45s ease;filter:drop-shadow(0 6px 22px rgba(255,32,56,.25))}
 .rl-red .rl-dollwrap{transform:scaleX(-1) translateY(-4px)}
@@ -77,6 +86,7 @@
     <div id="topbar">
       <button class="btn btn-ghost pill" id="tb-lobby">LOBBY ⟲</button>
       <div class="logo-mini" id="room-title" style="margin:0 auto">Room</div>
+      <div class="hp-bar" id="hp-bar" style="flex:0 1 240px;height:6px;border-radius:3px;background:rgba(127,127,127,.15);overflow:hidden" title="Vitality"><i id="hp-fill" style="display:block;height:100%;width:100%;background:#00e68a;transition:width .3s"></i></div>
       <button class="btn btn-ghost pill danger" id="tb-leave">LEAVE ⏻</button>
     </div>
     <div style="display:flex;flex:1;gap:14px;padding:14px;min-height:0;max-width:1280px;margin:0 auto;width:100%">
@@ -85,7 +95,6 @@
           <div class="round-label" id="round-label">DEPTH 1</div>
           <div class="timer-bar"><i id="timer-fill"></i></div>
           <div class="timer-num" id="timer-num">60</div>
-        <div class="hp-bar" id="hp-bar" style="height:4px;border-radius:2px;background:rgba(127,127,127,.15);overflow:hidden;margin:-4px 0 8px" title="Vitality"><i id="hp-fill" style="display:block;height:100%;width:100%;background:#00e68a;transition:width .3s"></i></div>
         </div>
         <div class="board-zone"><div class="board-frame" id="board-frame"></div></div>
         <div class="opts-grid" id="opts-grid"></div>
@@ -202,6 +211,7 @@ const CX={ok:false,
 window.IQ=window.IQ||{};
 IQ.Stage=(function(){
  const stages=new Map();
+ let lastTakeover=-99;
  function normalize(def){
   return {
    id:String(def.id||'').trim(),name:String(def.name||def.id||'stage'),
@@ -211,20 +221,22 @@ IQ.Stage=(function(){
    aligns:Array.isArray(def.aligns)?def.aligns.map(String):null,
    net:def.net==='relay'?'relay':'seed',
    mount:def.mount,describe:def.describe||null,frame:def.frame||null,
-   onKey:def.onKey||null,cleanup:def.cleanup||null
+   onKey:def.onKey||null,cleanup:def.cleanup||null,
+   goalText:String(def.goalText||'').slice(0,140),
+   controls:String(def.controls||'').slice(0,90)
   };
  }
  function register(def){
   try{
    if(!def||typeof def!=='object'||typeof def.mount!=='function'||!String(def.id||'').trim())return null;
-   const s=normalize(def);stages.set(s.id,s);return s;
+   const s=normalize(Object.assign({goalText:'survive the round'},def));stages.set(s.id,s);return s;
   }catch(e){return null}
  }
  function get(id){return typeof id==='string'?stages.get(id)||null:null}
  function list(){return Array.from(stages.values())}
  /* Director wheel: puzzle's share is pinned (~70% early -> ~55% deep);
   * remaining stages split the rest by weight. */
- function eligible(depth,world,align){
+function eligible(depth,world,align){
   return list().filter(s=>{
    if(depth<s.minDepth)return false;
    if(s.worlds&&(!world||!s.worlds.includes(world)))return false;
@@ -232,13 +244,19 @@ IQ.Stage=(function(){
    return true;
   });
  }
+ /* Director rails (QA): DEPTH 1-2 are ALWAYS the classic puzzle; takeovers
+  * require minDepth>=3; at most ONE takeover per any 3 consecutive depths. */
+ function take(s,depth){lastTakeover=depth;return s}
  function pick(rng,depth,world,align){
+  depth=Math.max(1,Math.round(+depth||1));
+  if(depth<3)return get('puzzle');
+  if(depth-lastTakeover<3)return get('puzzle');
   const pool=eligible(depth,world,align);
   if(!pool.length)return get('puzzle');
   const pz=pool.find(s=>s.id==='puzzle');
-  const rest=pool.filter(s=>s.id!=='puzzle');
-  if(!rest.length)return pz||null;
-  if(!pz)return rest[0];
+  const rest=pool.filter(s=>s.id!=='puzzle'&&Math.max(3,s.minDepth)<=depth);
+  if(!rest.length)return pz||get('puzzle');
+  if(!pz)return take(rest[0],depth);
   const share=depth<=10?.70:.55;
   const r=(rng?rng():Math.random());
   const restW=rest.reduce((a,s)=>a+s.weight,0);
@@ -246,10 +264,10 @@ IQ.Stage=(function(){
   let x=r*(pzW+restW);
   if(x<pzW)return pz;
   x-=pzW;
-  for(const s of rest){x-=s.weight;if(x<=0)return s}
-  return rest[rest.length-1];
+  for(const s of rest){x-=s.weight;if(x<=0)return take(s,depth)}
+  return take(rest[rest.length-1],depth);
  }
- return {register,get,list,pick,eligible};
+ return {register,get,list,pick,eligible,reset(){lastTakeover=-99}};
 })();
 const S={voiceOn:store.get('IQB_VOICE',false),shadowOn:true};
 const SH={ok:false,
@@ -273,6 +291,9 @@ function hurtHp(n){
  }
 }
 function healHp(n){G.hp=clamp(G.hp+n,0,100);renderHp();}
+/* QA balance: the engine's wrong-answer HP drain scales with depth
+ * (-8 through DEPTH 4, -15 from DEPTH 5). Stage-supplied hpDelta still wins. */
+function wrongHpDelta(){return -(G.round<5?8:15)}
 
 /* ---------- endless depth difficulty + Hooks dispatch ---------- */
 /* Torment selector is gone: difficulty is a fixed baseline curve driven by
@@ -308,7 +329,7 @@ function applyHookMods(mods){
    if(typeof f.sfx==='string')AU.p(f.sfx);
    /* pickup {kind,value}: solo/MP-local pickup — health heals, others bank score */
    if(f.pickup&&typeof f.pickup==='object'){
-    if(f.pickup.kind==='health')healHp(clamp(+f.pickup.value||10,1,40));
+    if(f.pickup.kind==='health')healHp(clamp(+f.pickup.value||15,1,40));
     else G.score+=Math.max(5,+f.pickup.value||20),renderScores();
    }
   }catch(e){}
@@ -322,7 +343,7 @@ function applyW1Effects(){
   if(w&&w.theme&&G.round>2)IQ.Worlds.apply(w.theme);
   else IQ.Worlds.clear();
  }catch(e){}
- if(w&&w.heal&&G.round>2){healHp(30);try{window.IQ&&IQ.Music&&IQ.Music.sting('heal')}catch(e){}}
+ if(w&&w.heal&&G.round>2){healHp(35);try{window.IQ&&IQ.Music&&IQ.Music.sting('heal')}catch(e){}}
  if(w&&w.amp&&G.prevAlign&&align!==G.prevAlign&&G.round>2)painBeat();
  if(align)G.prevAlign=align;
  try{window.IQ&&IQ.Music&&w&&IQ.Music.setAlignment(w.align)}catch(e){}
@@ -424,7 +445,7 @@ function nav(to){
   AU.p('click');
   try{window.IQ&&IQ.Transitions?IQ.Transitions.to(apply):apply()}catch(e){apply()}
 }
-function banner(txt){const b=document.createElement('div');b.className='event-banner';b.textContent=txt;document.body.appendChild(b);CX.shake(6,180);setTimeout(()=>b.remove(),1700)}
+function banner(txt){$$('.event-banner').forEach(b=>b.remove());const b=document.createElement('div');b.className='event-banner';b.textContent=txt;document.body.appendChild(b);CX.shake(6,180);setTimeout(()=>b.remove(),1400)}
 
 /* ---------- scoreboard ---------- */
 function renderScores(){
@@ -440,7 +461,8 @@ function renderScores(){
 
 function tryAttack(uid){
  if(!(G.lms&&G.mp.on&&window.IQ))return;
- const weapons={rotten:{cost:80,dmg:120},curse:{cost:150,dmg:200}};
+ const dd=(typeof depthDiff==='function')?depthDiff():1;
+ const weapons=(window.IQ&&IQ.LMS&&IQ.LMS.weaponFor)?(function(){var o={};['rotten','curse'].forEach(function(k){o[k]=IQ.LMS.weaponFor(k,dd)});return o})():{rotten:{cost:80,dmg:120},curse:{cost:150,dmg:200}};
  const w=(prompt('ATTACK '+uid+' — type rotten or curse')||'').trim().toLowerCase();
  if(!weapons[w])return void banner('UNKNOWN WEAPON');
  if(G.score<weapons[w].cost)return void banner('NOT ENOUGH POINTS — COSTS '+weapons[w].cost);
@@ -460,6 +482,7 @@ function startRun(){
  G.lms=(function(){ if(!G.mp.on)return false; if(G.mpCfg&&G.mpCfg.lms!=null)return !!G.mpCfg.lms; var e=document.getElementById('cfg-lms'); return !!(e&&e.classList.contains('on')); })();
  G.remotePicks={};G.remoteAttacks={};G.humans=[];G.lastAppliedRevealRound=null;
  G.hp=100;G.w1=null;G.prevAlign=null;renderHp();
+ try{window.IQ&&IQ.Stage&&IQ.Stage.reset&&IQ.Stage.reset()}catch(e){}
  try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){}
  try{window.IQ&&IQ.Align&&IQ.Align.begin(G.mp.code||('solo-'+Date.now()),4096)}catch(e){} /* endless: plan far ahead */
  try{window.IQ&&IQ.Review&&IQ.Review.beginMatch()}catch(e){}
@@ -547,6 +570,22 @@ function exitStageView(){
  if(bz)bz.classList.remove('hidden');if(og)og.classList.remove('hidden');
 }
 function safeDescribe(){try{const d=G.activeDef;return(d&&d.describe)?d.describe():null}catch(e){return null}}
+/* QA onboarding: every takeover mount shows a 3-second goal card (stage name,
+ * one-line goal, controls) before the clock runs and input counts. Generic:
+ * reads optional stage.goalText / stage.controls; engine defaults apply. */
+const STAGE_GOAL_MS=3000;
+function showGoalCard(def){
+ try{
+  const d=document.createElement('div');d.className='stage-goal-card';
+  const inner=document.createElement('div');inner.className='sgc-inner';
+  const t=document.createElement('div');t.className='sgc-stage';t.textContent=String(def.name||def.id||'STAGE').toUpperCase();
+  const g=document.createElement('div');g.className='sgc-goal';g.textContent=String(def.goalText||'survive the round');
+  inner.appendChild(t);inner.appendChild(g);
+  if(def.controls){const c=document.createElement('div');c.className='sgc-controls';c.textContent=String(def.controls);inner.appendChild(c)}
+  d.appendChild(inner);document.body.appendChild(d);
+  setTimeout(()=>{d.classList.add('sgc-out');setTimeout(()=>d.remove(),320)},STAGE_GOAL_MS);
+ }catch(e){}
+}
 function beginStageRound(){
  $('#round-label').textContent=`DEPTH ${G.round}`;
  enterStageView();
@@ -559,10 +598,13 @@ function beginStageRound(){
  broadcastRound();
  try{window.IQ&&IQ.Fun&&IQ.Fun.onRoundStart(G.round)}catch(e){}
  fireHooks('onRoundStart',{world:(G.w1&&G.w1.theme)||null,align:(G.w1&&G.w1.align)||null});
- startTimer();
+ /* Takeover rails (QA): goal card first — round clock and scoring input start
+  * once it clears. Classic puzzle keeps its instant start. */
+ if(def&&def.id!=='puzzle'){showGoalCard(def);setTimeout(startTimer,STAGE_GOAL_MS)}
+ else startTimer();
  if(!G.mp.on)G.opps.forEach(o=>simOpponent(o));
  Promise.resolve(p).then(res=>applyStageResult(res||{}))
-  .catch(()=>applyStageResult({correct:false,points:-40,hpDelta:-15,summary:'THE STAGE COLLAPSED'}));
+  .catch(()=>applyStageResult({correct:false,points:-Math.max(15,Math.round((10+10*depthDiff())/2)),hpDelta:wrongHpDelta(),summary:'THE STAGE COLLAPSED'}));
 }
 /* Round timer expired before the stage settled: cleanup, then a wrong-answer
  * equivalent is injected host-side. */
@@ -571,7 +613,7 @@ function expireStage(){
  G.answered=true;cancelAnimationFrame(G.raf);
  if(G.activeCtx)G.activeCtx.expired=true;
  try{const d=G.activeDef;if(d&&d.cleanup)d.cleanup()}catch(e){}
- applyStageResult({correct:false,points:-40,hpDelta:-15,summary:'TIME DROWNED YOU'});
+ applyStageResult({correct:false,points:-Math.max(15,Math.round((10+10*depthDiff())/2)),hpDelta:wrongHpDelta(),summary:'TIME DROWNED YOU'});
 }
 /* Ship ONE sanitized round frame: stg{id,seed} + per-stage payload. The
  * puzzle payload never carries answer/rule (sanitizeRound discipline). */
@@ -620,7 +662,8 @@ function startTimer(){
 /* ---------- solo opponents ---------- */
 function simOpponent(o){
  setTimeout(()=>{
-  o.pts+=Math.random()<clamp(o.acc-(depthDiff()-2)*.05,.3,.95)?ri(80,140):ri(-30,20);
+  var gain=Math.random()<clamp(o.acc-(depthDiff()-1)*.05,.3,.95)?ri(60,100):ri(-30,20);
+  o.pts+=Math.min(gain,100);
   renderScores();
   if(Math.random()<.15){const b=document.createElement('div');b.className='taunt-bubble';
    b.innerHTML=`<b>${esc(o.n)}:</b> ${esc(TAUNTS[ri(0,TAUNTS.length-1)])}`;
@@ -658,10 +701,11 @@ function applyStageResult(res){
   if(G.emeralds.includes('final_chaos')&&G.round%10===0)shown*=2;
   if(G.curseMul)shown=Math.round(shown*G.curseMul);
   if(G.hookScoreMul!==1)shown=Math.max(1,Math.round(shown*G.hookScoreMul));
+  if(G.curStage!=='puzzle')shown=Math.min(shown,100*depthDiff()+60); /* takeover parity cap */
  }else{
   if(G.forgiveNext){G.forgiveNext=false;banner('GRACE — THIS SIN IS FORGIVEN');shown=0}
   else{
-   G.streak=0;shown=Math.round(clamp(+res.points||(-40),-200,500));
+   G.streak=0;const wp=-(10+10*depthDiff());shown=Math.round(clamp((typeof res.points==='number'&&res.points)?res.points:wp,-200,500));
    if(G.emeralds.includes('final_chaos')&&G.round%10===0){G.score=Math.round(G.score*.5);banner('FINAL CHAOS PUNISHES')}
    if(G.emeralds.includes('doom_bloom'))G.opps.forEach(o=>o.pts-=20);
   }
@@ -672,7 +716,8 @@ function applyStageResult(res){
   fireHooks('onAnswer',{correct:res.correct,pos:-2,res:{correct:res.correct,picked:-1,correctIdx}});
   return; /* host reveal drives score + the next round frame */
  }
- G.score+=shown;renderScores();
+ if(!G.mp.on){G.score=Math.max(0,G.score+shown);}else{G.score+=shown;}
+ renderScores();
  P.totalCorrect+=good?1:0;P.totalWrong+=good?0:1;saveP();
  if(!neutral){
   if(good){AU.p('sting');CX.flash('rgba(34,211,165,.10)',130);
@@ -681,7 +726,7 @@ function applyStageResult(res){
   else{AU.p('buzz');CX.shake(12,280);AU.p('laugh',{vol:.3});
    if(Math.random()<.35&&G.stage>=2)SH.say(SH.q('wrong'),true)}
  }
- const hpd=typeof res.hpDelta==='number'?clamp(Math.round(res.hpDelta),-60,60):(good||neutral?0:-15);
+ const hpd=typeof res.hpDelta==='number'?clamp(Math.round(res.hpDelta),-60,60):(good||neutral?0:wrongHpDelta());
  if(hpd<0)hurtHp(-hpd);else if(hpd>0)healHp(hpd);
  fireHooks('onAnswer',{correct:res.correct,pos:-2,res:{correct:res.correct,picked:-1,correctIdx}});
  setTimeout(()=>{
@@ -691,9 +736,10 @@ function applyStageResult(res){
  setTimeout(postRoundChain,1700);
 }
 function flashSummary(txt){
+ $$('.event-banner').forEach(b=>b.remove());
  const t=document.createElement('div');t.className='event-banner';t.style.fontSize='12px';
  t.textContent=String(txt||'').toUpperCase().slice(0,64);
- document.body.appendChild(t);setTimeout(()=>t.remove(),1500);
+ document.body.appendChild(t);setTimeout(()=>t.remove(),1400);
 }
 /* HOST: fold remote claims (sanitized/clamped) or legacy puzzle picks into
  * authoritative accumulated totals and ship the reveal frame. */
@@ -709,7 +755,7 @@ function hostRevealBroadcast(desc){
    let delta;
    if(pk.sr)delta=pk.sr.correct?Math.round(clamp(+pk.sr.points||0,-80,400)):-40;
    else{const okPick=!imp&&ans>=0&&pk.pos>=0&&ord[pk.pos]===ans;
-    delta=imp?-25:(okPick?Math.round(100*diff+40):-40)}
+    delta=imp?-25:(okPick?Math.round(100*diff+40):-(10+10*depthDiff()))}
    const gh=(G.humans||[]).find(x=>x.uid===pk.uid);
    return {uid:pk.uid,name:pk.n||'PLAYER',pts:(gh?(gh.pts||0):0)+delta};
   });
@@ -734,10 +780,11 @@ function postRoundChain(){
   const table=[{uid:myUid,pts:G.score},...(G.humans||[]).map(h=>({uid:h.uid,pts:h.pts}))];
   let attacked=false;
   for(const [att,w] of Object.entries(G.remoteAttacks||{})){
-   const res=IQ.LMS.attackResult({scores:table.map(s=>({...s})),attackerUid:att,targetUid:w.targetUid,weapon:w.weapon});
+   const res=IQ.LMS.attackResult({scores:table.map(s=>({...s})),attackerUid:att,targetUid:w.targetUid,weapon:w.weapon,depthDiff:depthDiff()});
    if(res){attacked=true;
     for(const row of res){const me2=row.uid===myUid;if(me2)G.score=row.pts;else{const h=(G.humans||[]).find(x=>x.uid===row.uid);if(h)h.pts=row.pts}}
-    banner((w.targetUid===myUid?'YOU WERE HIT':'STRIKE LANDED')+' — '+w.weapon.toUpperCase());}
+    banner((w.targetUid===myUid?'YOU WERE HIT':'STRIKE LANDED')+' — '+w.weapon.toUpperCase());
+    if(w.targetUid===myUid&&w.weapon==='curse')hurtHp(10);}
    delete G.remoteAttacks[att];
   }
   if(attacked)renderScores();
@@ -1085,5 +1132,8 @@ boot();
 <script src="./modes/hypercube606.js?v=w3"></script>
 <script src="./modes/phoenixritual.js?v=w3"></script>
 <script src="./modes/gauntlet.js?v=w3"></script>
+<script src="./modes/sniperstage.js?v=w3"></script>
+<script src="./modes/pop-glitter-stage.js?v=w3"></script>
+<script src="./modes/metal-stage.js?v=w3"></script>
 </body>
 </html>

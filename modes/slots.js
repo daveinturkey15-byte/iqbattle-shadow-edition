@@ -565,13 +565,23 @@
         }
 
         /* ---------- loop ----------
-         * pacedFrame is the SOLE advancer of spinning reels (+1 symbol per TICK_MS).
-         * frame() handles landing schedules and the auto-stop safety, then renders.
+         * frame() is the SOLE rAF callback and the sole reel advancer: spinning
+         * reels gain +1 symbol per TICK_MS (catch-up safe), landing schedules
+         * drain their decel tail here, and the auto-stop safety fires per reel.
          */
         var lastAdv = 0;
         function frame(now) {
           if (finished) return;
           var i, rl;
+          if (!lastAdv) lastAdv = now;
+          while (now - lastAdv >= TICK_MS) {
+            lastAdv += TICK_MS;
+            if (phase === 'spinning') {
+              for (i = 0; i < 3; i++) {
+                if (reels[i].mode === 'spin') reels[i].posF += 1;
+              }
+            }
+          }
           if (phase === 'spinning') {
             for (i = 0; i < 3; i++) {
               rl = reels[i];
@@ -597,18 +607,6 @@
             if (tn) tn.textContent = String(Math.ceil(Math.max(0, (CAP_MS - elapsed()) / 1000)));
           } catch (e) { /* topbar chrome is optional */ }
           rafId = window.requestAnimationFrame(frame);
-        }
-        function pacedFrame(now) {
-          if (!lastAdv) lastAdv = now;
-          while (now - lastAdv >= TICK_MS) {
-            lastAdv += TICK_MS;
-            if (phase === 'spinning') {
-              for (var i = 0; i < 3; i++) {
-                if (reels[i].mode === 'spin') reels[i].posF += 1;
-              }
-            }
-          }
-          frame(now);
         }
 
         /* ---------- input ---------- */
@@ -651,8 +649,7 @@
 
         fit();
         updateMeter();
-        foot.textContent = 'THREE SPINS · STAKE ' + stake + ' EACH';
-        rafId = window.requestAnimationFrame(pacedFrame);
+        rafId = window.requestAnimationFrame(frame);
         later(startSpin, 1100);
       });
     }

@@ -290,7 +290,7 @@ var BLESSINGS = [
   {
     id: 'sunlit',
     bannerText: '☀ SUNLIT — WARMTH MENDS THE EDGES',
-    flags: function () { return { hpDelta: 10 }; },
+    flags: function () { return { hpDelta: 15 }; },
     theater: function () {}
   }
 ];

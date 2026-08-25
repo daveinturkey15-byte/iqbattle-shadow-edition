@@ -116,7 +116,11 @@
       }
     }
     cells[HOLE] = null;
-    const truth = { shape, color: cells[6].color, rot: 0 };
+    // Truth MUST come from the stated slot rule, not copied off the board:
+    // hole (2,2) sits on slot 1 under the diagonal cycle (slot 2 at low d),
+    // so the old cells[6]-copy shipped a provably wrong answer at d>=3.
+    const tslot = latin ? 1 : 2;
+    const truth = { shape, color: fam[order[tslot]], rot: 0 };
     const decoy = () => {
       const m = { shape, color: truth.color, rot: 0 };
       if (r.next() < 0.82 || d <= 2) m.color = mod8(truth.color + 1 + r.int(7));
@@ -125,7 +129,9 @@
     };
     return {
       cells, truth, decoy, arch: 'lockShape',
-      rule: 'the shape locks its palette: this shape only ever wears three fixed colors'
+      rule: latin
+        ? 'the mark keeps three fixed shades that cycle steadily along the diagonals'
+        : 'the mark keeps three fixed shades - each band wears one'
     };
   }
 
@@ -137,8 +143,8 @@
     const offs = d <= 2 ? [1, 7] : d <= 4 ? [1, 2, 3, 5, 6, 7] : [1, 2, 3, 4, 5, 6, 7];
     const off = r.pick(offs);
     const left = r.shuffle([0, 1, 2, 3, 4, 5, 6, 7]).slice(0, 3);
-    const midTop = r.int(8), midMid = r.int(8);
     const shape = r.pick(SHAPES);
+    const midTop = r.int(8), midMid = r.int(8);
     const cells = new Array(9);
     for (let y = 0; y < 3; y++) {
       cells[y * 3 + 0] = { shape, color: left[y], rot: 0 };
@@ -193,10 +199,9 @@
     const decoy = () => {
       const m = { shape, color: truth.color, rot: truth.rot };
       const roll = r.next();
-      if (roll < 0.35) m.color = mod8(truth.color + sc);          // one step short
-      else if (roll < 0.55) m.color = mod8(truth.color + 1 + r.int(7));
-      else if (roll < 0.75) m.rot = mod4(truth.rot + (sr || 1));  // rot step short
-      else if (roll < 0.9) { m.color = mod8(truth.color + sc); m.rot = mod4(truth.rot + (sr || 1)); }
+      if (roll < 0.4) m.color = mod8(truth.color + sc);          // one step short
+      else if (roll < 0.65) m.color = mod8(truth.color + 1 + r.int(7));
+      else if (roll < 0.85) m.rot = mod4(truth.rot + (sr || 1)); // rot step short
       else m.rot = mod4(truth.rot + 1 + r.int(3));
       return m;
     };
@@ -279,9 +284,10 @@
     const decoy = () => {
       const m = { shape, color: key, rot: 0 };
       const roll = r.next();
-      if (roll < 0.5) m.color = mod8(key + 1 + r.int(7));
+      if (roll < 0.55) m.color = mod8(key + 1 + r.int(7));
       else if (roll < 0.8) m.shape = r.pick(SHAPES.filter(s => s !== shape));
-      else { m.color = mod8(key + 1 + r.int(7)); m.rot = r.int(4); }
+      else if (shape === 'triangle') m.rot = 1 + r.int(3); // lone twist (visible only on triangles)
+      else m.color = mod8(key + 1 + r.int(7));
       return m;
     };
     return {
@@ -349,7 +355,14 @@
     const archNames = Object.keys(BUILDERS);
     const archName = opts.arch && BUILDERS[opts.arch] ? opts.arch : archNames[r.int(archNames.length)];
     const built = BUILDERS[archName](d, r);
-    const { options, answer } = assemble(r, built.truth, built.decoy);
+    // Only the triangle renders rotation (diamond/cross/plus/square/ring have
+    // 90-degree symmetry) — normalize invisible rots to 0 so no decoy can
+    // look pixel-identical to the truth.
+    const canon = (c) => (c && c.shape !== 'triangle')
+      ? { shape: c.shape, color: c.color, rot: 0 } : c;
+    built.cells = built.cells.map((c) => canon(c));
+    built.truth = canon(built.truth);
+    const { options, answer } = assemble(r, built.truth, () => canon(built.decoy()));
     return {
       id: 'logicb-' + archName + '-d' + d + '-' + seed.toString(36),
       kind: 'matrix',

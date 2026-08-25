@@ -162,7 +162,7 @@ async function smokeBattleshipSoloDiff1() {
   if (!res) return;
   check(res.correct === false, '<5 hits -> correct=false');
   check(res.points === 40 * 1 + 120 * 0 + 0 - 20 * 0, 'partial points -> ' + res.points);
-  check(res.hpDelta === -10, 'two hunters afloat -> hp -10 (got ' + res.hpDelta + ')');
+  check(res.hpDelta === -15, 'three hunters afloat, no incoming -> hp floor -15 (got ' + res.hpDelta + ')');
   check(/HUNTERS REMAIN/.test(res.summary), 'summary "' + res.summary + '"');
 }
 
@@ -170,13 +170,9 @@ async function smokeBattleshipSoloDiff1() {
 async function smokeBattleshipMP() {
   console.log('[SALVOS MP host-loopback diff3 — frame flow]');
   const net = mkNet(true);
+  global.window.IQ = { Net: net };            // modes read IQ.Net at mount time
   let res = null;
   const p = defs['battleship-volley'].mount(container(), baseCtx({
-    depth: 12, seed: 999, mp: true
-  }, {})).then(r => { res = r; });
-  // inject the fake transport AFTER mount would miss the wiring; remount instead:
-  global.window.IQ = { Net: net };            // modes read IQ.Net lazily at mount
-  const p2 = defs['battleship-volley'].mount(container(), baseCtx({
     depth: 12, seed: 999, mp: true
   })).then(r => { res = r; });
   await sleep(200);
@@ -199,11 +195,9 @@ async function smokeBattleshipMP() {
   check(fr.every(m => m.t !== 'ships' && !Array.isArray(m.cellsSecret)),
     'no secret payload fields ever framed');
   S().finish();
-  await Promise.race([p2, sleep(3000)]);
+  await Promise.race([p, sleep(3000)]);
   check(!!res, 'MP round resolved');
 }
-
-/* ================= GOD solo, diff 1 + independent recompute ================= */
 function linePayoutRef(line, pairPay) {
   let stars = 0, skull = false; const rest = {};
   for (const s of line) {
@@ -237,7 +231,7 @@ async function smokeGodSolo(depth, align, label) {
     depth, align, seed: 31337
   })).then(r => { res = r; });
   const doneInTime = await Promise.race([
-    driveGodToDone(30000).then(d => d && sleep(50)),
+    driveGodToDone(30000),
     sleep(31000)
   ]);
   check(doneInTime, 'three spins completed inside cap');
@@ -248,7 +242,7 @@ async function smokeGodSolo(depth, align, label) {
   const st = G().state();
   check(st.ticks.length === 9, 'exactly 9 stop-tick numbers recorded');
   check(res.points === st.total, 'points == running credit total (' + res.points + ')');
-  check(res.payouts.length === 3, 'three spin payouts');
+  check(st.payouts.length === 3, 'three spin payouts');
   // independent recompute from the gated reel view + the documented landing math
   const view = G().peekReels();
   let expect = 0;

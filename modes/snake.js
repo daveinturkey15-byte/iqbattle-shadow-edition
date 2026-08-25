@@ -66,6 +66,8 @@
   window.IQ.Stage.register({
     id: 'snake-playable',
     name: 'SERPENT',
+    goalText: "EAT. GROW. DON'T BITE YOURSELF.",
+    controls: 'ARROWS / WASD / SWIPE',
     weight: 6,
     net: 'seed',
     mount: function (container, ctx) {
@@ -88,6 +90,11 @@
         foot.className = 'iq-serpent-foot';
         wrap.appendChild(head);
         wrap.appendChild(canvas);
+        var ready = document.createElement('div');
+        ready.className = 'iq-serpent-ready';
+        ready.textContent = 'SERPENT \u2014 EAT. GROW. DON\u2019T BITE YOURSELF.' +
+          ' \u00B7 ARROWS / WASD / SWIPE';
+        wrap.appendChild(ready);
         wrap.appendChild(foot);
         container.appendChild(wrap);
 
@@ -99,7 +106,7 @@
         }
         var style = document.createElement('style');
         style.textContent =
-          '.stage-view.iq-serpent{display:flex;flex-direction:column;align-items:center;gap:6px;' +
+          '.stage-view.iq-serpent{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;' +
           'color:#baffcf;font-family:\'Oxanium\',sans-serif;background:#020402;padding:10px;' +
           'border-radius:8px;width:100%;box-sizing:border-box}' +
           '.iq-serpent-head{display:flex;justify-content:space-between;width:100%;max-width:420px;' +
@@ -110,7 +117,11 @@
           'text-transform:uppercase}' +
           '@media (prefers-reduced-motion:none){.iq-serpent canvas{transition:border-color .3s}}' +
           '.iq-serpent canvas{image-rendering:pixelated;background:#060a06;' +
-          'border:2px solid #12402a;border-radius:4px;touch-action:none}';
+          'border:2px solid #12402a;border-radius:4px;touch-action:none}' +
+          '.iq-serpent-ready{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);' +
+          'background:rgba(2,6,3,.92);border:1px solid #1d5c39;color:#baffcf;font-size:13px;' +
+          'letter-spacing:.15em;padding:10px 16px;border-radius:6px;text-transform:uppercase;' +
+          'text-align:center;pointer-events:none;transition:opacity .5s;max-width:90%}';
         wrap.appendChild(style);
 
         /* ---------- deterministic apple sequence ---------- */
@@ -149,6 +160,7 @@
         var capMs = Math.min(CAP_MS, Math.max(10000, ((ctx.timerLen | 0) || 45) * 1000));
         var timerId = null;
         var rafId = 0;
+        var readyT = 0;
 
         function segKey(s) { return s.x + ',' + s.y; }
 
@@ -171,6 +183,26 @@
           var g = canvas.getContext('2d');
           g.fillStyle = '#060a06';
           g.fillRect(0, 0, canvas.width, canvas.height);
+          /* subtle backdrop texture: static cell grid + vignette so the board
+           * never reads as a blank void (fully static -> motion-safe) */
+          g.strokeStyle = '#0c170c';
+          g.lineWidth = 1;
+          g.beginPath();
+          for (var gi = 1; gi < GRID; gi++) {
+            g.moveTo(gi * cell + 0.5, 0);
+            g.lineTo(gi * cell + 0.5, canvas.height);
+            g.moveTo(0, gi * cell + 0.5);
+            g.lineTo(canvas.width, gi * cell + 0.5);
+          }
+          g.stroke();
+          var vg = g.createRadialGradient(
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.32,
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.78
+          );
+          vg.addColorStop(0, 'rgba(0,0,0,0)');
+          vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+          g.fillStyle = vg;
+          g.fillRect(0, 0, canvas.width, canvas.height);
           if (apple) {
             g.fillStyle = '#ff2038';
             g.fillRect(apple.x * cell + 1, apple.y * cell + 1, cell - 2, cell - 2);
@@ -191,6 +223,7 @@
         /* ---------- resolution ---------- */
         function teardown() {
           window.clearTimeout(timerId);
+          window.clearTimeout(readyT);
           window.cancelAnimationFrame(rafId);
           window.removeEventListener('keydown', onKey, true);
           window.removeEventListener('resize', fit);
@@ -202,6 +235,7 @@
           if (finished) return;
           finished = true;
           teardown();
+          ready.style.opacity = '0';   // round over — drop the onboarding legend
           if (silent) return;               // engine-aborted: engine injects its own result
           foot.textContent = dead ? 'THE SERPENT FALLS' : (apex ? 'APEX SERPENT' : 'SURVIVED');
           var bonus = apex ? 50 : (survived ? 20 : 0);
@@ -316,6 +350,7 @@
         };
         active = { abort: function () { finish(false, false, true); } };
 
+        readyT = window.setTimeout(function () { ready.style.opacity = '0'; }, 3000);
         fit();
       });
     },

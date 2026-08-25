@@ -47,17 +47,26 @@ const root = typeof window !== 'undefined' ? window : globalThis;
 root.IQ = root.IQ || {};
 
 /* ── Constants table (single source of truth for the host UI too) ─────────── */
-const WRONG_COST = 40;          // live-observed: wrong answer = -40 pts
-const GOOD_GAIN_MIN = 80;       // demon rivals gain ~80-140 per good answer
-const GOOD_GAIN_MAX = 140;
+const WRONG_COST = 40;          // legacy baseline; live curve is depth-scaled (engine)
+const GOOD_GAIN_MIN = 60;       // demon rivals gain ~60-100 per good answer (balance rev2)
+const GOOD_GAIN_MAX = 100;
 const RECOVERY_ANSWERS = 2;     // §8 grief boundary: recover within 2 good answers
 const SCORE_FLOOR = 0;          // LMS score floor (C7): scores never go negative
 const ATTACKS_PER_ROUND = 1;    // attackBudget.perRound handed out at begin()
 
 const WEAPONS = {
-  rotten: { cost: 80,  dmg: 120 },                    // cheap harass
-  curse:  { cost: 150, dmg: 200, hpDelta: -10 }       // committed blow + HP sting
+  rotten: { cost: 80,  dmg: 120 },                    // d1 baseline (see weaponFor)
+  curse:  { cost: 150, dmg: 200, hpDelta: -10 }       // d1 baseline (see weaponFor)
 };
+/* Depth-scaled weapons (balance rev2 §5): damage scales with depth so attacks
+ * stay meaningful in LMS endgames; victim income scales with the same depth,
+ * preserving the 2-good-answer recovery boundary at every depth. */
+function weaponFor(weapon, d){
+  d = Math.max(1, Math.min(5, d | 0 || 1));
+  if (weapon === 'rotten') return { cost: 60 + 15 * d,  dmg: 60 + 20 * d };
+  if (weapon === 'curse')  return { cost: 100 + 25 * d, dmg: 100 + 30 * d, hpDelta: -10 };
+  var w = WEAPONS[weapon]; return w ? Object.assign({}, w) : null;
+}
 
 /* Seeded PRNG: fnv-1a string hash -> mulberry32 (same pattern as gen_iqvs.js). */
 function rngFrom(seed){
@@ -169,7 +178,7 @@ function validateAttack(req){
  */
 function attackResult(payload){
   if (!payload || !Array.isArray(payload.scores)) return null;
-  const w = WEAPONS[payload.weapon];
+  const w = weaponFor(payload.weapon, payload.depthDiff) || null;
   if (!w) return null;
   const gate = validateAttack({
     attackerUid: payload.attackerUid,
@@ -186,7 +195,7 @@ function attackResult(payload){
 }
 
 /** HP delta the host must apply to hpMap[targetUid] for this weapon (0 most). */
-function hpDelta(weapon){ const w = WEAPONS[weapon]; return w && w.hpDelta ? w.hpDelta : 0; }
+function hpDelta(weapon, d){ const w = weaponFor(weapon, d); return w && w.hpDelta ? w.hpDelta : 0; }
 
 /** Uids still alive under the C7 loop condition (score > floor). */
 function remaining(scores){
@@ -197,6 +206,7 @@ function remaining(scores){
 
 const LMS = {
   WEAPONS: WEAPONS,
+  weaponFor: weaponFor,
   ECONOMY: {
     WRONG_COST: WRONG_COST,
     GOOD_GAIN_MIN: GOOD_GAIN_MIN,

@@ -101,6 +101,8 @@
   var DESCRIPTOR = {
     id: 'tetris-drop',
     name: 'THE WELL',
+    goalText: 'STACK LINES. CLEAR. SURVIVE THE WELL.',
+    controls: '\u2190\u2192 move \u00B7 \u2191/X cw \u00B7 Z ccw \u00B7 \u2193 soft \u00B7 SPACE drop \u00B7 P pause',
     weight: 6,
     mount: function (container, ctx) {
       return new Promise(function (resolve) {
@@ -147,6 +149,11 @@
         wrap.appendChild(head);
         wrap.appendChild(canvas);
         wrap.appendChild(pad);
+        var readyCard = document.createElement('div');
+        readyCard.className = 'iq-well-ready';
+        readyCard.textContent = 'THE WELL \u2014 STACK LINES. CLEAR. SURVIVE THE WELL.' +
+          ' \u00B7 \u2190\u2192 move \u00B7 \u2191/X cw \u00B7 Z ccw \u00B7 \u2193 soft \u00B7 SPACE drop \u00B7 P pause';
+        wrap.appendChild(readyCard);
         wrap.appendChild(foot);
         wrap.appendChild(pauseCard);
         container.appendChild(wrap);
@@ -171,6 +178,10 @@
           'color:#dfe6ff;background:#10162e;border:1px solid #2c3766;border-radius:6px;cursor:pointer;' +
           'padding:0;-webkit-tap-highlight-color:transparent}' +
           '.iq-well-btn:active{background:#1c2750}' +
+          '.iq-well-ready{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);' +
+          'background:rgba(6,8,20,.92);border:1px solid #2c3766;color:#dfe6ff;font-size:13px;' +
+          'letter-spacing:.08em;padding:10px 16px;border-radius:6px;pointer-events:none;' +
+          'z-index:2;text-align:center;transition:opacity .5s;max-width:92%}' +
           '.iq-well-pause{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
           'background:rgba(4,6,16,.82);color:#dfe6ff;font-size:15px;letter-spacing:2px;cursor:pointer;z-index:2}';
         wrap.appendChild(style);
@@ -246,6 +257,7 @@
         var activeMs = 0;
         var gravAcc = 0;
         var lockPending = false;
+        var readyT = 0;
         var lockAt = 0;
         var softDrop = false;
         var paused = false;
@@ -428,6 +440,8 @@
           finished = true;
           cancelAnimationFrame(rafId);
           stopHold();
+          clearTimeout(readyT);
+          readyCard.style.opacity = '0';   // round over — drop the onboarding legend
           window.removeEventListener('keydown', onKey, true);
           window.removeEventListener('keyup', onKeyUp, true);
           window.removeEventListener('resize', fit);
@@ -677,6 +691,7 @@
         };
         spawn();
         fit();
+        readyT = window.setTimeout(function () { readyCard.style.opacity = '0'; }, 3000);
         rafId = window.requestAnimationFrame(frame);
       });
     }

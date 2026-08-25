@@ -5,7 +5,8 @@
  * Five families:
  *   arith    — arithmetic color-steps (+k mod 8), shape/rot frozen
  *   geo3     — geometric run-doubling on a 3-color cycle (runs 1,2,3 easy / 1,2,4 hard)
- *   rotAccum — rotation accumulation: constant step (easy) or fibonacci-style mod 4 (hard)
+ *   rotAccum — quarter-turn chain bound to a deepening shade: steady beat
+ *              (easy) or widening +1,+2,+3 turns (hard)
  *   dual     — alternating dual-rules: odd transitions move color +k, even move rot +j
  *   ladder   — shape ladder plus->ring->square->triangle cycling while an arithmetic
  *              color rule carries alongside
@@ -41,7 +42,7 @@ function sample(fam,d,r,hues){
  if(fam==='arith'){
   p.c0=hues[0];
   p.k=d===1?1:1+ri(r,d<=3?3:7);
-  p.shape=SHAPES[ri(r,SHAPES.length)];p.rot=ri(r,4);
+  p.shape='triangle';p.rot=ri(r,4); /* frozen rot kept visible: triangle wears it */
   p.rule='colors advance by the same step each time';
  }else if(fam==='geo3'){
   p.cols=[hues[0],hues[1],hues[2]];
@@ -50,14 +51,21 @@ function sample(fam,d,r,hues){
   p.rule='each color holds one run, and every run lasts one tile longer';
   if(d>=3)p.rule='each color holds one run, and every run lasts twice the previous';
  }else if(fam==='rotAccum'){
-  p.c0=hues[0];p.shape=SHAPES[ri(r,SHAPES.length)];
-  p.fib=d>=4;
-  if(!p.fib){p.r0=ri(r,4);p.k=1+ri(r,d===1?1:3);}
-  else{do{p.a=ri(r,4);p.b=ri(r,4);}while(p.a===0&&p.b===0);}
+  // iqvs fix: rotation never marches alone — the shade deepens every second
+  // step so each tile is bound by TWO channels; this also removes the old
+  // fibonacci mode's consecutive duplicate tiles (a==0 gave equal neighbours).
+  // Hard mode replaces fib with widening turns: +1,+2,+3 quarters, cycling.
+  p.c0=hues[0];p.shape='triangle'; /* rotAccum: rot is a live channel -> triangle */
+  p.widen=d>=4;
+  p.r0=ri(r,4);
+  if(!p.widen)p.k=1+ri(r,d===1?1:3);
+  p.rule=p.widen
+   ?'each turn sweeps further than the last - one, two, three quarters, then round again - as the shade deepens every second step'
+   :'the mark quarter-turns by a steady beat while the shade deepens every second step';
  }else if(fam==='dual'){
   p.c0=hues[0];p.r0=ri(r,4);p.k=d===1?1:1+ri(r,d<=3?3:7);
   p.j=d===1?1:1+ri(r,d<=3?3:4);
-  p.shape=SHAPES[ri(r,SHAPES.length)];
+  p.shape='triangle'; /* dual: rot is a live channel -> must render */
   p.rule='color moves on one turn, rotation moves on the next, alternating';
  }
  return p;
@@ -78,15 +86,12 @@ function expand(fam,p,len){
   while(seq.length<len+1){var n=p.runs[Math.min(run,p.runs.length-1)];for(var q=0;q<n;q++)seq.push(run%3);run++;}
   for(var i=0;i<len+1;i++)cells.push({shape:p.shape,color:p.cols[seq[i]],rot:p.rot});
  }else if(fam==='rotAccum'){
-  var prev,cur;
+  var step=0;
   for(var i2=0;i2<len+1;i2++){
    var rot;
-   if(i2===0)rot=p.fib?p.a:p.r0;
-   else if(i2===1)rot=p.fib?p.b:(p.r0+p.k)%4;
-   else if(p.fib){rot=(prev+cur)%4;}
+   if(p.widen){rot=(p.r0+step)%4;step+=1+(i2%3);} /* next turn widens: +1,+2,+3,... */
    else rot=(p.r0+p.k*i2)%4;
-   if(p.fib){if(i2>0){prev=cur;}cur=rot;}
-   cells.push({shape:p.shape,color:p.c0,rot:rot});
+   cells.push({shape:p.shape,color:(p.c0+(i2>>1))%8,rot:rot});
   }
  }else if(fam==='dual'){
   var color=p.c0,rot=p.r0;
@@ -145,7 +150,7 @@ function gen(opts){
   var m={shape:truth.shape,color:truth.color,rot:truth.rot};
   var roll=r();
   if(roll<.6)m.color=(m.color+1+ri(r,7))%8;
-  else if(roll<.85)m.shape=SHAPES[(SHAPES.indexOf(m.shape)+1+ri(r,SHAPES.length-1))%SHAPES.length];
+  else if(roll<.85||truth.shape!=='triangle')m.shape=SHAPES[(SHAPES.indexOf(m.shape)+1+ri(r,SHAPES.length-1))%SHAPES.length]; /* rot mutants invisible off-triangle */
   else m.rot=(m.rot+1+ri(r,3))%4;
   var k=key(m);
   if(!seen[k]){seen[k]=1;options.push(m);}

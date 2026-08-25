@@ -19,7 +19,8 @@ var COLORS=[0,2,3,5]; /* stable palette slots: cyan, gold, green, rose */
 var T={}; /* live handles */
 
 function cleanup(){
- clearTimeout(T.phaseT);clearTimeout(T.lightT);
+ clearTimeout(T.phaseT);clearTimeout(T.lightT);clearTimeout(T.readyT);
+ if(T.readyEl)T.readyEl.style.opacity='0'; /* round over — drop the onboarding legend */
  removeEventListener('pointermove',onMove,true);
  removeEventListener('pointerdown',onDown,true);
  removeEventListener('keydown',onKey,true);
@@ -149,6 +150,8 @@ var CTX=null;
 root.Stage.register({
  id:'redlight',
  name:'RED LIGHT',
+ goalText:'SOLVE ON GREEN. FREEZE ON RED.',
+ controls:'CLICK / TAP OR PRESS 1\u20134',
  weight:6,
  minDepth:3,
  net:'seed',
@@ -177,6 +180,16 @@ root.Stage.register({
   T.doll=el.querySelector('.rl-dollwrap');
   T.state=el.querySelector('.rl-state');
   T.prompt=el.querySelector('.rl-prompt');
+ /* 3s READY legend: name + goal + controls (non-blocking; pointer-events none) */
+ const ready=document.createElement('div');
+ ready.className='rl-ready';
+ ready.style.cssText='position:absolute;left:50%;top:24%;transform:translate(-50%,-50%);'+
+  'background:rgba(4,4,10,.88);border:1px solid rgba(255,255,255,.22);color:#f4e9ec;'+
+  'font-size:13px;letter-spacing:.14em;padding:10px 16px;border-radius:8px;'+
+  'pointer-events:none;text-transform:uppercase;transition:opacity .5s;z-index:9';
+ ready.textContent='RED LIGHT \u2014 SOLVE ON GREEN. FREEZE ON RED. \u00B7 CLICK / TAP OR PRESS 1\u20134';
+ el.appendChild(ready);
+ T.readyEl=ready;T.readyT=setTimeout(()=>{ready.style.opacity='0'},3000);
   T.opts=el.querySelector('.rl-opts');
   T.count=el.querySelector('.rl-count');
   /* self-play / soak hook: which lane is the correct pattern continuation */

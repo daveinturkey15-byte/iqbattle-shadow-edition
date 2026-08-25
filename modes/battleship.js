@@ -424,7 +424,8 @@
               if (m && m.uid === myKey && m.n === roundNum && m.r === r && m.c === c) {
                 got = true;
                 applyVerdict(m);
-                offs[0](); offs[1]();
+                offs[0]();
+                window.clearTimeout(offs[1]);
               }
             })
           ];

@@ -104,6 +104,8 @@
   var DESCRIPTOR = {
     id: 'pacman-maze',
     name: 'GLUTTON',
+    goalText: 'EAT EVERY PELLET. BIG DOTS TURN THE TABLES.',
+    controls: 'ARROWS / WASD / SWIPE',
     weight: 6,
     mount: function (container, ctx) {
       return new Promise(function (resolve) {
@@ -166,7 +168,8 @@
         foot.className = 'iq-glutton-foot';
         var legend = document.createElement('div');
         legend.className = 'iq-glutton-legend';
-        legend.textContent = 'READY — ARROWS / WASD / SWIPE · EAT EVERYTHING';
+        legend.textContent = 'GLUTTON \u2014 EAT EVERY PELLET. BIG DOTS TURN THE TABLES.' +
+          ' \u00B7 ARROWS / WASD / SWIPE';
         wrap.appendChild(head);
         wrap.appendChild(hud);
         wrap.appendChild(canvas);

@@ -36,9 +36,9 @@ function fallbackPuzzle(){
 function makePuzzle(ctx){
  const G_=root.Gens||{};const table=
   ctx.tier<=0?['iqvs','iqvs','latin','cycle']:
-  ctx.tier===1?['iqvs','iqvs','latin','cycle','rotate','count','logicA','missingSec']:
-  ctx.tier===2?['iqvs','latin','cycle','rotate','count','dual','dual','logicA','logicB','seqPack','missingSec']:
-  ['wild','wild','dual','iqvs','latin','rotate','logicA','logicB','seqPack','missingSec'];
+  ctx.tier===1?['iqvs','iqvs','iqvs','latin','cycle','count','logicA','missingSec']:
+  ctx.tier===2?['iqvs','iqvs','latin','cycle','count','dual','dual','logicA','logicB','seqPack','missingSec']:
+  ['wild','wild','dual','iqvs','iqvs','latin','logicA','logicB','seqPack','missingSec'];
  let gname=table[Math.floor(ctx.rng()*table.length)];
  if(ctx.tier>=2&&(G_.retroA||G_.retroB)&&ctx.rng()<.12)gname=(G_.retroA&&(!G_.retroB||ctx.rng()<.5))?'retroA':'retroB';
  const gen=G_[gname];
@@ -116,7 +116,7 @@ function pick(pos){
  let res;
  if(impossible)res={kind:'score',correct:null,points:0,hpDelta:0,summary:''}; // engine runs the emerald ladder
  else if(correct)res={kind:'score',correct:true,points:Math.round(100*pz.difficulty+CTX.leftFrac()*80),hpDelta:0,summary:pz.rule||''};
- else res={kind:'score',correct:false,points:-40,hpDelta:-15,summary:''};
+ else{var d=Math.max(1,Math.min(5,Math.ceil((CTX.depth||1)/6)));res={kind:'score',correct:false,points:-(10+10*d),hpDelta:-(5+2*d),summary:''};}
  S.revT=setTimeout(()=>finish(res),1250); // hold for the reveal beat
 }
 function board_btns(){return Array.from(document.querySelectorAll('#stage-optgrid .opt-btn'))}

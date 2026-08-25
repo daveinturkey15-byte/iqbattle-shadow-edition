@@ -10,8 +10,9 @@
  *              channel also encodes (A+B) mod 6.
  *   lattice  — position-lattice: color = palette[(dir*(x+y)) mod k], k grows
  *              with difficulty (d1:2 .. d5:5).
- *   rotpile  — rotation-accumulation: rot accumulates +90 deg per step in
- *              reading order; shape and color never change.
+ *   rotpile  — quarter-turn march: rot accumulates +90 deg per step in
+ *              reading order while shades deepen row-by-row (+ column drift
+ *              at d>=4); the hole tile is bound by both channels.
  *   cluster  — count-cluster: seeded cells keep the seed hue; every other
  *              cell's color = base + (count of orthogonally adjacent seeds),
  *              mod 8. Answer = neighbor-seed count around the hole.
@@ -61,8 +62,11 @@ const PROMPTS=[
 
 // --- archetype builders: {cells(9), truth, meta, rule} ---
 function build(arch,d,r){
-  const shape=r.pick(SHAPES);
-  const rot=r.int(4);
+  // Only the triangle renders rotation (other shapes have 90-degree symmetry):
+  // rotation-bearing rotpile wears it; everywhere else invisible rots are 0
+  // so a rot-mutant decoy can never render identical to the truth.
+  const shape=arch==='rotpile'?'triangle':r.pick(SHAPES);
+  const rot=(arch==='rotpile'||shape==='triangle')?r.int(4):0;
 
   if(arch==='chain'){
     const L=d<=2?3:(d===3?4:5);
@@ -107,13 +111,24 @@ function build(arch,d,r){
   }
 
   if(arch==='rotpile'){
+    // iqvs fix: never a bare rotation pile. The mark still quarter-turns in
+    // reading order, but shades co-vary row-by-row (and drift across rows at
+    // d>=4), so the answer is bound by TWO channels and never duplicates a
+    // visible cell. rs+cs must avoid 0 mod 4, else cell 0 == the truth tile.
     const start=r.int(4);
-    const color=r.int(8);
+    const c0=r.int(8);
+    let rs,cs;
+    do{ rs=d>=3?1+r.int(3):1; cs=d>=4?1+r.int(2):0; }while(((rs+cs)&3)===0);
     const cells=[];
-    for(let i=0;i<9;i++)cells.push({shape,color,rot:(start+i)%4});
-    const truth={shape,color,rot:start};       // (start+8)%4 === start
-    return {cells,truth,meta:{start,shape,color},
-      rule:'every step in reading order turns the mark +90 degrees'};
+    for(let i=0;i<9;i++){
+      const y=(i/3)|0,x=i%3;
+      cells.push({shape,color:(c0+rs*y+cs*x)%8,rot:(start+i)%4});
+    }
+    const truth={shape,color:(c0+2*rs+2*cs)%8,rot:start};
+    return {cells,truth,
+      meta:{start,c0,rs,cs,shape},
+      rule:'every step turns the mark a quarter-turn while the shade'+
+           (cs?', deepening down each row and drifting across it':', deepening row by row')};
   }
 
   // cluster — answer hue = count of orthogonally adjacent seeds, mod 8
@@ -156,8 +171,10 @@ function makeOptions(truth,r,d){
                   :(m.color+1+r.int(7))%8;
     }else if(roll<colorW+shapeW){
       m.shape=SHAPES[(SHAPES.indexOf(m.shape)+1+r.int(SHAPES.length-1))%SHAPES.length];
-    }else{
+    }else if(truth.shape==='triangle'){
       m.rot=(m.rot+1+r.int(3))%4;
+    }else{
+      m.shape=SHAPES[(SHAPES.indexOf(m.shape)+1+r.int(SHAPES.length-1))%SHAPES.length];
     }
     const key=jk(m);
     if(!seen[key]){seen[key]=1;options.push(m);}
@@ -209,7 +226,8 @@ function expectCell(m,i){
     case 'lattice':
       return {shape:m.shape,color:m.hues[((m.dir*(x+y))%m.k+m.k)%m.k],rot:m.rot};
     case 'rotpile':
-      return {shape:m.shape,color:m.color,rot:(m.start+i)%4};
+      return {shape:m.shape,color:(m.c0+m.rs*(((i/3)|0))+m.cs*(i%3))%8,
+              rot:(m.start+i)%4};
     case 'cluster':{
       const has=function(v){return m.seeds.indexOf(v)>=0;};
       if(has(i))return {shape:m.shape,color:m.seedHue,rot:m.rot};

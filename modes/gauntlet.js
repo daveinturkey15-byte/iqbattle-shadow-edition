@@ -219,7 +219,7 @@
       return { hpDelta: 15, bannerText: 'THE RATION ABSORBS THE WOUND', flag: 'gauntlet-famine-shield' };
     }
     if (f === 'curse') {
-      return { hpDelta: -20, bannerText: 'FAMINE CLAIMS ITS PORTION \u00B7 -5 EXTRA', flag: 'gauntlet-famine-curse' };
+      return { hpDelta: -5, bannerText: 'FAMINE CLAIMS ITS PORTION \u00B7 -5 EXTRA', flag: 'gauntlet-famine-curse' };
     }
     return undefined;
   }

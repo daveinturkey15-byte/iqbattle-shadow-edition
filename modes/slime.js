@@ -192,7 +192,7 @@
       canvas.className = 'iq-gallery-canvas';
       var hint = document.createElement('div');
       hint.className = 'iq-gallery-hint';
-      hint.textContent = 'SHOOT SLIMES \u00B7 DON\u2019T SHOOT THE CROWN \u00B7 GOLD HEALS THE ARMORY';
+      hint.textContent = 'SLIME GALLERY \u2014 POP SLIMES. SPARE THE CROWNED. \u00B7 CLICK / TAP / KEYS 1\u20139';
       var foot = document.createElement('div');
       foot.className = 'iq-gallery-foot';
       wrap.appendChild(head);
@@ -376,6 +376,7 @@
         if (finished) return;
         finished = true;
         clearTimeout(tickId); clearTimeout(hardId); clearTimeout(hintId);
+        hint.style.opacity = '0';   // round over — drop the onboarding hint
         cancelAnimationFrame(rafId);
         window.removeEventListener('keydown', onKey, true);
         window.removeEventListener('resize', fit);
@@ -438,6 +439,16 @@
         g.font = 'bold 16px Oxanium,monospace';
         g.textAlign = 'center';
         g.fillText('\u272C SLIME GALLERY \u272C', cssW / 2, 22);
+        /* vignette: keeps the booth from reading as a flat black box
+         * (static gradient -> motion-safe by construction) */
+        var vg = g.createRadialGradient(
+          cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.34,
+          cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.72
+        );
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, 'rgba(0,0,0,0.38)');
+        g.fillStyle = vg;
+        g.fillRect(-6, -6, cssW + 12, cssH + 12);
 
         /* portholes + slimes */
         for (var lane = 0; lane < 9; lane++) {
@@ -677,6 +688,8 @@
     var def = {
       id: 'slime-gun-gallery',
       name: 'SLIME GALLERY',
+      goalText: 'POP SLIMES. NEVER SHOOT THE CROWN.',
+      controls: 'CLICK / TAP / KEYS 1\u20139',
       weight: 3,
       mount: mount
     };

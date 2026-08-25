@@ -112,8 +112,8 @@ function generate(opts){
   var meta={bw:bw,bh:bh,BGX:BGX,BGY:BGY,rule:rule,pal:pal,h0:h0,sx:sx,sy:sy,
             rotA:rotA,rotB:rotB,shape:shape,template:template};
 
-  /* --- pick the removed section --- */
-  var holeBX=Math.floor(r()*BGX),holeBY=Math.floor(r()*BGY);
+  /* --- pick the removed section: iqvs convention pins it bottom-right --- */
+  var holeBX=BGX-1,holeBY=BGY-1;
   var holeIndex=holeBY*BGX+holeBX;
 
   /* --- assemble board of composite sub-tiles --- */
@@ -214,6 +214,7 @@ function validate(p){
       if(holes!==1)errors.push('expected exactly one removed section, got '+holes);
       if(!tiles)errors.push('no composite sections on board');
       if(typeof b.holeIndex!=='number'||b.cells[b.holeIndex]!==null)errors.push('holeIndex does not point at the hole');
+      if(b.holeIndex!==b.cells.length-1)errors.push('hole must sit at the bottom-right of the field');
     }
     if(!Array.isArray(p.options)||p.options.length!==8)errors.push('need exactly 8 options');
     else{
