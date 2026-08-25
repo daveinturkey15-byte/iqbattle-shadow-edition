@@ -430,6 +430,9 @@ export class MpSession {
       if (this.role !== 'host') return null;
       const uid = asStr(f.uid, asStr(f.src, '?'));
       this.pushMeta();
+      // A lobby frame is the join handshake's completion signal — a joiner
+      // whose first snapshot raced its own subscription starves without it.
+      this.net.refreshLobby();
       if (this.lastBegin) this.net.unicast(uid, { ...this.lastBegin });
       if (this.lastRound) this.net.unicast(uid, { ...this.lastRound });
       return null;

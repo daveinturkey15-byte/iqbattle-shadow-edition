@@ -565,6 +565,21 @@ async function transportScenario(): Promise<void> {
     JSON.stringify(caught),
   );
 
+  /* ---- handshake-ordering race: peerjs load lags the bus reply ---- */
+  console.log('[race] slow peerjs load vs instant bus lobby reply');
+  const C4 = createNet({
+    // Fresh-tab repro: the script tag takes ~seconds on first load; the
+    // stub compresses that to 60ms — still far above stub bus latency.
+    makePeer: () => new Promise<PeerCtor>((resolve) => setTimeout(() => resolve(ctor), 60)),
+    busFactory: (_code, myId) => new BusStub(world, myId),
+  });
+  const j4 = await C4.join('RACE', 'EPSILON');
+  check(
+    'join completes when the host reply outruns the peer constructor',
+    Array.isArray(j4.players),
+    'players=' + JSON.stringify(j4.players?.length ?? 0),
+  );
+
   console.log('  (stub deliveries scheduled: ' + world.scheduled + ')');
 }
 
