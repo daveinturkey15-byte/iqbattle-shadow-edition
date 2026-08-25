@@ -36,6 +36,7 @@
 .rl-green .rl-state{color:#00e68a;border-color:rgba(0,230,138,.45);text-shadow:0 0 18px rgba(0,230,138,.35)}
 .rl-red .rl-state{color:#ff2038;border-color:rgba(255,32,56,.5);text-shadow:0 0 18px rgba(255,32,56,.35)}
 .rl-q{font-size:11px;letter-spacing:.28em;opacity:.65;margin-top:14px}
+.resp-clock{font-size:10px;letter-spacing:.08em;opacity:.55;font-variant-numeric:tabular-nums;margin-left:auto;padding-left:8px}
 .rl-seq{display:flex;gap:8px;align-items:center;margin-top:8px;justify-content:center}
 .rl-arrow{opacity:.4}
 .rl-sym{display:inline-flex;background:rgba(127,127,127,.08);border-radius:8px;padding:4px}
@@ -51,10 +52,18 @@
 <div id="app">
 
   <section id="scr-boot">
+    <button class="link-quiet" id="htp-link">HOW TO PLAY</button>
+    <h1 class="hero-h1">Challenge your friends with IQ-style logic and abstract reasoning puzzles.</h1>
+    <div class="feat-row">
+      <div class="feat-card"><b>RANDOM PUZZLE GENERATION</b><span>Every board is procedurally generated — you will never see the same puzzle twice.</span></div>
+      <div class="feat-card"><b>NO REGISTRATION REQUIRED</b><span>Pick a display name and play. No accounts, no emails, nothing to remember.</span></div>
+      <div class="feat-card"><b>INVITE FRIENDS EASILY</b><span>Host a room and share the code. Friends join in seconds — or face the demons alone.</span></div>
+    </div>
     <div class="boot-card">
       <div class="boot-logo">IQ&nbsp;VERSUS</div>
       <div class="boot-sub">abstract reasoning · corrupted</div>
       <input id="boot-name" maxlength="16" placeholder="Display name" autocomplete="off" style="user-select:text;-webkit-user-select:text">
+      <input id="boot-room" maxlength="24" placeholder="Room name (optional)" autocomplete="off" style="user-select:text;-webkit-user-select:text">
       <button class="btn btn-primary boot-big" id="boot-solo">PLAY SOLO</button>
       <button class="btn boot-big" id="boot-host">HOST ROOM</button>
       <div id="join-reveal" class="hidden">
@@ -64,6 +73,19 @@
       <button class="link-quiet" id="toggle-join">have a friend's code? join a room</button>
       <div class="fineprint" id="net-status"></div>
       <button class="btn btn-ghost mini" id="gear-settings" data-nav="settings" aria-label="Settings" title="Settings" style="margin-top:10px;padding:6px 14px;font-size:15px;line-height:1">⚙</button>
+    </div>
+    <div id="htp-modal" class="hidden">
+      <div class="panel htp-panel">
+        <h2>HOW TO PLAY</h2>
+        <ul class="htp-rules">
+          <li>Every round shows a pattern with one missing cell and <b>8 answer options</b>.</li>
+          <li>Families: <b>3×3 matrices</b>, <b>2×2 grids</b> and <b>missing-section</b> boards.</li>
+          <li>Your <b>first click locks in</b> for the round.</li>
+          <li>The reveal fires when everyone has answered — or when the timer dies.</li>
+          <li><b>Speed pays:</b> faster correct answers score more points.</li>
+        </ul>
+        <button class="btn btn-primary" id="htp-close">GOT IT</button>
+      </div>
     </div>
   </section>
 
@@ -155,6 +177,14 @@
 <script src="./accolades.js?v=w1a"></script>
 <script src="./hooks.js"></script>
 <script src="./music-pack.js?v=w1a"></script>
+<script src="./sanctuary.js?v=w4"></script>
+<script src="./hellheaven.js?v=w4"></script>
+<script src="./hell-skin.js?v=w4"></script>
+<script src="./pack-popcult-a.js?v=w4"></script>
+<script src="./pack-popcult-b.js?v=w4"></script>
+<script src="./cameo-pack.js?v=w4"></script>
+<script src="./pack-funny.js?v=w4"></script>
+<script src="./pack-cavern.js?v=w4"></script>
 <script src="./pack-interludes.js?v=w1a"></script>
 <script src="./pack-hunters.js?v=w1a"></script>
 <script src="./pack-realm.js?v=w1a"></script>
@@ -168,7 +198,6 @@
 <script src="./pack-brit.js?v=w1a"></script>
 <script src="./pack-muses.js?v=w1a"></script>
 <script src="./pack-ailments.js?v=w1a"></script>
-<script src="./pack-gunship.js?v=w1a"></script>
 <script src="./pack-nam.js?v=w1a"></script>
 <script src="./gen_logic1.js?v=w1a"></script>
 <script src="./gen_logic2.js?v=w1a"></script>
@@ -284,13 +313,14 @@ function renderHp(){
 }
 function hurtHp(n){
  if(!(n>0))return;
- G.hp=clamp(G.hp-n,0,100);renderHp();
- if(G.hp<=0&&G.screen==='play'){
+ const fl=G.negZone?-40:0;
+ G.hp=clamp(G.hp-n,fl,100);renderHp();
+ if((G.negZone?G.hp<=-40:G.hp<=0)&&G.screen==='play'){
   if(!G.mp.on)endRun('THE DARK CLAIMS YOU');
   else if(G.mp.on&&!G.spectating){G.spectating=true;banner('THE DARK CLAIMS YOU — SPECTATING')}
  }
 }
-function healHp(n){G.hp=clamp(G.hp+n,0,100);renderHp();}
+function healHp(n){G.hp=clamp(G.hp+n,G.negZone?-40:0,100);renderHp();}
 /* QA balance: the engine's wrong-answer HP drain scales with depth
  * (-8 through DEPTH 4, -15 from DEPTH 5). Stage-supplied hpDelta still wins. */
 function wrongHpDelta(){return -(G.round<5?8:15)}
@@ -348,10 +378,15 @@ function applyW1Effects(){
  if(align)G.prevAlign=align;
  try{window.IQ&&IQ.Music&&w&&IQ.Music.setAlignment(w.align)}catch(e){}
  try{ if(w&&w.dim&&w.dim!=='2d'&&G.round>2&&window.IQ&&IQ.Dims)IQ.Dims.apply(w.dim); else if(window.IQ&&IQ.Dims)IQ.Dims.clear(); }catch(e){}
+ try{
+  const hh=window.IQ&&IQ.HellHeaven;
+  G.negZone=!!(w&&w.allowNegativeHp)||!!(hh&&hh.negativeZone&&hh.negativeZone());
+  if(!G.negZone&&G.hp<0){G.hp=1;renderHp();banner('THE ABYSS SPITS YOU BACK')}
+ }catch(e){}
 }
 function painBeat(){
  banner('PAIN — THE PLAN SHIFTS');
- CX.shake(10,320);AU.p('glitch');
+ CX.shake(10,320);AU.p('glitch');try{window.IQ&&IQ.Music&&IQ.Music.sting('pain')}catch(e){}
  const a=$('#app');
  if(a){a.style.transition='filter .25s';a.style.filter='saturate(.2) contrast(1.15)';
   setTimeout(()=>{a.style.filter=''},650);}
@@ -383,7 +418,7 @@ const EMERALDS=[
 const G={stage:0,screen:'landing',round:0,timerLen:60,timeLeft:0,raf:null,t0:0,
  opps:[],players:[],score:0,streak:0,answered:false,resultApplied:false,emeralds:[],usedEmeralds:new Set(),forgery:false,chaosControlLeft:0,blackArrowLeft:0,
  pendingDebt:0,lastTick:99,shuffleIv:null,
- mp:{on:false,host:false,code:''},awaitingRound:false,w1:null,prevAlign:null,hp:100,
+ mp:{on:false,host:false,code:''},awaitingRound:false,w1:null,prevAlign:null,hp:100,negZone:false,
  hookScoreMul:1,invertUntil:0,disabledOpts:null,spectating:false,hookSeq:0,_lastFrameT:0};
 /* ---------- svg renderer ---------- */
 function pal(){return Math.min(G.stage,3)}
@@ -409,7 +444,6 @@ function tileSVG(tile,size,palIdx,showQ){
  return `<svg viewBox="0 0 ${cols*cs} ${rows*cs}" width="${size}" height="${size}" style="display:block">${out}</svg>`;
 }
 const optTile=t=>t&&t.cells?t:{cols:1,rows:1,cells:[t]};
-function cellSVGHTML(c){return '<svg viewBox="0 0 40 40" width="44" height="44" style="display:block">'+cellSVG(c,0,0,40,pal())+'</svg>'}
 /* W2 shared drawing kit for stages (modes consume it via ctx.board) */
 window.IQ=window.IQ||{};
 IQ.Board={tileSVG,optTile,palRow:()=>PAL[clamp(G.stage,0,3)]};
@@ -454,7 +488,7 @@ function renderScores(){
  rows.sort((a,b)=>b.pts-a.pts);
  sp.innerHTML=rows.map((o,i)=>`<div class="score-card ${o.me?'me':''} ${i===0?'leader':''}">
   <div class="sc-ava">${o.ava}</div><div style="flex:1;min-width:0"><div class="sc-name">${esc(o.name)}</div>
-  <div class="sc-sub">${o.me?(G.streak>1?'streak ×'+G.streak:(o.elim?'ELIMINATED':'you')):(o.elim?'ELIMINATED':'rival')}</div></div>
+  <div class="sc-sub">${o.me?(G.streak>1?'streak ×'+G.streak:(o.elim?'ELIMINATED':'you')):(o.elim?'ELIMINATED':'rival')}</div><div class="resp-clock"></div></div>
   <div class="sc-pts">${o.pts}</div></div>`).join('');
  if(G.lms&&G.mp.on){const cards=sp.querySelectorAll('.score-card:not(.me)');const targets=rows.filter(r=>!r.me&&r.uid);cards.forEach((c,i)=>{const row=targets[i];if(row)c.onclick=()=>tryAttack(row.uid)})}
 }
@@ -462,7 +496,8 @@ function renderScores(){
 function tryAttack(uid){
  if(!(G.lms&&G.mp.on&&window.IQ))return;
  const dd=(typeof depthDiff==='function')?depthDiff():1;
- const weapons=(window.IQ&&IQ.LMS&&IQ.LMS.weaponFor)?(function(){var o={};['rotten','curse'].forEach(function(k){o[k]=IQ.LMS.weaponFor(k,dd)});return o})():{rotten:{cost:80,dmg:120},curse:{cost:150,dmg:200}};
+ const weapons=(window.IQ&&IQ.LMS&&IQ.LMS.weaponFor)?(function(){var o={};['rotten','curse'].forEach(function(k){o[k]=IQ.LMS.weaponFor(k,dd)});return o})():null;
+ if(!weapons)return void banner('ATTACKS OFFLINE');
  const w=(prompt('ATTACK '+uid+' — type rotten or curse')||'').trim().toLowerCase();
  if(!weapons[w])return void banner('UNKNOWN WEAPON');
  if(G.score<weapons[w].cost)return void banner('NOT ENOUGH POINTS — COSTS '+weapons[w].cost);
@@ -651,6 +686,7 @@ function startTimer(){
   $('#timer-fill').style.transform=`scaleX(${dur?left/dur:0})`;
   $('#timer-num').textContent=Math.ceil(left);
   $('#round-strip').classList.toggle('timer-low',left<=10);
+  const rs=((t-G.t0)/1000).toFixed(3)+'s';$$('.resp-clock').forEach(e=>{e.textContent=rs});
   if(left<=10&&Math.ceil(left)!==G.lastTick){G.lastTick=Math.ceil(left);AU.p(left<=5?'tick':'heart',{vol:.3});CX.pulse()}
   fireHooks('onTick',{dtSec:dt,world:(G.w1&&G.w1.theme)||null,align:(G.w1&&G.w1.align)||null});
   if(left<=0&&!G.answered)expireStage();
@@ -857,6 +893,8 @@ function endRun(deathMsg){
 function wireLanding(){
  $('#net-status').textContent=(window.IQ&&IQ.Net&&IQ.Net.available())?'Peer link ready — friends can join your code.':'Offline mode — solo vs demons.';
  if(P.name)$('#boot-name').value=P.name;
+ $('#htp-link').onclick=()=>{$('#htp-modal').classList.remove('hidden')};
+ $('#htp-close').onclick=()=>{$('#htp-modal').classList.add('hidden')};
  $('#boot-solo').onclick=()=>{
   P.name=($('#boot-name').value.trim()||('SUBJECT-'+ri(100,999)));saveP();AU.init();AU.p('chime');
   leaveMp();openLobby('Solo Gauntlet');
@@ -871,7 +909,7 @@ function wireLanding(){
   ]);
   if(hosted&&hosted.code){G.mp={on:true,host:true,code:hosted.code};listenNet()}
   else{G.mp={on:false,host:false,code:''};alertEv('PEER LINK SLOW — SOLO ROOM OPENED')}
-  openLobby(G.mp.code?('Room '+G.mp.code+' — share this code!'):'Solo Gauntlet');
+  openLobby(G.mp.code?((($('#boot-room').value.trim())||'Room')+' '+G.mp.code+' — share this code!'):'Solo Gauntlet');
  };
  $('#toggle-join').onclick=()=>{const j=$('#join-reveal');j.classList.toggle('hidden');if(!j.classList.contains('hidden')){$('#join-code').focus()}};
  $('#boot-join').onclick=async()=>{
@@ -955,121 +993,6 @@ function listenNet(){
    if(G.screen==='play'){alertEv('CONNECTION LOST');G.mp={on:false,host:false,code:''}}else alertEv('ROOM CLOSED')});
  }catch(e){}
 }
-/* ================================================================
-   forge / grimoire / settings
-   ================================================================ */
-const FORGE={grid:null,hole:4,editingId:null,meta:{},awaitingHole:false};
-function defaultGrid(){return Array.from({length:9},(_,i)=>i===4?null:{shape:'plus',color:i%8,rot:0})}
-function openForge(){
- nav('center');const cc=$('#center-content');
- const list=store.get('IQB_PUZZLES_V1',[]);
- cc.innerHTML='<div style="align-self:stretch;display:flex;align-items:center;gap:14px;width:min(760px,94vw)">'+
-  '<button class="btn btn-ghost" data-nav="landing">← Back</button><h2 style="flex:1">PUZZLE FORGE</h2>'+
-  '<button class="btn btn-primary" id="forge-new">+ Forge New</button></div>'+
-  '<div style="font-size:11px;letter-spacing:.2em;opacity:.5">artifacts you have forged ('+list.length+')</div>'+
-  '<div style="width:min(760px,94vw);display:flex;flex-direction:column;gap:10px">'+
-  (list.length?list.map(p=>'<div class="forge-item" style="width:100%">'+
-   '<div style="flex-shrink:0">'+tileSVG(optTile((p.options||[])[p.answer||0]),54,G.stage,false)+'</div>'+
-   '<div style="flex:1"><b style="letter-spacing:.06em">'+esc(p.name||'Unnamed Sigil')+'</b><div style="font-size:11px;opacity:.5">'+esc(p.kind||'matrix')+' · diff '+(p.difficulty||2)+'</div></div>'+
-   '<button class="btn btn-ghost fe" data-id="'+p.id+'" style="padding:8px 14px;font-size:11px">Edit</button>'+
-   '<button class="btn btn-ghost fd" data-id="'+p.id+'" style="padding:8px 14px;font-size:11px;color:#e01030">Burn</button></div>').join(''):
-  '<div style="opacity:.4;letter-spacing:.2em;font-size:12px;padding:30px">the anvil is cold.</div>')+'</div>';
- bindNav();
- $('#forge-new').onclick=()=>openEditor(null);
- $$('.fe').forEach(b=>b.onclick=()=>openEditor(b.dataset.id));
- $$('.fd').forEach(b=>b.onclick=()=>{store.set('IQB_PUZZLES_V1',store.get('IQB_PUZZLES_V1',[]).filter(x=>x.id!==b.dataset.id));AU.p('sacrifice');openForge()});
-}
-function openEditor(id){
- nav('center');
- if(id){const p=store.get('IQB_PUZZLES_V1',[]).find(x=>x.id===id);
-  if(p){FORGE.editingId=id;FORGE.grid=(p.board.cells||defaultGrid()).slice();FORGE.hole=p.board.holeIndex!=null?p.board.holeIndex:4;
-   FORGE.meta={name:p.name||'',prompt:p.prompt||'',difficulty:p.difficulty||2};
-   while(FORGE.grid.length<p.board.cols*p.board.rows)FORGE.grid.push(null);}}
- else{FORGE.editingId=null;FORGE.grid=defaultGrid();FORGE.hole=4;FORGE.meta={name:'',prompt:'',difficulty:2}}
- FORGE.cols=Math.sqrt(FORGE.grid.length)|0;FORGE.rows=FORGE.cols;
- renderEditor();
-}
-function renderEditor(){
- nav('center');const cc=$('#center-content');
- const cols=FORGE.cols||3,rows=FORGE.rows||3,cells=FORGE.grid;
- cc.innerHTML='<div style="align-self:stretch;display:flex;align-items:center;gap:14px;width:min(760px,94vw)">'+
-  '<button class="btn btn-ghost" id="forge-back">← Forge List</button><h2 style="flex:1">SIGIL EDITOR</h2></div>'+
-  '<div style="display:flex;gap:26px;flex-wrap:wrap;justify-content:center;align-items:flex-start">'+
-  '<div><div class="editor-grid" id="egrid" style="grid-template-columns:repeat('+cols+',52px)">'+
-  cells.map((c,i)=>'<div class="ecell" data-i="'+i+'">'+(c?cellSVGHTML(c):'<span style="opacity:.4;font-weight:900;font-size:20px">?</span>')+
-   (i===FORGE.hole?'<div style="position:absolute;outline:2px dashed #e01030;outline-offset:-3px;width:52px;height:52px;border-radius:4px;pointer-events:none"></div>':'')+'</div>').join('')+
-  '</div><div style="display:flex;gap:8px;margin-top:10px;justify-content:center">'+
-  '<button class="btn btn-ghost" id="eg-cols" style="padding:8px 12px;font-size:11px">Size '+cols+'×'+rows+'</button>'+
-  '<button class="btn btn-ghost" id="eg-hole" style="padding:8px 12px;font-size:11px">Set Hole: click a cell first</button></div>'+
-  '<div style="font-size:10px;opacity:.5;margin-top:8px;text-align:center">click=color · right-click=shape · shift-click=rotate · ctrl-click=clear</div></div>'+
-  '<div style="width:270px;display:flex;flex-direction:column;gap:10px">'+
-  '<input id="fg-name" maxlength="28" placeholder="Sigil name" value="'+esc(FORGE.meta.name||'')+'" style="padding:10px 14px;font-family:inherit;background:rgba(127,127,127,.1);border:1px solid rgba(127,127,127,.3);border-radius:6px;color:inherit;user-select:text;-webkit-user-select:text">'+
-  '<input id="fg-prompt" maxlength="60" placeholder="Prompt shown" value="'+esc(FORGE.meta.prompt||'')+'" style="padding:10px 14px;font-family:inherit;background:rgba(127,127,127,.1);border:1px solid rgba(127,127,127,.3);border-radius:6px;color:inherit;user-select:text;-webkit-user-select:text">'+
-  '<div class="seg" id="fg-diff">'+[1,2,3,4,5].map(d=>'<button data-v="'+d+'" class="'+((FORGE.meta.difficulty||2)===d?'on':'')+'">'+d+'</button>').join('')+'</div>'+
-  '<button class="btn btn-primary" id="fg-save">Imprison Puzzle</button></div></div>';
- $('#forge-back').onclick=openForge;
- $('#eg-cols').onclick=()=>{const n=(FORGE.cols||3)>=5?3:(FORGE.cols||3)+1;
-  const old=FORGE.grid;FORGE.grid=Array.from({length:n*n},(_,i)=>old[i]||null);
-  FORGE.hole=Math.min(FORGE.hole,n*n-1);FORGE.cols=n;FORGE.rows=n;renderEditor()};
- $$('#egrid .ecell').forEach(el=>{
-  el.onclick=e=>{const i=+el.dataset.i;const cs=FORGE.grid;
-   if(e.shiftKey){if(cs[i]){cs[i]={...cs[i],rot:((cs[i].rot||0)+1)%4};renderEditor()}return}
-   if(e.ctrlKey){cs[i]=null;if(i===FORGE.hole)FORGE.hole=-1;renderEditor();return}
-   if(FORGE.awaitingHole){FORGE.hole=i;cs[i]=null;FORGE.awaitingHole=false;renderEditor();return}
-   if(!cs[i])cs[i]={shape:'plus',color:0,rot:0};else cs[i]={...cs[i],color:(cs[i].color+1)%8};
-   renderEditor()};
-  el.oncontextmenu=e=>{e.preventDefault();const i=+el.dataset.i;const sh=['plus','cross','ring','square','diamond','triangle'];
-   const cur=sh.indexOf(FORGE.grid[i]?.shape);
-   FORGE.grid[i]=cur>=0?{...FORGE.grid[i],shape:sh[(cur+1)%sh.length]}:{shape:'plus',color:0,rot:0};renderEditor()};
- });
- $('#eg-hole').onclick=()=>{FORGE.awaitingHole=true;$('#eg-hole').textContent='now CLICK a cell to make it the hole'};
- $$('#fg-diff button').forEach(b=>b.onclick=()=>{$$('#fg-diff button').forEach(x=>x.classList.remove('on'));b.classList.add('on')});
- $('#fg-save').onclick=saveForged;
-}
-function saveForged(){
- if(FORGE.hole==null||FORGE.hole<0){alertEv('SET A HOLE FIRST');return}
- const diff=+($('#fg-diff .on')?.dataset.v||2);
- const cols=FORGE.cols,rows=FORGE.rows,cells=FORGE.grid,hole=FORGE.hole;
- const r0=Math.floor(hole/cols),c0=hole%cols;
- const nb=[[r0,c0-1],[r0-1,c0],[r0,c0+1],[r0+1,c0]].find(([rr,cc])=>rr>=0&&cc>=0&&rr<rows&&cc<cols&&cells[rr*cols+cc]);
- const correctFill=nb?(()=>{const n=cells[nb[0]*cols+nb[1]];return{...n,color:(n.color+1)%8}})():{shape:'ring',color:ri(0,7),rot:0};
- const opts=[{cols:1,rows:1,cells:[correctFill]}];
- for(let i=1;i<8;i++){const m={...correctFill};const w=i%3;
-  if(w===0)m.color=(m.color+ri(1,7))%8;
-  else if(w===1)m.shape=['plus','cross','ring','square','diamond','triangle'][ri(0,5)];
-  else m.rot=((m.rot||0)+ri(1,3))%4;
-  if(!opts.some(o=>JSON.stringify(o.cells[0])===JSON.stringify(m)))opts.push({cols:1,rows:1,cells:[m]});else i--}
- const order=opts.map((_,i)=>i);
- for(let i=order.length-1;i>0;i--){const j=ri(0,i);[order[i],order[j]]=[order[j],order[i]]}
- const savedAnswer=order.indexOf(0);
- const puzzle={id:FORGE.editingId||('f'+Date.now()+ri(0,999)),
-  name:($('#fg-name')?.value.trim()||'Unnamed Sigil'),prompt:($('#fg-prompt')?.value.trim()||'COMPLETE THE FORBIDDEN SIGIL.'),
-  kind:'matrix',difficulty:diff,rule:'forged by '+(P.name||'anon'),
-  board:{cols,rows,cells:cells.slice(),holeIndex:hole},options:order.map(i=>opts[i]),answer:savedAnswer};
- const arr=store.get('IQB_PUZZLES_V1',[]);const ix=arr.findIndex(x=>x.id===puzzle.id);
- if(ix>=0)arr[ix]=puzzle;else arr.push(puzzle);
- store.set('IQB_PUZZLES_V1',arr);AU.p('sacrifice');alertEv('IMPRISONED ✓');setTimeout(openForge,600);
-}
-function openGrimoire(){
- nav('center');const cc=$('#center-content');
- const corr=clamp(P.deepestStage*22+P.followers.length*4+P.wins*3,0,100);
- cc.innerHTML='<div style="align-self:stretch;display:flex;align-items:center;gap:14px;width:min(680px,94vw)">'+
-  '<button class="btn btn-ghost" data-nav="landing">← Back</button><h2 style="flex:1">GRIMOIRE</h2></div>'+
-  '<div class="panel" style="width:min(680px,94vw)">'+
-  '<div style="display:flex;gap:20px;align-items:center"><div class="sc-ava" style="width:64px;height:64px;font-size:32px">🜃</div>'+
-  '<div><div style="font-weight:900;font-size:20px">'+esc(P.name||'UNNAMED')+'</div>'+
-  '<div style="font-size:11px;opacity:.5;letter-spacing:.14em">RUNS '+P.runs+' · WINS '+P.wins+' · BEST '+P.bestScore+' · DEEPEST STAGE '+P.deepestStage+'</div></div></div>'+
-  '<div style="margin-top:20px;font-size:11px;letter-spacing:.2em;opacity:.6">CORRUPTION</div>'+
-  '<div class="grim-meter" style="margin-top:6px"><i style="width:'+corr+'%"></i></div>'+
-  '<div style="display:flex;gap:26px;margin-top:18px;flex-wrap:wrap">'+
-  '<div class="stat-cell"><div class="stat-val">'+P.totalCorrect+'</div><div class="stat-lbl">fragments solved</div></div>'+
-  '<div class="stat-cell"><div class="stat-val">'+P.totalWrong+'</div><div class="stat-lbl">sins</div></div>'+
-  '<div class="stat-cell"><div class="stat-val">'+P.followers.length+'</div><div class="stat-lbl">cult members</div></div></div>'+
-  (P.followers.length?'<div class="followers-strip" style="margin-top:14px">'+P.followers.map(f=>'<div class="follower-chip">'+esc(f)+'</div>').join('')+'</div>':'')+
-  (P.relicsSeen.length?'<div style="margin-top:12px;font-size:11px;opacity:.6">EMERALDS TOUCHED: '+P.relicsSeen.length+'/6</div>':'')+
-  '</div>';
- bindNav();
-}
 function openSettings(){
  nav('center');const cc=$('#center-content');
  let muted=store.get('IQB_MUTED',false),motion=store.get('IQB_MOTION',true),voice=S.voiceOn;
@@ -1088,7 +1011,7 @@ function openSettings(){
 /* ---------- misc ---------- */
 function alertEv(msg){banner(msg)}
 function bindNav(){$$('[data-nav]').forEach(b=>b.onclick=()=>goNav(b.dataset.nav))}
-function goNav(to){if(to==='forge')openForge();else if(to==='grimoire')openGrimoire();else if(to==='settings')openSettings();else nav('landing')}
+function goNav(to){if(to==='settings')openSettings();else nav('landing')}
 
 /* ---------- boot ---------- */
 function boot(){

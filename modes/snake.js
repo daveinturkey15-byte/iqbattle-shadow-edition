@@ -27,10 +27,12 @@
  *                           //        false = died (wall hit / self bite).
  *                           // NOTE: the earlier draft used null-on-death; the frozen contract
  *                           // reserves null for NEUTRAL rounds, so deaths report false.
- *     points:  apples*25 + lengthBonus   // lengthBonus: 50 apex early-win, 20 capped-out
- *                                        // survival, 0 on death
- *     hpDelta: -10 | 0       // -10 ONLY on wall/self-bite death (engine clamps [-60,60])
- *     summary: 'snake len N' // <=64 chars; + ' · APEX SERPENT' suffix on the early win
+ *     points:  apples*APPLE_PTS[diff] + bonus   // balance pass 2026-08-25:
+ *               APPLE_PTS [12,24,40,40,40] · APEX_BONUS [50,70,90,110,130] ·
+ *               SURVIVE_BONUS [40,60,80,100,120] · bonus 0 on death.
+ *               Solid (apex) play pays ~104-121% of the puzzle baseline
+ *               100*diff+40; death forfeits the survival stipend. Verified by
+ *               research/bal-retro-snake.js
  *   }
  *   This file NEVER touches window.G, engine internals, or localStorage; the engine applies results.
  *
