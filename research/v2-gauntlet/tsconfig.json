@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "types": [],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": [
+    "*.ts",
+    "../../v2/src/puzzles/**/*.ts",
+    "../../v2/src/scenes/takeovers/**/*.ts"
+  ]
+}

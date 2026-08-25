@@ -1,0 +1,19 @@
+{
+  "name": "iqversus-shadow-v2",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 8792 --strictPort",
+    "build": "tsc && vite build",
+    "preview": "vite preview --port 8792"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "pixi.js": "^8.2.0"
+  }
+}
