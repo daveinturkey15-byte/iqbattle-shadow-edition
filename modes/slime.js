@@ -102,6 +102,40 @@
   }
   /** Time a slime stays up: 1100 ms -> 550 ms across the five notches. */
   function upMsFor(eff) { return Math.round(1100 - (clamp(eff, 1, 5) - 1) * 137.5); }
+
+  /** Payout model (pure; shared by finish() and smoke harnesses).
+   * Economy parity: puzzle par at effective notch e is 100*e+40 (the engine's
+   * depthDiff curve). A solid run (~75% of pops splatted, crowns spared) lands
+   * inside [60%,135%] of par; the engine additionally caps any takeover win at
+   * 100*e+60, which clips perfect play at high tiers by design. Crown penalty
+   * stays proportional to reward density: a crowned slime always costs exactly
+   * two normal splats (doubled under harsh/fire). A failing round (<6 hits)
+   * pays wrong-answer parity -(10+10*e) — index.html uses STAGE points on
+   * correct:false, so a positive fail payout would be free income (the old
+   * math banked +180 for five hits). Idling floors at that same parity loss,
+   * so playing always dominates letting the clock die. */
+  function resolveRound(t) {
+    var e = clamp(t.eff | 0, 1, 5);
+    var NORMAL = 5 + 3 * e;
+    var GOLD = 3 * NORMAL;
+    var DECOY_COST = 2 * NORMAL * (t.harsh ? 2 : 1);
+    var hits = (t.normalHits | 0) + (t.goldHits | 0);
+    var correct = hits >= 12 ? true : (hits >= 6 ? null : false);
+    var pts;
+    if (correct === false) {
+      pts = -(10 + 10 * e);                         // fail = a wrong answer, never income
+    } else {
+      pts = NORMAL * (t.normalHits | 0) + GOLD * (t.goldHits | 0) -
+            DECOY_COST * (t.decoyShots | 0) - 2 * (t.escapes | 0);
+      if (t.phoenix) pts = Math.round(pts * 1.5);
+      pts = Math.min(500, Math.max(0, pts));
+    }
+    return {
+      correct: correct, points: pts,
+      hpDelta: (t.escapes | 0) >= 6 ? (t.harsh ? -15 : -10) : 0,
+      normalValue: NORMAL, goldValue: GOLD, decoyCost: DECOY_COST
+    };
+  }
   /** Generous hit window around emergence: 190 ms -> 150 ms. */
   function windowMsFor(eff) { return 200 - clamp(eff, 1, 5) * 10; }
   /** Decoy share of pops: 10% -> 30%; gold fixed at 10%. */
@@ -157,6 +191,7 @@
   window.__SLIME_TOOLS__ = {
     effFor: effFor, upMsFor: upMsFor, windowMsFor: windowMsFor,
     decoyRatioFor: decoyRatioFor, buildSchedule: buildSchedule,
+    resolveRound: resolveRound,
     CAP_MS: CAP_MS, COOLDOWN_MS: COOLDOWN_MS
   };
 
@@ -175,9 +210,6 @@
       var align = ctx.align || {};
       var eff = effFor(ctx.depth, align);
       var WIN = windowMsFor(eff);
-      var DECOY_COST = (align.phase === 'fire' || align.harsh === 2) ? 60 : 30;
-      var HP_HIT = (align.phase === 'fire' || align.harsh === 2) ? -15 : -10;
-      var PHOENIX = align.phase === 'phoenix';
       var motionOff = flagOff('IQB_MOTION');
 
       /* ---------- dom ---------- */
@@ -388,16 +420,17 @@
         try { audioCtx && audioCtx.close && audioCtx.close(); } catch (e) {}
 
         var hits = normalHits + goldHits;
-        var pts = 25 * normalHits + 80 * goldHits -
-                  DECOY_COST * decoyShots - 10 * escapes;
-        pts = Math.max(0, pts);
-        if (PHOENIX) pts = Math.round(pts * 1.5);
-        pts = Math.min(500, pts);
+        var out = resolveRound({
+          eff: eff, normalHits: normalHits, goldHits: goldHits,
+          decoyShots: decoyShots, escapes: escapes,
+          harsh: align.phase === 'fire' || align.harsh === 2,
+          phoenix: align.phase === 'phoenix'
+        });
         var res = {
           kind: 'score',
-          correct: hits >= 12 ? true : (hits >= 6 ? null : false),
-          points: pts,
-          hpDelta: escapes >= 6 ? HP_HIT : 0,
+          correct: out.correct,
+          points: out.points,
+          hpDelta: out.hpDelta,
           summary: hits + ' SPLATS \u00B7 ' + goldHits + ' GOLD'
         };
 

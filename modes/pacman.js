@@ -36,6 +36,7 @@
  *              // so the engine applies wrong-answer parity. Solid runs land
  *              // ~90-133% of the puzzle baseline 100*diff+40. Verified by
  *              // research/bal-retro-pacman.js
+ *     summary: 'MAZE DEVOURED' | 'CAUGHT — x/y PELLETS'
  *            | 'SURVIVED — x/y PELLETS' | 'STARVED — x/y PELLETS'
  *   }
  *
@@ -59,6 +60,8 @@
  *   window.__GLUTTON__.step(dir[, ms]) // dir: 'up'|'down'|'left'|'right' — steers
  *                                      // and advances the sim synchronously by
  *                                      // ms (default 40) of play time
+ *   window.__GLUTTON__.settle([ms])   // advance dying/cleared end-phase timers
+ *                                      // synchronously (headless smoke drivers)
  *   window.__GLUTTON__.state()         // -> {eaten,total,pelletsLeft,pos,ghostsEaten,
  *                                      //     caught,cleared,finished,phase,playMs,
  *                                      //     ghosts:[{state,c,r}]}
@@ -720,7 +723,8 @@
           state: function () {
             return {
               eaten: eaten, total: totalPellets, pelletsLeft: pelletsLeft,
-              pos: { c: normC(player.c), r: player.r, moving: !player.stopped },
+              pos: { c: normC(player.c), r: player.r, moving: !player.stopped,
+                     dx: player.dx, dy: player.dy },  // dx/dy: smoke/audit heading
               ghostsEaten: ghostsEaten, caught: caught, cleared: cleared,
               finished: finished, phase: phase, playMs: Math.round(playMs),
               ghosts: ghosts.map(function (g) {
@@ -729,6 +733,11 @@
             };
           },
           maze: function () { return layout.slice(); },
+          settle: function (ms) {           // smoke/audit: advance dying/cleared
+            var left = Math.max(1, ms || 1500);   // end-phase timers headlessly
+            while (!finished && left > 0) { update(50); left -= 50; }
+            return finished;
+          },
           finish: function () { if (!finished) finishCap(); }
         };
 

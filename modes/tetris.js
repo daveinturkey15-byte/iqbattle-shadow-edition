@@ -31,8 +31,9 @@
  *              // balance pass 2026-08-25: BASE_PTS 30, LINE_PTS [40,52,62,70,70],
  *              // WIN_BONUS 50. Quota-met wins land ~96-114% of the puzzle baseline
  *              // 100*diff+40; cap-expiry partials always pay less than winning at
- *              // the same depth, so running out the clock is never optimal.
- *              // Verified by research/bal-retro-tetris.js
+ *              // the same depth (failures resolve points 0, so the engine's
+ *              // wrong-answer parity applies); topout/cap with zero lines
+ *              // still costs 15 hp. Verified by research/bal-retro-tetris.js
  *     summary: 'WELL CLEARED — n LINES' | 'BURIED — n LINES' | 'n LINES'
  *   }
  *
@@ -695,11 +696,30 @@
             update(softDrop ? Math.min(gravMs, 50) : gravMs);
             return !finished;
           },
+          press: function (cmd) {           // smoke/audit: act WITHOUT advancing
+            if (finished || paused) return false; // gravity/cap time
+            act(cmd);
+            return !finished;
+          },
           state: function () {
             return {
               lines: lines, quota: QUOTA, dead: deadByTopout, won: wonEarly,
               finished: finished, elapsedMs: Math.round(activeMs),
-              garbage: garbageRisen, piece: piece ? PIECES[piece.type].color : null
+              garbage: garbageRisen, piece: piece ? PIECES[piece.type].color : null,
+              pieceX: piece ? piece.x : null,          // smoke/audit
+              pieceType: piece ? piece.type : null,    // smoke/audit
+              heights: (function () {                  // smoke/audit: stack height per column
+                var h = [];
+                for (var x = 0; x < COLS; x++) {
+                  var y = 0;
+                  while (y < ROWS && grid[y][x] === -1) y++;
+                  h.push(ROWS - y);
+                }
+                return h;
+              })(),
+              rows: grid.map(function (r) {            // smoke/audit: '.' empty
+                return r.map(function (v) { return v === -1 ? '.' : String(v); }).join('');
+              })
             };
           },
           finish: function () { if (!finished) finish(false); }

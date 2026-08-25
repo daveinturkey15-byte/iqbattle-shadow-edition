@@ -24,14 +24,16 @@
  * StageResult fields resolved:
  *   {
  *     kind:    'score',
- *     correct: true  -> totalPayout >= 3*stake,
- *                null -> totalPayout > 0 (but under threshold),
- *                false -> the house wins everything,
- *     points:  sum of the three spin payouts (jackpot line pays 600 — the one
- *              sanctioned breach of the 500 cap; diff>=5 doubles spin 3 "double
- *              or nothing", clearly labeled),
+ *     correct: true  -> the god paid anything (total > 0; the engine's neutral
+ *                        ladder would punish a null verdict, so partial payouts
+ *                        are full wins),
+ *                false -> the house wins everything (all three spins paid 0),
+ *     points:  sum of the three spin payouts (tables scale UP with depth so the
+ *              expected payout tracks the takeover band; raw totals above 500
+ *              are clamped and parity-capped engine-side; diff>=5 doubles spin
+ *              3 "double or nothing", clearly labeled),
  *     hpDelta: +10 on jackpot | -10 when every spin paid zero | 0 otherwise,
- *     summary: 'THE GOD PAYS 240' | 'THE HOUSE WINS' | 'JACKPOT — THE GOD PAYS 600'
+ *     summary: 'THE GOD PAYS 240' | 'THE HOUSE WINS' | 'JACKPOT — THE GOD PAYS 2300'
  *   }
  *   NEVER touches window.G; the engine applies scoring/hp host-side after resolve.
  *
@@ -55,12 +57,17 @@
  * mount from a DEDICATED seed stream mulberry32(seed ^ TAG) so every tab holds
  * byte-identical strips regardless of ctx.rng consumption order. align bad/chaotic
  * injects the cursed SKULL (pays nothing, breaks pairs); align good injects the
- * STAR (wildcard). Three stars = jackpot 600. Near-miss framing is forbidden —
- * copy never taunts and never claims rigging either way ("essence wording only").
+ * STAR (wildcard). Three stars = jackpot (600 at diff 1, scaling with the
+ * payout tables). Near-miss framing is forbidden — copy never taunts and never
+ * claims rigging either way ("essence wording only").
  *
  * Depth scaling (diff = clamp(1+floor(depth/6),1,5)):
- *   stake 20->60; top pair pays 40->15; skull frequency 0%->25%; diff>=5 third
- *   spin is double-or-nothing (auto-staked, labeled on the cabinet).
+ *   stake 20->60; skull frequency 0%->25%; diff>=5 third spin is
+ *   double-or-nothing (auto-staked, labeled on the cabinet). Payout tables
+ *   (pair/triple/jackpot) scale UP with depth: expected round payout tracks the
+ *   takeover band [60%,135%] of puzzle payout 100*diff+40 — verified by
+ *   .probe-slots-balance.js (awarded EV 67-70% at every diff after the
+ *   engine's 500-clamp + takeover parity cap).
  *
  * Fairness rails: IQB_MOTION=false replaces spinning with instant per-symbol flips
  * (no animation at all); IQB_MUTED silences audio; paytable always on screen;
@@ -81,11 +88,18 @@
   var AUTO_STOP_MS = 7000;          // un-stopped reel resolves itself
   var CAP_MS = 42000;               // <=45s hard self-resolve
   var STAKES = [20, 30, 40, 50, 60];
-  var PAIR_PAY = [40, 34, 28, 21, 15];
+  /* payout tables indexed by diff-1: scale UP with depth so the expected round
+   * payout stays inside the takeover band (see .probe-slots-balance.js) */
+  var PAIR_PAY = [45, 80, 130, 190, 260];
   var SKULL_DIST = [[0, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 2], [1, 2, 2]];
-  var TRIPLE_PAY = { eye: 90, moon: 120, key: 160, crown: 260 };
-  var JACKPOT = 600;
-
+  var TRIPLE_PAYS = [
+    { eye: 95, moon: 125, key: 160, crown: 260 },
+    { eye: 180, moon: 240, key: 320, crown: 520 },
+    { eye: 280, moon: 370, key: 500, crown: 800 },
+    { eye: 430, moon: 570, key: 760, crown: 1200 },
+    { eye: 520, moon: 690, key: 920, crown: 1450 }
+  ];
+  var JACKPOTS = [600, 900, 1300, 1800, 2300];
   /* ---------- tiny shared helpers (per-file, no deps) ---------- */
 
   function mulberry32(a) {
@@ -112,7 +126,7 @@
 
   /* ---------- payout evaluation (PURE: shared by client render + host recompute) ---------- */
 
-  function linePayout(line, pairPay) {
+  function linePayout(line, pairPay, triplePay, jackpotPay) {
     var stars = 0, skull = false, rest = {}, i;
     for (i = 0; i < 3; i++) {
       var s = line[i];
@@ -121,7 +135,7 @@
       else rest[s] = (rest[s] || 0) + 1;
     }
     if (skull) return 0;                       // cursed skull: pays nothing, breaks pairs
-    if (stars === 3) return JACKPOT;           // triple star: the sanctioned breach
+    if (stars === 3) return jackpotPay;        // triple star: the jackpot line
     var bestN = 0, bestSym = null, sym;
     for (sym in rest) {
       if (Object.prototype.hasOwnProperty.call(rest, sym) && rest[sym] > bestN) {
@@ -129,7 +143,7 @@
       }
     }
     if (bestSym === null) return 0;
-    if (bestN + stars >= 3) return TRIPLE_PAY[bestSym];  // stars complete triples
+    if (bestN + stars >= 3) return triplePay[bestSym];   // stars complete triples
     if (bestN + stars === 2) return pairPay;             // star completes the pair
     return 0;
   }
@@ -145,6 +159,8 @@
         var diff = diffFor(ctx.depth);
         var stake = STAKES[diff - 1];
         var pairPay = PAIR_PAY[diff - 1];
+        var triplePay = TRIPLE_PAYS[diff - 1];
+        var jackpotPay = JACKPOTS[diff - 1];
         var doubleOrNothing = diff >= 5;
         var mp = !!ctx.mp;
         var net = (window.IQ && window.IQ.Net) || null;
@@ -229,11 +245,11 @@
 
         (function fillPaytable() {
           var html = '<b>PAYTABLE</b><br>' +
-            '&#9733;&#9733;&#9733; wild x3 <b>' + JACKPOT + '</b><br>' +
-            'crown x3 <b>' + TRIPLE_PAY.crown + '</b><br>' +
-            'key x3 <b>' + TRIPLE_PAY.key + '</b><br>' +
-            'moon x3 <b>' + TRIPLE_PAY.moon + '</b><br>' +
-            'eye x3 <b>' + TRIPLE_PAY.eye + '</b><br>' +
+            '&#9733;&#9733;&#9733; wild x3 <b>' + jackpotPay + '</b><br>' +
+            'crown x3 <b>' + triplePay.crown + '</b><br>' +
+            'key x3 <b>' + triplePay.key + '</b><br>' +
+            'moon x3 <b>' + triplePay.moon + '</b><br>' +
+            'eye x3 <b>' + triplePay.eye + '</b><br>' +
             'any pair <b>' + pairPay + '</b><br>' +
             'skull breaks the line<br>' +
             'stake ' + stake + '/spin';
@@ -350,14 +366,14 @@
           phase = 'settling';
           var line = [], r;
           for (r = 0; r < 3; r++) line.push(strips[r][reels[r].pos]);
-          var paid = linePayout(line, pairPay);
-          if (paid === JACKPOT) jackpot = true;
+          var paid = linePayout(line, pairPay, triplePay, jackpotPay);
+          if (paid >= jackpotPay) jackpot = true;
           if (spinIdx === 2 && doubleOrNothing) paid *= 2;    // labeled DOUBLE OR NOTHING
           payouts.push(paid);
           total += paid;
           glowPaid = paid;
           glowUntil = nowMs() + (paid > 0 ? 1100 : 350);      // localized payline glow
-          beep(paid >= JACKPOT ? 990 : paid > 0 ? 740 : 150, paid >= JACKPOT ? 320 : 140);
+          beep(paid >= jackpotPay ? 990 : paid > 0 ? 740 : 150, paid >= jackpotPay ? 320 : 140);
           updateMeter();
           foot.textContent = paid > 0
             ? 'THE GOD PAYS ' + paid + (spinIdx === 2 && doubleOrNothing ? ' (DOUBLED)' : '')
@@ -369,7 +385,7 @@
             phase = 'between';
             foot.textContent = spinLabel();
             later(startSpin, 900);
-          }, paid >= JACKPOT ? 1600 : 1300);
+          }, paid >= jackpotPay ? 1600 : 1300);
         }
 
         function updateMeter() {
@@ -395,7 +411,7 @@
               uid: (net.myUid() || 'me'), ticks: ticks.slice(0, 9) });
           }
 
-          var correct = total >= 3 * stake ? true : (total > 0 ? null : false);
+          var correct = total > 0 ? true : false; /* neutral ladder punishes partial wins */
           var summary = jackpot
             ? 'JACKPOT — THE GOD PAYS ' + total
             : (total > 0 ? 'THE GOD PAYS ' + total : 'THE HOUSE WINS');
@@ -428,17 +444,17 @@
                   var land = ((ti * 7 + salts[r]) % STRIP_LEN + STRIP_LEN) % STRIP_LEN;
                   line.push(strips[r][land]);
                 }
-                var p = linePayout(line, pairPay);
+                var p = linePayout(line, pairPay, triplePay, jackpotPay);
                 if (sp === 2 && doubleOrNothing) p *= 2;
                 per.push(p); grand += p;
               }
               auth[key] = {
                 payouts: per, total: grand,
-                jackpot: per.indexOf(JACKPOT) >= 0,
+                jackpot: per.indexOf(jackpotPay) >= 0,
                 stake: stake,
-                correct: grand >= 3 * stake ? true : (grand > 0 ? null : false),
+                correct: grand > 0 ? true : false,
                 points: grand,
-                hpDelta: per.indexOf(JACKPOT) >= 0 ? 10 : (grand === 0 ? -10 : 0)
+                hpDelta: per.indexOf(jackpotPay) >= 0 ? 10 : (grand === 0 ? -10 : 0)
               };
             } catch (e) { /* a malformed frame never breaks the cabinet */ }
           });
@@ -549,7 +565,7 @@
           // payline: localized glow only (never fullscreen)
           var glow = glowPaid !== null && now < glowUntil &&
             (motionOff || Math.floor(now / 90) % 2 === 0);
-          g.strokeStyle = glow ? (glowPaid >= JACKPOT ? '#7dffcf' :
+          g.strokeStyle = glow ? (glowPaid >= jackpotPay ? '#7dffcf' :
             glowPaid > 0 ? '#ffe066' : '#ff8fa3') : 'rgba(210,180,255,0.35)';
           g.lineWidth = 2;
           g.beginPath();

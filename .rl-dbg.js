@@ -149,7 +149,7 @@ function goRed(){ /* survive the freeze, then the next light */
  requestAnimationFrame(()=>{T.count.style.transition=`width ${ph.redMs}ms linear`;T.count.style.width='0%'});
  light(false,ph.redMs);
 }
-function runPhase(){
+function runPhase(){console.error("RP T.phases=",T.phases&&T.phases.length,"T.phase=",T.phase,"Tkeys=",Object.keys(T).join(","));
  const ph=T.phases[T.phase];
  T.count.style.width='100%';
  requestAnimationFrame(()=>{T.count.style.transition=`width ${ph.greenMs}ms linear`;T.count.style.width='0%'});
@@ -188,7 +188,6 @@ root.Stage.register({
   T.phases=reds.map((redMs,i)=>({redMs,
     /* each green funds its own red in full: worst-case total stays under timerLen */
     greenMs:Math.max(GREEN_FLOOR,greenBase-T.tier*350-i*250-redMs)}));
-  T.phase=0;
   const el=document.createElement('div');
   el.className='stage-view';el.setAttribute('data-stage','redlight');
   el.innerHTML=

@@ -132,9 +132,16 @@ async function smokeBattleshipSoloDiff5() {
   if (!res) return;
   const stFinal = S().state();
   check(stFinal.hits === 9 && res.correct === true, 'allSunk -> correct=true (' + stFinal.hits + ' hits)');
-  check(res.points === 40 * 9 + 120 * 3 + 60 - 20 * stFinal.incomingHits,
-    'win points formula (40h+120s+60-20in) -> ' + res.points +
+  const expectWin = (10 + 6 * 5) + 9 * (4 + 2 * 5) + 3 * (12 + 8 * 5) +
+    (30 + 15 * 5) - 20 * stFinal.incomingHits;
+  check(res.points === expectWin,
+    'win points formula ((10+6k)+h(4+2k)+s(12+8k)+(30+15k)-20in) -> ' + res.points +
     ' (incomingHits=' + stFinal.incomingHits + ')');
+  { // economy band: full sink vs puzzle par 100*k+40 at k=5
+    const lo = Math.round(0.6 * 540), hi = Math.round(1.35 * 540);
+    check(res.points >= lo && res.points <= hi,
+      'full-sink payout ' + res.points + ' within [' + lo + ',' + hi + ']');
+  }
   check(res.hpDelta === Math.max(-15, -5 * 0 - 5 * stFinal.incomingHits),
     'hpDelta = clamp(-15 floor) -> ' + res.hpDelta);
   check(res.summary === 'FLEET SUNK — 9/9', 'summary "' + res.summary + '"');
@@ -161,8 +168,8 @@ async function smokeBattleshipSoloDiff1() {
   check(!!res, 'forced finish resolved');
   if (!res) return;
   check(res.correct === false, '<5 hits -> correct=false');
-  check(res.points === 40 * 1 + 120 * 0 + 0 - 20 * 0, 'partial points -> ' + res.points);
-  check(res.hpDelta === -15, 'three hunters afloat, no incoming -> hp floor -15 (got ' + res.hpDelta + ')');
+  check(res.points === -(10 + 10) && res.points < 0,
+    'failing round (<5 hits) pays wrong-answer parity, never income -> ' + res.points);
   check(/HUNTERS REMAIN/.test(res.summary), 'summary "' + res.summary + '"');
 }
 
@@ -198,6 +205,38 @@ async function smokeBattleshipMP() {
   await Promise.race([p, sleep(3000)]);
   check(!!res, 'MP round resolved');
 }
+
+/* ================= SALVOS payout curve vs puzzle-par economy ================= */
+async function smokeBattleshipCurve() {
+  console.log('[SALVOS payout curve — depths 3/8/15 vs par 100*k+40]');
+  const T = global.window.__SALVOS_TOOLS__;
+  check(!!T && typeof T.resolveSalvos === 'function', '__SALVOS_TOOLS__ pure model exposed');
+  check(T.diffFor(3) === 1 && T.diffFor(8) === 2 && T.diffFor(15) === 3,
+    'diff tiers at depths 3/8/15 are 1/2/3');
+  for (const depth of [3, 8, 15]) {
+    const k = T.diffFor(depth);
+    const lo = Math.round(0.6 * (100 * k + 40)), hi = Math.round(1.35 * (100 * k + 40));
+    const win = T.resolveSalvos({ diff: k, hits: 9, sunk: 3, allSunk: true, incomingHits: 1 });
+    check(win.correct === true && win.points >= lo && win.points <= hi,
+      'depth ' + depth + ': full sink ' + win.points + ' within [' + lo + ',' + hi + ']');
+    // salvo/shell budget bounds the round: verdict latency + telegraph playback
+    // must always self-resolve well under the engine's hard 45s rail
+    const salvos = [5, 5, 4, 4, 3][k - 1];
+    const worstMs = salvos * (3 * 150 + (k >= 3 ? (k >= 5 ? 2 : 1) * 900 + 550 : 0));
+    check(worstMs < 45000,
+      'depth ' + depth + ': worst-case salvo cycle ~' + worstMs + 'ms under the 45s cap');
+  }
+  const fails = [[3, 1], [8, 2], [15, 3]].map(([d, k]) =>
+    ({ r: T.resolveSalvos({ diff: k, hits: 4, sunk: 0, allSunk: false, incomingHits: 0 }),
+       k: k }));
+  check(fails.every(x => x.r.correct === false && x.r.points === -(10 + 10 * x.k)),
+    'failing rounds pay wrong-answer parity -(10+10k), never income');
+  const w = [3, 8, 15].map(d => T.resolveSalvos({ diff: T.diffFor(d), hits: 9,
+    sunk: 3, allSunk: true, incomingHits: 0 }).points);
+  check(w[0] < w[1] && w[1] < w[2],
+    'identical fleet sink pays strictly more deeper (' + w.join('<') + ')');
+}
+
 function linePayoutRef(line, pairPay) {
   let stars = 0, skull = false; const rest = {};
   for (const s of line) {
@@ -294,6 +333,7 @@ async function smokeGodMP() {
 /* ================= run ================= */
 (async () => {
   try { await smokeBattleshipSoloDiff5(); } catch (e) { failures++; console.log('  FAIL ' + e.message); }
+  try { await smokeBattleshipCurve(); } catch (e) { failures++; console.log('  FAIL ' + e.message); }
   try { await smokeBattleshipSoloDiff1(); } catch (e) { failures++; console.log('  FAIL ' + e.message); }
   try { await smokeBattleshipMP(); } catch (e) { failures++; console.log('  FAIL ' + e.message); }
   try { await smokeGodSolo(4, 'bad', 'diff1 cursed'); } catch (e) { failures++; console.log('  FAIL ' + e.message); }

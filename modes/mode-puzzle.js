@@ -40,6 +40,8 @@ function makePuzzle(ctx){
   ctx.tier===2?['iqvs','iqvs','latin','cycle','count','dual','dual','logicA','logicB','seqPack','missingSec']:
   ['wild','wild','dual','iqvs','iqvs','latin','logicA','logicB','seqPack','missingSec'];
  let gname=table[Math.floor(ctx.rng()*table.length)];
+ if(ctx.depth>=10&&G_.compound&&ctx.rng()<.08)gname='compound';
+ else if(ctx.depth>=10&&G_.relay&&ctx.rng()<.07)gname='relay';
  if(ctx.tier>=2&&(G_.retroA||G_.retroB)&&ctx.rng()<.12)gname=(G_.retroA&&(!G_.retroB||ctx.rng()<.5))?'retroA':'retroB';
  const gen=G_[gname];
  const kinds=ctx.tier>=2?['matrix','sequence','oddone']:['matrix','matrix','sequence'];

@@ -171,6 +171,38 @@ const flush = () => new Promise(r => setImmediate(r));
        .some(pfx => r.summary.indexOf(pfx) === 0), 'summary matches design vocabulary: "' + r.summary + '"');
   }
 }
+/* --- scenario 4: payout curve vs puzzle-par economy band --- */
+{
+  const pay = global.window.__DOOM_PAY__;
+  ok(typeof pay === 'function', '__DOOM_PAY__ pure model exposed');
+  const par = k => 100 * k + 40;                       // puzzle par per difficulty tier
+  const diffAt = d => Math.max(1, Math.min(5, 1 + Math.floor(d / 6)));
+  for (const depth of [3, 8, 15]) {
+    const k = diffAt(depth);
+    const lo = Math.round(0.6 * par(k)), hi = Math.round(1.35 * par(k));
+    const win = pay({ diff: k, kills: 1 + k, exited: true, misses: 1,
+      medkitsTaken: 1, hitsTaken: 2 });
+    ok(win.correct === true && win.points >= lo && win.points <= hi,
+       'depth ' + depth + ': full-clear win ' + win.points + ' within [' + lo + ',' + hi + ']');
+    const quiet = pay({ diff: k, kills: 0, exited: true, misses: 0,
+      medkitsTaken: 0, hitsTaken: 0 });
+    ok(quiet.correct === true && quiet.points >= lo,
+       'depth ' + depth + ': exit-only run ' + quiet.points + ' >= 60% of par (' + lo + ')');
+  }
+  const depths = [3, 8, 15];
+  const deaths = depths.map(d => pay({ diff: diffAt(d), kills: 1, dead: true,
+    misses: 0, medkitsTaken: 0, hitsTaken: 3 }));
+  ok(deaths.every(r => r.correct === false && r.points < 0), 'death never banks income');
+  ok(deaths.every((r, i) => r.points === -(10 + 10 * diffAt(depths[i]))),
+     'death pays wrong-answer parity -(10+10k)');
+  const wins = depths.map(d => pay({ diff: diffAt(d), kills: 1 + diffAt(d),
+    exited: true, misses: 0, medkitsTaken: 0, hitsTaken: 0 }));
+  ok(wins[0].points < wins[1].points && wins[1].points < wins[2].points,
+     'same performance pays strictly more deeper (' + wins.map(w => w.points).join('<') + ')');
+  const hpEdge = pay({ diff: 1, kills: 0, exited: false, misses: 0,
+    medkitsTaken: 99, hitsTaken: 99 });
+  ok(Math.abs(hpEdge.hpDelta) <= 15, 'hpDelta clamped to [-15,+15] at extremes');
+}
   for (const h of timers) _clrI(h);
   console.log('\n' + passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);

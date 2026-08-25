@@ -108,8 +108,13 @@
       var logo = q('.boot-logo');
       if (!logo || typeof root.getComputedStyle !== 'function') return [a, b];
       var cs = root.getComputedStyle(logo);
-      var grad = /linear-gradient\([^)]*\)/.exec(cs.backgroundImage || '');
-      var cols = grad ? grad[0].match(/#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)/g) : null;
+      var bg = cs.backgroundImage || '';
+      var g0 = bg.indexOf('linear-gradient(');
+      var grad = null;
+      if (g0 >= 0 && bg.lastIndexOf(')') > g0) {
+        grad = bg.slice(g0 + 'linear-gradient('.length - 1, bg.lastIndexOf(')') + 1);
+      }
+      var cols = grad ? grad.match(/#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)/g) : null;
       if (cols && cols.length >= 2) return [cols[0], cols[cols.length - 1]];
       var va = (cs.getPropertyValue('--acc-a') || '').trim();
       var vb = (cs.getPropertyValue('--acc-b') || '').trim();

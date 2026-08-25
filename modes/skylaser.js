@@ -56,9 +56,11 @@
  * StageResult fields (design economics, §0.1):
  *   kind:    'score'
  *   correct: ALWAYS true — good round, he still saves the city (no fail state)
- *   points:  +60 per wave with >=1 drone vaporized, -30 per civilian hit;
- *            hit civilians in ALL 3 waves => 'CLOSE CALL' banner and the
- *            running total is HALVED (round()). Range observed [-45, +180].
+ *   points:  +(20+18*diff) per wave with >=1 drone vaporized, -30 per civilian
+ *            hit; hit civilians in ALL 3 waves => 'CLOSE CALL' banner and the
+ *            running total is HALVED (round()); final total FLOORED at -30
+ *            (no-fail good world: he covers the damages). Perfect run
+ *            114..330 — always under the puzzle payout ceiling 100*diff+40.
  *   hpDelta: +10 (hero hover-salute heal), every outcome.
  *   summary: <=48 chars, outcome-flavored (see verdictFor).
  * Engine clamps points [-200,500] / hpDelta [-60,60]; +10 sits comfortably
@@ -183,8 +185,17 @@
   function colOf(slot) { return slot % COLS; }
   function rowOf(slot) { return Math.floor(slot / COLS); }
 
-  /** Points earned by one wave's beam pass: +60 iff anything vaporized. */
-  function wavePoints(vaporized) { return vaporized > 0 ? 60 : 0; }
+  /** Diff ladder shared by every takeover stage (min(5, 1+floor((depth-1)/6))). */
+  function diffFor(depth) {
+    return Math.min(5, Math.max(1, 1 + ((((depth | 0) - 1) / 6) | 0)));
+  }
+  /** Points earned by one wave's beam pass: pays iff anything vaporized.
+   * Scales 20+18*diff so a PERFECT run (3 waves) stays under the puzzle
+   * payout ceiling 100*diff+40 at every tier (114..330 vs 140..540) while
+   * sitting inside the takeover band [0.6,1.35]x. */
+  var WAVE_PAY_BASE = 20, WAVE_PAY_PER_DIFF = 18;
+  function wavePay(diff) { return WAVE_PAY_BASE + WAVE_PAY_PER_DIFF * (diff == null ? 1 : diff); }
+  function wavePoints(vaporized, diff) { return vaporized > 0 ? wavePay(diff) : 0; }
 
   /** CLOSE CALL: at least one civilian misfire in EVERY wave. */
   function isCloseCall(civPerWave) {
@@ -195,18 +206,24 @@
   }
 
   /**
-   * Final tally: +60/wave cleared, -30 per civilian hit, halved on CLOSE CALL.
+   * Final tally: wavePay(diff)/wave cleared, -30 per civilian hit, halved on
+   * CLOSE CALL — then floored at -30: a NO-FAIL good world never bankrupts
+   * you ("he covers the damages"); the floor stays generous but the ceiling
+   * never reaches the puzzle payout.
    */
-  function tally(wavesScored, civHits, closeCall) {
-    var raw = wavePoints(1) * wavesScored - 30 * civHits;
-    return closeCall ? Math.round(raw / 2) : raw;
+  var CIV_PTS = 30;
+  var POINTS_FLOOR = -30;
+  function tally(wavesScored, civHits, closeCall, diff) {
+    var raw = wavePay(diff) * wavesScored - CIV_PTS * civHits;
+    var v = closeCall ? Math.round(raw / 2) : raw;
+    return Math.max(POINTS_FLOOR, v);
   }
 
   /**
    * Verdict mapping (design economics): ALWAYS a save — correct true,
    * +10 vitality salute. Only flavor and the point total vary.
    */
-  function verdictFor(wavesScored, civHits, closeCall) {
+  function verdictFor(wavesScored, civHits, closeCall, diff) {
     var summary;
     if (closeCall) summary = 'CLOSE CALL · HE STILL SAVED IT';
     else if (civHits > 0) summary = 'CITY SAVED · CROWD SCATTERED';
@@ -215,7 +232,7 @@
     else summary = 'HE SAVED IT ALONE';
     return {
       correct: true,
-      points: tally(wavesScored, civHits, closeCall),
+      points: tally(wavesScored, civHits, closeCall, diff),
       hpDelta: 10,
       summary: summary.length <= 48 ? summary : summary.slice(0, 48)
     };
@@ -512,7 +529,7 @@
             root.removeEventListener('keydown', onKey, true);
             canvas.removeEventListener('pointerdown', onPointer);
             root.removeEventListener('resize', fit);
-            var v = verdictFor(wavesScored, civHits, isCloseCall(civPerWave));
+            var v = verdictFor(wavesScored, civHits, isCloseCall(civPerWave), diffFor(depth));
             foot.textContent = v.summary;
             var result = {
               kind: 'score',
@@ -925,12 +942,14 @@
     ok('colOf wraps rows', colOf(7) === 2 && rowOf(7) === 1 && colOf(14) === 4 && rowOf(14) === 2);
 
     // 4. scoring economics
-    ok('wave pays +60 on any vaporize', wavePoints(1) === 60 && wavePoints(3) === 60);
+    ok('wave pays +38 at diff1 on any vaporize', wavePoints(1) === 38 && wavePoints(3) === 38);
+    ok('wave pays +110 at diff5', wavePoints(1, 5) === 110);
     ok('wave pays 0 on a whiff', wavePoints(0) === 0);
-    ok('perfect run = 180', tally(3, 0, false) === 180);
-    ok('one innocent = 150', tally(3, 1, false) === 150);
-    ok('close call halves (90 -> 45)', tally(3, 3, true) === 45);
-    ok('close call rounds -90 -> -45', tally(0, 3, true) === -45);
+    ok('perfect run diff1 = 114 (< puzzle ceiling 140)', tally(3, 0, false) === 114);
+    ok('perfect run diff5 = 330 (< puzzle ceiling 540)', tally(3, 0, false, 5) === 330);
+    ok('one innocent = 84', tally(3, 1, false) === 84);
+    ok('close call halves (24 -> 12)', tally(3, 3, true) === 12);
+    ok('close call floors -45 -> -30 (generous no-fail floor)', tally(0, 3, true) === -30);
     ok('whiffed all, no civs = 0', tally(0, 0, false) === 0);
 
     // 5. close-call rule needs a misfire in EVERY wave
@@ -942,8 +961,8 @@
     var v1 = verdictFor(3, 0, false), v2 = verdictFor(3, 3, true), v3 = verdictFor(0, 0, false);
     ok('always correct:true', v1.correct === true && v2.correct === true && v3.correct === true);
     ok('always hpDelta:+10', v1.hpDelta === 10 && v2.hpDelta === 10 && v3.hpDelta === 10);
-    ok('clean sweep points 180', v1.points === 180);
-    ok('close call points 45', v2.points === 45 && /CLOSE CALL/.test(v2.summary));
+    ok('clean sweep points 114', v1.points === 114);
+    ok('close call points 12', v2.points === 12 && /CLOSE CALL/.test(v2.summary));
     ok('lonely save points 0', v3.points === 0);
     [v1, v2, v3, verdictFor(2, 1, false), verdictFor(1, 2, false)].forEach(function (v) {
       ok('summary <=48 chars: "' + v.summary + '"', v.summary.length <= 48);

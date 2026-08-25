@@ -180,9 +180,11 @@
    *   gauntlet:conquest = 'crown'  -> onPreAnswer  scoreMul 1.3 (next award)
    *   gauntlet:war      = '+5'/-5' -> onRoundStart timerDelta +5 / -5
    *   gauntlet:famine   = 'shield' -> onAnswer(!correct) hpDelta +15 ONCE
-   *                                (absorbs the baseline -15 wrong-answer hit)
-   *                     = 'curse'  -> onAnswer(!correct) hpDelta -20 ONCE
-   *                                (baseline -15 plus the rider's extra -5)
+   *                                (engine hpDelta hooks are ADDITIVE: +15
+   *                                absorbs the engine's wrong-answer hit)
+   *                     = 'curse'  -> onAnswer(!correct) hpDelta -5 ONCE
+   *                                (extra sting on top of the engine's own
+   *                                depth-scaled baseline, -(10+10*diff))
    *   gauntlet:death    = 'flinch' -> onRoundStart hpDelta -10 (round entry)
    *
    * If another surface ever needs to consume these keys (e.g. an engine-side

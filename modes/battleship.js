@@ -25,7 +25,11 @@
  *     correct: true  -> whole shadow fleet sunk within the salvos,
  *                null -> >=5 distinct hits but ships survive,
  *                false -> fewer than 5 hits,
- *     points:  40*cellHits + 120*shipsSunk + (allSunk?60:0) - 20*incomingHitsOnMyWater,
+ *     points:  resolveSalvos() — scaled to puzzle par 100*diff+40:
+ *              win = (10+6k) + hits*(4+2k) + sunk*(12+8k) + (allSunk?30+15k:0)
+ *                    - 20*incomingHitsOnMyWater          // full sink ≈ 100-125% par
+ *              fail (<5 hits) = -(10+10k)  // wrong-answer parity, never income
+ *              null (>=5 hits, fleet survives) = engine nobody-wins ladder applies
  *     hpDelta: clamp(-5*shipsAfloat - (diff>=5 ? 5*incomingHits : 0), -15, 0),
  *     summary: 'FLEET SUNK — 9/9' | 'TWO HUNTERS REMAIN' (<=48 chars)
  *   }
@@ -161,10 +165,44 @@
         for (var i = ns.length - 1; i > 0; i--) {
           var j = (rng() * (i + 1)) | 0, t = ns[i]; ns[i] = ns[j]; ns[j] = t;
         }
+
         queue.push.apply(queue, ns);
       }
     };
   }
+
+  /* ---------- payout model (pure; shared by finish() and smoke harnesses) ----------
+   * Economy parity (research/balance-pass.md §3c): puzzle par at difficulty tier
+   * k is 100*k+40. A full fleet sink lands inside [60%,135%] of par; the engine
+   * additionally caps any takeover win at 100*k+60. A failing round (<5 hits)
+   * pays wrong-answer parity -(10+10*k) — index.html uses STAGE points on
+   * correct:false, so the old max(0, ...) math paid +160 for quitting at four
+   * hits. Timeout-idle is dominated: the mode self-resolves at 35s (< the engine
+   * clock), zero hits costs the same parity loss plus hull damage, and every
+   * additional salvo is free upside. Exposed via window.__SALVOS_TOOLS__. */
+  function resolveSalvos(t) {
+    var k = Math.max(1, Math.min(5, t.diff | 0));
+    var allSunk = !!t.allSunk;
+    var hits = t.hits | 0, sunk = t.sunk | 0;
+    var correct = allSunk ? true : (hits >= 5 ? null : false);
+    var points;
+    if (correct === false) {
+      points = -(10 + 10 * k);                      // fail = a wrong answer, never income
+    } else {
+      points = Math.max(0,
+        (10 + 6 * k) +                              // sortie base
+        hits * (4 + 2 * k) +                        // per confirmed hit
+        sunk * (12 + 8 * k) +                       // hunter bounties
+        (allSunk ? 30 + 15 * k : 0) -               // fleet-sunk bonus
+        20 * (t.incomingHits | 0));                 // return fire stings
+    }
+    var afloat = FLEET.length - Math.min(sunk, FLEET.length);
+    return {
+      correct: correct, points: points,
+      hpDelta: Math.max(-15, -5 * afloat - (k >= 5 ? 5 * (t.incomingHits | 0) : 0))
+    };
+  }
+  window.__SALVOS_TOOLS__ = { resolveSalvos: resolveSalvos, diffFor: diffFor };
 
   /* ---------- registration ---------- */
 
@@ -620,11 +658,11 @@
           window.removeEventListener('resize', fit);
           canvas.removeEventListener('pointerdown', onPointer);
           var afloat = FLEET.length - sunk;
-          var correct = allSunk ? true : (hits >= 5 ? null : false);
-          var points = Math.max(0,
-            40 * hits + 120 * sunk + (allSunk ? 60 : 0) - 20 * incomingHits);
-          var hpDelta = Math.max(-15,
-            -5 * afloat - (diff >= 5 ? 5 * incomingHits : 0));
+          var out = resolveSalvos({ diff: diff, hits: hits, sunk: sunk,
+            allSunk: allSunk, incomingHits: incomingHits });
+          var correct = out.correct;
+          var points = out.points;
+          var hpDelta = out.hpDelta;
           var names = ['ZERO', 'ONE', 'TWO', 'THREE'];
           var summary = allSunk
             ? 'FLEET SUNK — 9/9'

@@ -154,12 +154,10 @@
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { id: ID, onRoundStart: onRoundStart, LEGENDS: LEGENDS };
+    module.exports = { id: ID, onRoundStart: onRoundStart, LEGENDS: LEGENDS,
+      /* handler sources for research/smoke-onboardw4.js determinism scans */
+      _code: String(onRoundStart) + String(introCard) +
+             String(motionOff) + String(abyssActive) };
   }
 })();
 
-/* exposed for research/smoke-onboardw4.js determinism scans (code, not prose) */
-if (typeof module !== 'undefined' && module.exports && module.exports.onRoundStart) {
-  module.exports._code = String(onRoundStart) + String(introCard) +
-    String(motionOff) + String(abyssActive);
-}

@@ -151,8 +151,53 @@ function freshContainer() { const c = fakeEl('div'); c.clientWidth = 800; c.clie
   ok(res1.kind === 'score', 'StageResult kind score');
   ok(res1.correct === true || res1.correct === false || res1.correct === null,
      'correct in {true,false,null}');
-  ok(Number.isInteger(res1.points) && res1.points >= 0 && res1.points <= 500,
-     'points integer within [0,500]: ' + res1.points);
+  if (res1.correct === false) {
+    ok(res1.points === -(10 + 10 * T.effFor(ctx1.depth, ctx1.align)) &&
+       res1.points < 0,
+       'sub-threshold round pays wrong-answer parity, never income: ' + res1.points);
+  } else {
+    ok(Number.isInteger(res1.points) && res1.points >= 0 && res1.points <= 500,
+       'points integer within [0,500]: ' + res1.points);
+  }
+  /* economy band: a solid run (~75% of the public schedule splatted, crowns
+   * spared) must land inside [60%,135%] of puzzle par 100*eff+40 */
+  for (const depth of [3, 8, 15]) {
+    const eff = T.effFor(depth, {});
+    const pops = T.buildSchedule(mulberry(4242), eff);
+    const golds = pops.filter((p) => p.type === 'gold').length;
+    const n = Math.round((pops.length - golds) * 0.75);
+    const g = Math.round(golds * 0.75);
+    const out = T.resolveRound({ eff: eff, normalHits: n, goldHits: g,
+      decoyShots: 0, escapes: pops.length - n - g });
+    const lo = Math.round(0.6 * (100 * eff + 40)), hi = Math.round(1.35 * (100 * eff + 40));
+    ok(out.correct === true && out.points >= lo && out.points <= hi,
+       'depth ' + depth + ': solid run ' + out.points +
+       ' within [' + lo + ',' + hi + '] (' + (n + g) + '/' + pops.length + ' splats)');
+  }
+  {
+    const lo1 = T.resolveRound({ eff: 1, normalHits: 8, goldHits: 0, decoyShots: 0, escapes: 0 });
+    const lo5 = T.resolveRound({ eff: 5, normalHits: 8, goldHits: 0, decoyShots: 0, escapes: 0 });
+    ok(lo5.points > lo1.points, 'reward density scales with tier (' +
+       lo1.points + ' -> ' + lo5.points + ' for identical play)');
+    ok(lo1.decoyCost === 2 * lo1.normalValue && lo1.decoyCost > lo1.normalValue &&
+       lo5.decoyCost === 2 * lo5.normalValue,
+       'crown penalty stays two splats at every tier (' +
+       lo1.normalValue + '/' + lo1.decoyCost + ' -> ' + lo5.normalValue + '/' + lo5.decoyCost + ')');
+    const fail = T.resolveRound({ eff: 2, normalHits: 4, goldHits: 1, decoyShots: 0, escapes: 21 });
+    ok(fail.correct === false && fail.points === -30,
+       'five-hit fail with a gold splat pays -30, not income');
+    const idle = T.resolveRound({ eff: 2, normalHits: 0, goldHits: 0, decoyShots: 0, escapes: 26 });
+    ok(idle.points === -30 && idle.points <= fail.points,
+       'idling floors at the same parity loss — timeout never optimal');
+    const harsh = T.resolveRound({ eff: 3, normalHits: 12, goldHits: 2, decoyShots: 1,
+      escapes: 6, harsh: true });
+    const calm = T.resolveRound({ eff: 3, normalHits: 12, goldHits: 2, decoyShots: 1,
+      escapes: 6 });
+    ok(harsh.decoyCost === 4 * harsh.normalValue && harsh.hpDelta === -15 &&
+       calm.hpDelta === -10,
+       'fire/harsh doubles crown cost (' + calm.decoyCost + '->' + harsh.decoyCost +
+       ') and deepens the escape sting (-10 -> -15)');
+  }
   ok([-15, -10, 0].includes(res1.hpDelta), 'hpDelta sanctioned value: ' + res1.hpDelta);
   ok(/^\d+ SPLATS \u00B7 \d+ GOLD$/.test(res1.summary) && res1.summary.length <= 48,
      'summary format: "' + res1.summary + '"');

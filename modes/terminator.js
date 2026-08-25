@@ -36,11 +36,12 @@
          * correct but slow: SOLVED (counts toward escape) but it
            keeps/gains ground — nothing pushes it back.
          * wrong pick or pattern timer expiry: it ADVANCES one lane.
-     - REACHES YOUR ZONE (pos >= 6 lanes): catch -> hp -12 (folded
-       into the final StageResult hpDelta, host-clamped [-60,60] —
-       never instant-death from full hp: 5 catches max by clock),
-       screen glitch (engine motion-gated), heavy thud, and it
-       RESETS TWO LANES back with the parody banner "IT COMES BACK."
+    - REACHES YOUR ZONE (pos >= 6 lanes): catch -> exposure tick hp -10
+       first contact, then -6 per subsequent catch (folded into the final
+       StageResult hpDelta, host-clamped [-60,60] — never instant-death from
+       full hp: 5 catches max by clock = 34 hp), screen glitch (engine
+       motion-gated), heavy thud, and it RESETS TWO LANES back with the
+       parody banner "IT COMES BACK."
      - RED EYE SCAN: periodic gutter-only glow flash, <=150 ms,
        rate-limited (>=500 ms gap); static glow when motion is off.
      - METALLIC FOOTSTEP THUDS: WebAudio (lazy AudioContext),
@@ -53,11 +54,14 @@
               false = never returned (survival exit is a win row;
               there is no losing row — the catch damage IS the cost) ·
               null  = engine-abort fallback only (cleanup path).
-     points:  180 door-slam escape · 80 survival exit (45 s cap) ·
-              0 on the abort fallback. Engine clamps [-200,500].
-     hpDelta: -(12 * catches), folded live-damage style exactly like
-              hunterdodge.js documents (no in-stage hp bridge yet);
-              host clamps to [-60,60].
+    points:  escapeFor(diff) = 100*diff+80 door-slam escape · 80 survival
+             exit (45 s cap) · 0 on the abort fallback. Engine clamps
+             [-200,500]. Escape tracks the takeover band [0.6,1.35]x puzzle
+             payout at every diff tier; survival is always worse (timeout
+             never optimal).
+    hpDelta: -(10 first catch, then 6 each further), folded live-damage
+             style exactly like hunterdodge.js documents (no in-stage hp
+             bridge yet); host clamps to [-60,60].
      summary: 'DOOR SLAM · ESCAPED THE HUNT' |
               'SURVIVED THE HUNT · IT WAITS' | 'HUNT ABORTED'
      Depth scaling: base speed 0.055->0.223 lanes/s, column-chase
@@ -282,6 +286,7 @@ function mount(container, ctx) {
   return new Promise(function (resolve) {
     /* ---- seeded-sim params: drawn FIRST, fixed order, both sides ---- */
     var P = paramsFor(ctx.depth);
+    var diffLvl = diffFor(ctx.depth);
     var budgetMs = Math.min((ctx.timerLen | 0) || CAP_S, CAP_S) * 1000;
     var motionOff_ = motionOff();
 
@@ -509,14 +514,6 @@ function mount(container, ctx) {
       banner('IT COMES BACK.');
       calloutText('IT COMES BACK.', 1300);
     }
-      nextPatternAt = relT + CATCH_STALL_MS;
-      glitch(); shakeIt();
-      eyeFlash(true);
-      thud(0.45, true);
-      banner('CAUGHT \u00B7 HP \u2212' + CATCH_HP);
-      banner('IT COMES BACK.');
-      calloutText('IT COMES BACK.', 1300);
-    }
     function escapeDoor() {
       if (finished) return;
       calloutText('\u25B8 DOOR SLAM \u25C2', 900);
@@ -669,13 +666,13 @@ function mount(container, ctx) {
     function tick(now) {
       if (finished) return;
       if (t0 === null) { t0 = now; lastT = now; }
-        resolveOnce({ kind: 'score', correct: true, points: escapeFor(diffLvl),
+      var dtMs = Math.min(50, Math.max(0, now - lastT));
       lastT = now;
       relT += dtMs;
       if (relT >= pauseUntil) marchClock += dtMs;
       step(dtMs / 1000);
       if (slamWinAt >= 0 && relT >= slamWinAt) {
-        resolveOnce({ kind: 'score', correct: true, points: WIN_POINTS,
+        resolveOnce({ kind: 'score', correct: true, points: escapeFor(diffLvl),
           hpDelta: -dmg, summary: 'DOOR SLAM \u00B7 ESCAPED THE HUNT' });
         return;
       }

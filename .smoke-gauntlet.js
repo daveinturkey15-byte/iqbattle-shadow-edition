@@ -125,7 +125,7 @@ eq(flags(H.dispatch('answer', { round: 9, res: { correct: false } })).length, 0,
 /* Famine curse: extra -5 on top of baseline once */
 S.set(G.K.famine, 'curse');
 mods = flags(H.dispatch('answer', { round: 10, res: { correct: false } }));
-ok(mods.some(m => m.hpDelta === -20), 'famine curse -> -20 total (baseline -15 plus rider\'s -5)');
+ok(mods.some(m => m.hpDelta === -5), 'famine curse -> extra -5 (engine adds its own depth-scaled baseline)');
 
 /* correct answers never trigger famine marks */
 S.set(G.K.famine, 'shield');

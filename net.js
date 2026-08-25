@@ -109,6 +109,12 @@
       // sees the SAME {uid} field shape the PeerJS transport delivers
       if (!m.uid) m.uid = m.src;
       emit('pick', m);
+    } else if (state.role === 'host' && m.t && m.t !== 'hello' && m.t !== 'lobby') {
+      // attacks, sr verdicts, etc: same default-emit contract as the PeerJS
+      // onData host branch — the bus is a full transport, not hello/pick only
+      if (m._sq != null && seenSq(m._sq)) return;
+      if (!m.uid) m.uid = m.src;
+      emit(m.t, m);
     } else if (state.role === 'client') {
       if (m._sq != null && seenSq(m._sq)) return;
       logEv(m.t || '', 'in', true);

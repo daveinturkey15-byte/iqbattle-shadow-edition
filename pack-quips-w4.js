@@ -52,7 +52,7 @@
  *
  * CONSUMES: IQ.Hooks.state, ctx.rng; reads (never writes) 'pack-cavern:
  *   dragonRound' and 'gs:critters'; reads IQ.HellHeaven.layer().
- *
+  set: function (k, v) { m.set(String(k), v); return v; },
  * DETERMINISM: zero Math.random()/Date.now()/performance.now(). Variant index
  *   derives solely from ctx.rng.
  * FAIRNESS RAILS: parity — inert on rounds 1-2 (C8); cosmetic only (no
@@ -85,7 +85,7 @@ function store() {
  const m = __stateShim;
  return {
   get: function (k) { return m.get(String(k)); },
-  set: function (k, v) { m.set(String(k, v), v); return v; },
+  set: function (k, v) { m.set(String(k), v); return v; },
   has: function (k) { return m.has(String(k)); },
   del: function (k) { m.delete(String(k)); }
  };
@@ -282,6 +282,10 @@ try {
  * on rounds 1-2, pool bounds <= 80 chars, cosmetic-only emissions, and the
  * 0 -> 63 critter hop collapsing to the shrine line alone. Throws nothing. */
 function selfTest() {
+ /* channel determinism: park any ambient DemonSay stub so ctx.say collectors
+  * are the ONLY speech sink while the self test runs */
+ const savedDS = root.IQ && root.IQ.DemonSay;
+ if (root.IQ) root.IQ.DemonSay = undefined;
  const checks = [];
  function ok(name, cond, detail) {
   checks.push({ name: name, ok: !!cond, detail: detail || '' });
@@ -341,21 +345,16 @@ function selfTest() {
  store().set(CRITTERS_KEY, 0);              /* impossible regression: still quiet */
  onAnswer(baseCtx(16, { res: { correct: true }, say: function () {} }));
 
- /* fresh-store hop test: 0 straight to 63 fires ONLY the shrine trigger */
- const saveSeen = store().get(PFX + 'critterSeen');
+ /* fresh-store hop test: 0 straight to 63 fires ONLY the shrine line */
  store().del(PFX + 'fired:critter-first');
  store().del(PFX + 'fired:shrine-complete');
- store().set(CRITTERS_KEY, 0);
  store().del(PFX + 'critterSeen');
- void saveSeen;
  let hopText = '';
- const hopCtx = baseCtx(17, { res: { correct: true }, say: function (t) { hopText += '|'; } });
- onAnswer(hopCtx);
+ onAnswer(baseCtx(17, { res: { correct: true }, say: function () { hopText += '|'; } }));
  store().set(CRITTERS_KEY, ALL_SIX);
- const spokeBefore = hopText.length;
  onAnswer(baseCtx(18, { res: { correct: true }, say: function () { hopText += '!'; } }));
- ok('0->63 hop marks both, speaks once', fired('critter-first') && fired('shrine-complete') &&
-  hopText.length - spokeBefore === 1, hopText);
+ ok('0->63 hop marks both triggers, speaks once', fired('critter-first') &&
+  fired('shrine-complete') && hopText === '!', hopText);
 
  /* 5. nuke-survived: >50 start + <=3 reveal fires ONCE */
  onRoundStart(baseCtx(20, { hp: 80 }));
@@ -365,8 +364,8 @@ function selfTest() {
  onReveal(baseCtx(21, { hp: 2 }));
  onRoundStart(baseCtx(22, { hp: 60 }));
  onReveal(baseCtx(22, { hp: 40 }));          /* survived big but not <=3: quiet */
- ok('nuke quip does not refire', !store().has(PFX + 'fired:nuke-survived') ||
-  store().get(PFX + 'fired:nuke-surviven') === undefined);
+ ok('nuke quip does not unmark or rearm',
+  store().get(PFX + 'fired:nuke-survived') === 1 && !store().has(PFX + 'hpHigh'));
 
  /* 6. sanctuary-first returns bannerText exactly once */
  const san1 = onRoundStart(baseCtx(30, { world: 'heaven', align: 'good' }));
@@ -395,6 +394,7 @@ function selfTest() {
 
  let allOk = true;
  for (const c of checks) if (!c.ok) allOk = false;
+ if (root.IQ) root.IQ.DemonSay = savedDS;
  return { ok: allOk, checks: checks };
 }
 

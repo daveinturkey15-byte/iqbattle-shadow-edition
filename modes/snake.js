@@ -29,9 +29,9 @@
  *                           // reserves null for NEUTRAL rounds, so deaths report false.
  *     points:  apples*APPLE_PTS[diff] + bonus   // balance pass 2026-08-25:
  *               APPLE_PTS [12,24,40,40,40] · APEX_BONUS [50,70,90,110,130] ·
- *               SURVIVE_BONUS [40,60,80,100,120] · bonus 0 on death.
- *               Solid (apex) play pays ~104-121% of the puzzle baseline
- *               100*diff+40; death forfeits the survival stipend. Verified by
+ *               SURVIVE_BONUS [40,60,80,100,120]. Solid (apex) play pays
+ *               ~104-121% of the puzzle baseline 100*diff+40; deaths resolve
+ *               the wrong-answer parity -(10+10*diff) explicitly. Verified by
  *               research/bal-retro-snake.js
  *   }
  *   This file NEVER touches window.G, engine internals, or localStorage; the engine applies results.

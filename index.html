@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>IQ Versus | Head-to-Head Abstract Reasoning Puzzles</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23040812'/%3E%3Ctext x='16' y='23' font-family='Oxanium,Arial' font-weight='800' font-size='17' fill='%232d7cff' text-anchor='middle'%3EIQ%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;700;800&display=swap">
 <link rel="stylesheet" href="./luxe.css">
@@ -184,6 +184,7 @@
 <script src="./pack-popcult-a.js?v=w4"></script>
 <script src="./pack-popcult-b.js?v=w4"></script>
 <script src="./pack-story.js?v=w4"></script>
+<script src="./pack-quips-w4.js?v=w4"></script>
 <script src="./cameo-pack.js?v=w4"></script>
 <script src="./pack-funny.js?v=w4"></script>
 <script src="./pack-cavern.js?v=w4"></script>
@@ -205,6 +206,7 @@
 <script src="./gen_logic2.js?v=w1a"></script>
 <script src="./gen_seqpack.js?v=w1a"></script>
 <script src="./gen_missing.js?v=w1a"></script>
+<script src="./gen_depth.js?v=w4"></script>
 <script>
 'use strict';
 /* ============================================================
@@ -659,9 +661,10 @@ function broadcastRound(){
  try{
   const base={t:'round',n:G.round,timerLen:G.timerLen,w1:G.w1||undefined,
    stg:{id:String(G.curStage||'puzzle').slice(0,32),seed:G.stageSeed>>>0}};
+  let extra=null;
   const def=G.activeDef;
   if(def&&def.frame){const f=def.frame();if(f&&typeof f==='object')extra=f}
-  IQ.Net.broadcast(Object.assign(base,extra));
+  IQ.Net.broadcast(Object.assign(base,extra||{}));
  }catch(e){ try{localStorage.setItem('iqvs-neterr',String(e&&e.message||e))}catch(_e){} }
 }
 function applyIncomingRound(pl){
@@ -744,7 +747,8 @@ function applyStageResult(res){
  }else{
   if(G.forgiveNext){G.forgiveNext=false;banner('GRACE — THIS SIN IS FORGIVEN');shown=0}
   else{
-   G.streak=0;const wp=-(10+10*depthDiff());shown=Math.round(clamp((typeof res.points==='number'&&res.points)?res.points:wp,-200,500));
+   G.streak=0;const wp=-(10+10*depthDiff());const rp=typeof res.points==='number'?res.points:null;
+   shown=Math.round(clamp((rp!=null&&rp<0)?rp:wp,-200,500)); // losing never pays: positive stage points ignored on wrong
    if(G.emeralds.includes('final_chaos')&&G.round%10===0){G.score=Math.round(G.score*.5);banner('FINAL CHAOS PUNISHES')}
    if(G.emeralds.includes('doom_bloom'))G.opps.forEach(o=>o.pts-=20);
   }
@@ -805,7 +809,7 @@ function hostRevealBroadcast(desc){
     (G.humans||[]).forEach(h=>{const pk=(G.remotePicks||{})[h.uid];m[h.uid]=(pk&&pk.pos>=0)?pk.pos:-1});return m})(),
    timesMsByUid:{}})}catch(e){}
   renderScores();
-  IQ.Net.broadcast({t:'reveal',answer:ans,imp:imp?1:0,scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...humans]});
+  IQ.Net.broadcast({t:'reveal',n:G.round,answer:ans,imp:imp?1:0,scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...humans]});
  }catch(e){}
  G.remotePicks={};
 }
@@ -838,7 +842,9 @@ if(G.lms&&G.mp.host&&window.IQ&&IQ.LMS){
    try{IQ.Net.broadcast({t:'elim',uids:dead})}catch(e){}
    banner(dead.includes(mu)?'YOU HAVE BEEN ELIMINATED — SPECTATING':'THE REAPER MARKS '+dead.length);renderScores()}
   const alive=IQ.LMS.remaining((G.humans||[]).filter(h=>!h.elim).map(h=>({uid:h.uid,pts:h.pts})).concat(G.spectating?[]:[{uid:mu,pts:G.score}]));
-  if(!G.spectating&&alive&&alive.length<=1){endMatchBroadcast();endRun();return}
+  const humansAlive=(G.humans||[]).filter(h=>!h.elim);
+  if(G.spectating){ if(humansAlive.length<=1){endMatchBroadcast();endRun();return} }
+  else if(alive&&alive.length<=1){endMatchBroadcast();endRun();return}
 }
  if(G.opps.length>0&&G.round%4===0&&G.usedEmeralds.size<EMERALDS.length)emeraldPick();
  else if(window.IQ&&IQ.Cleanse&&IQ.Cleanse.maybeTrigger(G.stage,G.round)){IQ.Cleanse.trigger&&IQ.Cleanse.trigger();try{window.IQ&&IQ.BoardMove&&IQ.BoardMove.pause(1800)}catch(e){};nextRound();return}
@@ -871,7 +877,7 @@ function emeraldPick(){
 function endMatchBroadcast(){
  try{
   const myUid=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():null;
-  IQ.Net.broadcast({t:'end',scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...Object.values(G.remotePicks||{}).map(p=>({uid:p.uid,name:p.n||'PLAYER',pts:p.pts||0}))]});
+  IQ.Net.broadcast({t:'end',scores:[{uid:myUid,name:P.name,pts:G.score},...G.opps.map(o=>({name:o.n,pts:o.pts})),...(G.humans||[]).map(h=>({uid:h.uid,name:h.n||'PLAYER',pts:h.pts||0})),...Object.values(G.remotePicks||{}).map(p=>({uid:p.uid,name:p.n||'PLAYER',pts:p.pts||0}))]});
  }catch(e){}
 }
 function endRun(deathMsg){
@@ -1086,5 +1092,6 @@ boot();
 <script src="./modes/terminator.js?v=w3"></script>
 <script src="./modes/skylaser.js?v=w3"></script>
 <script src="./modes/madmax.js?v=w3"></script>
+<script src="./landing-polish.js?v=w4"></script>
 </body>
 </html>

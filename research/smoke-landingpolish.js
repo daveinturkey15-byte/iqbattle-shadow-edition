@@ -47,12 +47,15 @@ function El(tag, opts) {
   if (opts.attrs) for (var k in opts.attrs) this.setAttribute(k, opts.attrs[k]);
 }
 Object.defineProperty(El.prototype, 'className', {
-  get: function () { return Object.keys(this._class._set).join(' '); },
-  set: function (v) {
-    this._class._set = {};
-    String(v).split(/\s+/).forEach(function (c) { if (c) this._class._set[c] = 1; }, this);
-  }
+  get: function () { return Object.keys(this._class._set).join(' '); }
 });
+El.prototype.setAttribute = function (k, v) {
+  this.attributes[k] = String(v);
+  if (k === 'class') {
+    this._class._set = {};
+    String(v).split(/\s+/).forEach(function (c) { if (c) this._set[c] = 1; }, this._class);
+  }
+};
 Object.defineProperty(El.prototype, 'innerHTML', {
   get: function () { return this._html; },
   set: function (v) { this._html = String(v); }
@@ -68,7 +71,6 @@ Object.defineProperty(El.prototype, 'textContent', {
 El.prototype.appendChild = function (c) {
   c.parentNode = this; this.children.push(c); return c;
 };
-El.prototype.setAttribute = function (k, v) { this.attributes[k] = String(v); };
 El.prototype.getAttribute = function (k) {
   return Object.prototype.hasOwnProperty.call(this.attributes, k) ? this.attributes[k] : null;
 };
@@ -82,19 +84,21 @@ El.prototype.click = function () {
 };
 El.prototype.focus = function () { DOC.activeElement = this; };
 
-function matchPart(el, part) {
-  part = part.trim();
-  if (!part) return false;
-  var m = /^(.*?)(?::not\(\[([^\]]+)\]\))?$/.exec(part);
+El.prototype.querySelector = function (s) { return qs(this, s); };
+El.prototype.querySelectorAll = function (s) { return qsa(this, s); };
+function matchCompound(el, c) {
+  c = c.trim();
+  if (!c) return false;
+  var m = /^(.*?)(?::not\(\[([^\]]+)\]\))?$/.exec(c);
   var base = m[1], notAttr = m[2];
   if (notAttr && el.getAttribute(notAttr) != null) return false;
-  var mm = /^(?:([a-z]+))?(?:#([\w-]+))?((?:[.][\w-]+)*)(\[.+?\])?$/.exec(base);
-  if (!mm) return false;
+  var mm = /^(?:([a-z0-9]+))?(?:#([\w-]+))?((?:[.][\w-]+)*)(\[.+?\])?$/.exec(base);
+  if (!mm || !base) return false;
   if (mm[1] && el.tagName !== mm[1].toUpperCase()) return false;
   if (mm[2] && el.getAttribute('id') !== mm[2]) return false;
   if (mm[3]) {
     var want = mm[3].split('.').filter(Boolean);
-    var have = el.className.split(/\s+/).filter(Boolean);
+    var have = String(el.className || '').split(/\s+/).filter(Boolean);
     for (var i = 0; i < want.length; i++) if (have.indexOf(want[i]) < 0) return false;
   }
   if (mm[4]) {
@@ -103,6 +107,18 @@ function matchPart(el, part) {
     var av = el.getAttribute(am[1]);
     if (av == null) return false;
     if (am[2] !== undefined && av !== am[2]) return false;
+  }
+  return true;
+}
+function matchPart(el, part) {
+  var steps = part.trim().split(/\s+/).filter(Boolean);
+  if (!steps.length) return false;
+  if (!matchCompound(el, steps[steps.length - 1])) return false;
+  var anc = el.parentNode, i = steps.length - 2;
+  while (i >= 0) {
+    while (anc && !matchCompound(anc, steps[i])) anc = anc.parentNode;
+    if (!anc) return false;
+    anc = anc.parentNode; i--;
   }
   return true;
 }
@@ -173,6 +189,8 @@ function makeDoc(withModalExtra) {
   var doc = {
     head: head, body: body,
     activeElement: null,
+    addEventListener: function (t, fn) { if (t === 'keydown') keyHandlers.push(fn); },
+    createElement: function (tag) { return new El(tag); },
     querySelector: function (s) { return qs(head, s) || qs(body, s); },
     querySelectorAll: function (s) { return qsa(head, s).concat(qsa(body, s)); }
   };
@@ -194,7 +212,7 @@ function install(doc, lsStore, grad) {
   };
   global.getComputedStyle = function () {
     return {
-      backgroundImage: grad || 'linear-gradient(90deg, rgb(45, 124, 255), rgb(239, 76, 200))',
+      backgroundImage: grad === undefined ? 'linear-gradient(90deg, rgb(45, 124, 255), rgb(239, 76, 200))' : grad,
       getPropertyValue: function () { return ''; }
     };
   };
@@ -207,17 +225,19 @@ function install(doc, lsStore, grad) {
 /* ---------------- build world ---------------- */
 var doc = makeDoc(true);
 var lsStore = {};
-install(doc, lsStore);
 
 var $ = function (s) { return doc.querySelector(s); };
 var link = $('#htp-link'), closeBtn = $('#htp-close'), modal = $('#htp-modal');
 var wiki = $('#htp-wiki');
 
-// simulate Main's own wiring (runs before our script on the real page)
+// simulate Main's own wiring FIRST — on the real page the inline script
+// assigns these onclicks before landing-polish.js loads at end of body
 link.onclick = function () { modal.classList.remove('hidden'); };
 closeBtn.onclick = function () { modal.classList.add('hidden'); };
 var mainHostRuns = 0;
 $('#boot-host').onclick = function () { mainHostRuns++; };
+
+install(doc, lsStore);
 
 console.log('S1: injection & idempotence');
 check('style injected under #iqv-lp-style', !!$('#iqv-lp-style'));
@@ -237,7 +257,7 @@ check('re-run: still exactly one style node', qsa(doc.head, '#iqv-lp-style').len
 check('re-run: glyphs not duplicated', qsa(doc.body, '.feat-card b').every(function (b) {
   return String(b.innerHTML).split('<svg').length - 1 === 1;
 }));
-check('re-run: trap not double-bound', modal.querySelectorAll('[data-lp-trap]').length === 1);
+check('re-run: trap not double-bound', qsa(doc.body, '#htp-modal[data-lp-trap]').length === 1);
 
 console.log('S2: focus trap cycle order (open -> focus first, TAB cycles)');
 doc.activeElement = link;
@@ -264,14 +284,18 @@ room.value = '  Shadow Den  ';
 $('#boot-host').click();
 check("persisted trimmed value under IQB_ROOMNAME_V1", lsStore.IQB_ROOMNAME_V1 === 'Shadow Den');
 check('capture listener did not block HOST (Main handler ran)', mainHostRuns === 1);
-room.value = '';
-install(doc, lsStore);
-check('restore-on-load refills empty input from storage', $('#boot-room').value === 'Shadow Den');
+var docR = makeDoc(false); lsStore.IQB_ROOMNAME_V1 = 'Shadow Den';
+docR.querySelector('#boot-host').onclick = function () {};
+install(docR, lsStore);
+check('restore-on-load refills empty input from storage', docR.querySelector('#boot-room').value === 'Shadow Den');
 var doc2 = makeDoc(false), ls2 = {};
 install(doc2, ls2);
 check('no-op world without storage entry leaves input alone', doc2.querySelector('#boot-room').value === '');
-check('fallback hero tokens when computed style empty-string gradient',
-  /#2b74eb/.test(doc2.querySelector('.hero-h1').style.backgroundImage));
+var doc3 = makeDoc(false);
+install(doc3, {}, ''); // computed style with no gradient -> fallback tokens
+check('fallback hero tokens when computed style lacks gradient',
+  doc3.querySelector('.hero-h1').style.backgroundImage.indexOf('#2b74eb') >= 0 &&
+  doc3.querySelector('.hero-h1').style.backgroundImage.indexOf('#357df4') >= 0);
 
 console.log('');
 if (failures.length) { console.log('FAILED: ' + failures.length + ' -> ' + failures.join('; ')); process.exit(1); }

@@ -52,8 +52,11 @@
  * RESULT FIELDS (one canonical StageResult):
  *   correct: true  = target shot  · false = 2nd miss OR budget expired ·
  *            null = ESC (neutral stand-down)
- *   points:  +160 on the hit MINUS 20 per prior miss · −(20·misses) on any
- *            fail row (engine clamps [−200,500])
+ *   points:  hitPtsFor(diff) = 115*diff+45 on the hit MINUS 20 per prior miss
+ *            · −(20·misses) on any fail row (engine clamps [−200,500]; deep
+ *            tiers clamp at 500). Tracks the takeover band [0.6,1.35]x of
+ *            puzzle payout 100*diff+40 at every tier; timeout rows stay
+ *            negative so waiting is never optimal.
  *   hpDelta: 0 everywhere except timeout (−5, themed-design ladder)
  *   summary: 'ONE SHOT · ONE TRUTH' | 'TWO SHOTS WIDE · STAND DOWN' |
  *            'RANGE GOES COLD' | 'SCOPE LOWERED'          (all ≤ 48 chars)
@@ -63,7 +66,6 @@
  * and stays); no fullscreen flashes — feedback is the lens ring recoloring
  * (≤200 ms) + engine-gated fx.shake; HUD text ≥ 11 px; ESC always available;
  * self-budget = min(ctx.timerLen, 45 s) so the stage ALWAYS settles once.
- *
  * DETERMINISM: every gameplay-visible byte — target combo, decoy specs,
  * cell layout fractions, terrain specks — is drawn from ctx.rng at mount in
  * a FIXED order (seeded-sim §0.2). Zero Date.now()/performance.now() in
@@ -94,7 +96,15 @@ var STEADY_MS = 1200;          /* steadiness granted per activation */
 var STEADY_COST_MS = 2000;     /* timer cost per steadying */
 var MISS_PTS = 20;
 var MAX_MISSES = 2;
-var HIT_PTS = 160;
+/* Hit pay scales on the shared diff ladder min(5,1+floor((depth-1)/6)):
+ * 115*diff+45 keeps the depth-4..6 behaviour (+160) and lands every tier
+ * inside the takeover band [0.6,1.35]x puzzle payout 100*diff+40 (deep tiers
+ * clamp at the engine's 500). Misses still cost 20 each off the top; timeout
+ * rows stay negative so waiting it out is never optimal. */
+function diffFor(depth) {
+  return Math.min(5, Math.max(1, 1 + ((((depth | 0) - 1) / 6) | 0)));
+}
+function hitPtsFor(diff) { return 115 * diff + 45; }
 var TIMEOUT_HP = 5;
 var ROTS = [0, 45, 90, 135];
 var SHAPES = ['square', 'bar', 'tri', 'plus', 'wedge'];
@@ -249,6 +259,7 @@ function mount(container, ctx) {
   return new Promise(function (resolve) {
     var P = paramsFor(ctx.depth);
     var pal = palette();
+    var diffLvl = diffFor(ctx.depth);
     var budgetMs = Math.min((ctx.timerLen | 0) || 45, 45) * 1000;
 
     /* ---- seeded challenge: FIXED draw order (seeded-sim) ---- */
@@ -509,7 +520,7 @@ function mount(container, ctx) {
         crack(false);
         ring.classList.add('kill');
         try { if (ctx.fx && ctx.fx.flash) ctx.fx.flash('rgba(0,230,138,.12)', 140); } catch (e) {}
-        settle({ kind: 'score', correct: true, points: HIT_PTS - missPts, hpDelta: 0,
+        settle({ kind: 'score', correct: true, points: hitPtsFor(diffLvl) - missPts, hpDelta: 0,
                  summary: 'ONE SHOT \u00b7 ONE TRUTH' });
       } else {
         misses++; missPts += MISS_PTS;

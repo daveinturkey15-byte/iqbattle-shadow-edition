@@ -9,6 +9,7 @@
 'use strict';
 const path = require('path');
 const root = globalThis;
+const CATCH_HP_FIRST = 10, CATCH_HP_NEXT = 6; // must match modes/terminator.js ladder
 
 /* ---- minimal browser stubs ---- */
 root.window = root;
@@ -215,7 +216,9 @@ function freshContainer() { const c = fakeEl('div'); return c; }
      stMid.catches + ' catches)');
   ok(banners.some(b => /IT COMES BACK/.test(b)),
      'parody banner IT COMES BACK fired on reset');
-  ok(stMid.dmg === stMid.catches * 12, 'each catch costs exactly 12 hp');
+  const expectDmg = stMid.catches ? CATCH_HP_FIRST + CATCH_HP_NEXT * (stMid.catches - 1) : 0;
+  ok(stMid.dmg === expectDmg, 'exposure ticks: -10 first catch then -6 each (' +
+     stMid.dmg + ' vs expected ' + expectDmg + ')');
   H.finish();
   await pr2;
   ok(res2 && res2.correct === true && res2.points === 80,

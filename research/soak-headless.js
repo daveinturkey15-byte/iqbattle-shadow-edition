@@ -1,12 +1,12 @@
 // Headless 60-round soak: real hooks.js + every landed pack through real dispatch.
 const g = globalThis; g.window = g; g.IQ = {}; g.localStorage = { _s:{}, getItem(k){return this._s[k]??null}, setItem(k,v){this._s[k]=String(v)}, removeItem(k){delete this._s[k]} };
-g.document = { getElementById(){return null}, querySelector(){return null}, querySelectorAll(){return []}, createElement(){return {style:{},classList:{add(){},remove(){}},setAttribute(){},appendChild(){}}}, body:{className:'',classList:{add(){},remove(){},contains(){return false}},appendChild(){},insertBefore(){}}, addEventListener(){}, head:{appendChild(){}} };
-require('./alignment.js'); require('./worlds.js'); require('./worlds-realm.js'); require('./worlds-pop.js'); require('./worlds-mind.js');
-require('./hooks.js');
-const packs=['pack-hunters','pack-realm','pack-events','pack-chaos','pack-stones','pack-horror','pack-undead','pack-gunship','pack-countries','pack-brit','pack-nam','pack-muses','pack-ailments','pack-void-extra'];
-for(const p of packs){ try{require('./'+p+'.js')}catch(e){console.log('LOADFAIL',p,String(e).slice(0,80))} }
+g.document = { getElementById(){return null}, querySelector(){return null}, querySelectorAll(){return []}, createElement(){return {style:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},appendChild(){}}}, body:{className:'',classList:{add(){},remove(){},toggle(){},contains(){return false}},appendChild(){},insertBefore(){}}, addEventListener(){}, head:{appendChild(){}} };
+require('../alignment.js'); require('../worlds.js'); require('../worlds-realm.js'); require('../worlds-pop.js'); require('../worlds-mind.js');
+require('../hooks.js');
+const packs=['pack-hunters','pack-realm','pack-events','pack-chaos','pack-stones','pack-horror','pack-undead','pack-gunship','pack-countries','pack-brit','pack-nam','pack-muses','pack-ailments','pack-void-extra','hellheaven','sanctuary','hell-skin','pack-hellaudio','cameo-pack','pack-cavern','pack-funny','pack-popcult-a','pack-popcult-b','pack-story','pack-onboard-w4','pack-quips-w4'];
+for(const p of packs){ try{require('../'+p+'.js')}catch(e){console.log('LOADFAIL',p,String(e).slice(0,80))} }
 const IQ=g.IQ, H=IQ.Hooks;
-IQ.Align.begin('soak-seed',4096);
+IQ.Align.begin(process.env.IQB_SOAK_SEED||'soak-seed',4096);
 let hp=100,score=0,streak=0,errs=0,fired={},mods={},maxD=0,deaths=0;
 for(let round=1;round<=60;round++){
   const slice=IQ.Align.at(round)||{align:'bad',theme:'hell-layer',dim:'2d',heal:0,amp:0};
