@@ -20,11 +20,14 @@
    set early with the current tally (always escapable).
 
    Result fields:
-     correct : true  (>=35% notes hit)  -> points = earned (raw; engine layers flavor)
-               false (<35%)             -> points:-30, hpDelta:-6
-     points  : raw earned (base 10 good / 15 perfect + 15 x new combo-tier), capped 480
-     hpDelta : 0 on success (misses NEVER hurt mid-play)
-     summary : '<hits>/<total> NOTES' line, <=48 chars
+    correct : true  (>=35% notes hit)  -> points = earned (raw; engine layers flavor)
+              false (<35%)             -> points:-(10+10*diff), hpDelta:-6
+    points  : raw earned (base 10 good / 15 perfect + 15 x new combo-tier), capped at
+              the economy band top min(480, round((100*diff+40)*1.35)) — a full-combo
+              set tops out at ~135% of the puzzle baseline 100*diff+40; median play
+              lands inside the 60%-135% takeover band (balance pass 2026-08-25).
+    hpDelta : 0 on success (misses NEVER hurt mid-play)
+    summary : '<hits>/<total> NOTES' line, <=48 chars
 
    Fairness rails: IQB_MOTION off => stepped 110 ms quanta rendering, no
    shake/fx (judgment math IDENTICAL, uses real time); IQB_MUTED gates all
@@ -85,10 +88,17 @@ var LEADIN_MS = 1200;
 var TRAVEL_MS = 1600;         // fall time top -> hit line (motion path)
 var WINDOW_MS = 120;          // generous hit window (+/-)
 var PERFECT_MS = 55;
-var STEP_MS = 110;            // stepped rendering quantum (motion off)
 var CAP_EARNED = 480;
 var BPM = 118;
 var BEAT_MS = 60000 / BPM;
+/* ---------------- economy band (balance pass 2026-08-25) -------------------- */
+/* Puzzle baseline: good answer pays 100*diff+40 (diff = min(5,1+floor(depth/6)),
+   i.e. 140/240/340 at depths 3/8/15). A takeover may pay 60%..135% of that, so
+   raw earnings cap at the band TOP: perfect play peaks at ~135% of baseline and
+   weaker play scales down inside the band. Fails cost -(10+10*diff) points. */
+function diffOf(diff) { return Math.min(5, Math.max(1, (diff | 0) || 1)); }
+function bandCap(diff) { return Math.min(CAP_EARNED, Math.round((100 * diffOf(diff) + 40) * 1.35)); }
+function failPoints(diff) { return -(10 + 10 * diffOf(diff)); }
 
 function flagOff(name) {
   try {
@@ -136,13 +146,13 @@ function finish(reason) {
   var rate = total ? st.hits / total : 0;
   var res;
   if (rate >= 0.35) {
-    res = { kind: 'score', correct: true, points: Math.min(CAP_EARNED, st.earned),
+    res = { kind: 'score', correct: true, points: Math.min(bandCap(st.ctx.diff), st.earned),
             hpDelta: 0,
             summary: ('CHART TOPPER ' + st.hits + '/' + total + ' NOTES C' + st.bestCombo).slice(0, 48) };
     try { st.ctx.audio.p('levelup', { vol: .3 }); } catch (e) {}
     try { st.ctx.fx.flash('rgba(255,210,62,.14)', 130); } catch (e) {}
   } else {
-    res = { kind: 'score', correct: false, points: -30, hpDelta: -6,
+    res = { kind: 'score', correct: false, points: failPoints(st.ctx.diff), hpDelta: -6,
             summary: ('OFF BEAT ' + st.hits + '/' + total + ' NOTES').slice(0, 48) };
     try { st.ctx.audio.p('buzz', { vol: .25 }); } catch (e) {}
   }

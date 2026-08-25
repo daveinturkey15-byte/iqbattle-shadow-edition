@@ -103,8 +103,19 @@ var LAST = null;
 var CAP_S = 45;
 var LANES = 6;
 var RESET_LANES = 2;
-var CATCH_HP = 12;
-var WIN_POINTS = 180;
+/* Exposure ticks follow the themed-design hunter ladder (-10 first contact,
+ * -6 per subsequent catch) instead of a flat -12: early pressure stays scary,
+ * deep-run death spirals ease off, worst case by clock = 10+4*6 = 34 hp. */
+var CATCH_HP_FIRST = 10;
+var CATCH_HP_NEXT = 6;
+/* Escape pay scales on the shared diff ladder min(5,1+floor((depth-1)/6)):
+ * 100*diff+80 keeps depth-3 behaviour (180) and lands every tier inside the
+ * takeover band [0.6,1.35]x puzzle payout 100*diff+40. Survival exit stays a
+ * flat 80: always worse than escaping (timeout never optimal). */
+function diffFor(depth) {
+  return Math.min(5, Math.max(1, 1 + ((((depth | 0) - 1) / 6) | 0)));
+}
+function escapeFor(diff) { return 100 * diff + 80; }
 var SURVIVE_POINTS = 80;
 var EYE_FLASH_MS = 150;
 var EYE_MIN_GAP_MS = 500;
@@ -486,9 +497,18 @@ function mount(container, ctx) {
     /* ---- catch / escape / survival ---- */
     function catchPlayer() {
       catches++;
-      dmg += CATCH_HP;
+      var tick = catches === 1 ? CATCH_HP_FIRST : CATCH_HP_NEXT;
+      dmg += tick;
       pos = LANES - RESET_LANES;             /* two lanes back — never death */
       pauseUntil = relT + CATCH_STALL_MS;
+      nextPatternAt = relT + CATCH_STALL_MS;
+      glitch(); shakeIt();
+      eyeFlash(true);
+      thud(0.45, true);
+      banner('CAUGHT \u00B7 HP \u2212' + tick);
+      banner('IT COMES BACK.');
+      calloutText('IT COMES BACK.', 1300);
+    }
       nextPatternAt = relT + CATCH_STALL_MS;
       glitch(); shakeIt();
       eyeFlash(true);
@@ -649,7 +669,7 @@ function mount(container, ctx) {
     function tick(now) {
       if (finished) return;
       if (t0 === null) { t0 = now; lastT = now; }
-      var dtMs = Math.min(50, Math.max(0, now - lastT));
+        resolveOnce({ kind: 'score', correct: true, points: escapeFor(diffLvl),
       lastT = now;
       relT += dtMs;
       if (relT >= pauseUntil) marchClock += dtMs;

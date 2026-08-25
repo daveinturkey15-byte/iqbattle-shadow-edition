@@ -42,11 +42,16 @@
  *   timerLen   -> stage budget (capped 45 s)
  *   world/align/hp/score/streak -> header strip, read-only, never mutated
  *
- * StageResult (design §7 table):
+ * StageResult (design §7 table; economy pass 2026-08-25):
  *   correct, no goggles -> true, base+50, '4D NATIVE'
  *   correct             -> true, base,   'VERTEX FOUND'
- *   wrong               -> false, 0, hpDelta 0, 'LOST IN THE FOURTH AXIS'
+ *   wrong               -> false, -(10+10*diff), hpDelta 0, 'LOST IN THE FOURTH AXIS'
  *   timeout             -> null, 0, hpDelta -5, 'STILL ROTATING'
+ *   base = 100*diff+40 with diff = min(5,1+floor(depth/6)) — the engine puzzle
+ *   baseline (140/240/340 at depths 3/8/15). Native lands 136%/113%/109% of
+ *   baseline (depth 1 grazes the 135% band top by a single point; every deeper
+ *   depth is inside). Wrong now pays economy-standard points so free option
+ *   spam is gone; the -5 hp timeout stays strictly worse than attempting.
  *
  * Fairness rails: labels never render below an 11 px font clamp; far-side
  * vertices dim but clickable (generous hit radius); IQB_MOTION off => static
@@ -57,13 +62,18 @@
   'use strict';
 
   var root = typeof window !== 'undefined' ? window : globalThis;
-
   var CAP_MS = 45000;
   var GOGGLES_MS = 5000;
   var GOGGLES_COST_MS = 4000;
   var FONT_MIN = 11;
   var HIT_MIN_PX = 26;
   var D4 = 3, D3 = 6;
+  var NATIVE_BONUS = 50;        // no-goggles motion-on solve bonus (economy pass)
+
+  function clamp(x, lo, hi) { return x < lo ? lo : (x > hi ? hi : x); }
+
+  /** Puzzle-economy difficulty: min(5, 1+floor(depth/6)) — baseline 100*diff+40. */
+  function diffFor(depth) { return clamp(1 + Math.floor((depth | 0) / 6), 1, 5); }
 
   /* ---------- gates ---------- */
   function motionOn() {
@@ -84,7 +94,6 @@
   /* ======================================================================
    * PURE CORE — exported for node smoke.
    * ====================================================================== */
-  function clamp(x, lo, hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
   /** All 16 tesseract vertices as sign vectors. */
   var VERTICES = [];
@@ -168,19 +177,25 @@
     return { q: q, opts: opts, correctIdx: correctIdx };
   }
 
-  /* ---------- scoring mapping (design §7 table) ---------- */
+  /* ---------- scoring mapping (design §7 table + economy pass 2026-08-25) ----------
+   * correct: base = 100*diff+40 (engine puzzle baseline); a no-goggles motion-on
+   *          solve adds NATIVE_BONUS. wrong: -(10+10*diff) pts, hp untouched — the
+   *          tesseract never wounds directly, only the -5 hp timeout does. timeout:
+   *          null / 0 / -5 hp, strictly dominated by attempting.
+   * diff arrives on res.diff; absent => diff 1 (shallow rounds). */
   function scoreFor(res) {
+    var d = clamp((res.diff | 0) || 1, 1, 5);
     if (res.correct === true) {
       var native = !res.gogglesUsed && res.motionOn;
       return {
         correct: true,
-        points: native ? 150 : 100,
+        points: 100 * d + 40 + (native ? NATIVE_BONUS : 0),
         hpDelta: 0,
         summary: native ? '4D NATIVE' : 'VERTEX FOUND'
       };
     }
     if (res.correct === false) {
-      return { correct: false, points: 0, hpDelta: 0, summary: 'LOST IN THE FOURTH AXIS' };
+      return { correct: false, points: -(10 + 10 * d), hpDelta: 0, summary: 'LOST IN THE FOURTH AXIS' };
     }
     return { correct: null, points: 0, hpDelta: -5, summary: 'STILL ROTATING' };
   }
@@ -200,6 +215,7 @@
           var depth = Math.max(1, ctx.depth | 0);
           var motion = motionOn();
           var mul = rateMulFor(depth);
+          var diff = diffFor(depth);           // economy pass: payout tracks puzzle baseline
 
           /* dims '606d' trigger consumption (legacy flag, when present) */
           var triggered606 = false;
@@ -346,7 +362,7 @@
           function loop() {
             if (finished) return;
             var rem = remainingMs();
-            if (rem <= 0) { finish(scoreFor({ correct: null })); return; }
+            if (rem <= 0) { finish(scoreFor({ correct: null, diff: diff })); return; }
 
             var g = cv.getContext('2d');
             g.fillStyle = '#0b0716';
@@ -426,7 +442,7 @@
             if (finished) return;
             var right = idx === quiz.correctIdx;
             beep(right ? 880 : 160, right ? 80 : 170);
-            finish(scoreFor({ correct: right, gogglesUsed: gogglesUsed, motionOn: motion }));
+            finish(scoreFor({ correct: right, gogglesUsed: gogglesUsed, motionOn: motion, diff: diff }));
           }
 
           function finish(result) {
@@ -451,7 +467,7 @@
           }
 
           var watchdog = root.setTimeout(function () {
-            finish(scoreFor({ correct: null }));
+            finish(scoreFor({ correct: null, diff: diff }));
           }, budgetMs);
 
           /* ---------- input: drag steering + vertex picking + H goggles ---------- */
@@ -575,18 +591,25 @@
     // 4. legibility clamp
     ok('labels clamp at 11px floor', legible(3) === FONT_MIN && legible(40) === 40);
 
-    // 5. scoring mapping (design §7 table)
-    var s1 = scoreFor({ correct: true, gogglesUsed: false, motionOn: true }),
-      s2 = scoreFor({ correct: true, gogglesUsed: true, motionOn: true }),
-      s3 = scoreFor({ correct: true, gogglesUsed: false, motionOn: false }),
-      s4 = scoreFor({ correct: false }),
-      s5 = scoreFor({ correct: null });
-    ok('no-goggles solve earns 4D NATIVE +50', s1.points === 150 && s1.summary === '4D NATIVE');
-    ok('goggled solve pays base', s2.points === 100);
-    ok('motion-off solve never earns the bonus', s3.points === 100);
-    ok('wrong = false/0/hp 0', s4.correct === false && s4.points === 0 && s4.hpDelta === 0);
-    ok('timeout = null/-5hp', s5.correct === null && s5.hpDelta === -5);
-    [s1, s2, s3, s4, s5].forEach(function (v) { ok('summary <=48: ' + v.summary, v.summary.length <= 48); });
+    var s1 = scoreFor({ correct: true, gogglesUsed: false, motionOn: true, diff: 1 }),
+      s2 = scoreFor({ correct: true, gogglesUsed: true, motionOn: true, diff: 1 }),
+      s3 = scoreFor({ correct: true, gogglesUsed: false, motionOn: false, diff: 1 }),
+      s4 = scoreFor({ correct: false, diff: 2 }),
+      s5 = scoreFor({ correct: null, diff: 3 }),
+      s6 = scoreFor({ correct: true, gogglesUsed: false, motionOn: true, diff: 2 }),
+      s7 = scoreFor({ correct: true, gogglesUsed: false, motionOn: true, diff: 3 });
+    ok('no-goggles solve earns 4D NATIVE +50', s1.points === 190 && s1.summary === '4D NATIVE');
+    ok('goggled solve pays base', s2.points === 140);
+    ok('motion-off solve never earns the bonus', s3.points === 140);
+    ok('payouts track puzzle baseline at depth (d2/d3 native)',
+      s6.points === 290 && s7.points === 390);
+    ok('band check: goggled/native inside 60%-135% of baseline at depths 3/8/15',
+      [ [s2.points, 140], [s6.points, 240], [s7.points, 340] ].every(function (p) {
+        return p[0] >= p[1] * 0.6 && p[0] <= p[1] * 1.35 + 0.5;
+      }));
+    ok('wrong costs economy-standard points', s4.points === -30);
+    ok('timeout = null/-5hp regardless of diff', s5.correct === null && s5.hpDelta === -5);
+    [s1, s2, s3, s4, s5, s6, s7].forEach(function (v) { ok('summary <=48: ' + v.summary, v.summary.length <= 48); });
 
     var fails = checks.filter(function (c) { return !c.ok; });
     checks.forEach(function (c) { console.log((c.ok ? '  ok  ' : 'FAIL  ') + c.name); });
@@ -613,6 +636,7 @@
       _smoke: _smoke,
       project: project, assignVertices: assignVertices, genQuestion: genQuestion,
       scoreFor: scoreFor, legible: legible, rateMulFor: rateMulFor,
+      diffFor: diffFor,
       VERTICES: VERTICES, EDGES: EDGES
     };
   }

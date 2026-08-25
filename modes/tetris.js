@@ -27,8 +27,12 @@
  *   {
  *     kind:    'score',
  *     correct: lines >= QUOTA                       // QUOTA scales 2→6 with diff
- *     points:  60 + 45*lines + (quotaMetEarly ? 70 : 0)   // typ. 105–340
- *     hpDelta: lines === 0 ? -15 : 0                // partial credit never hurts hp
+ *     points:  30 + LINE_PTS[diff]*lines + (quotaMetEarly ? WIN_BONUS : 0)
+ *              // balance pass 2026-08-25: BASE_PTS 30, LINE_PTS [40,52,62,70,70],
+ *              // WIN_BONUS 50. Quota-met wins land ~96-114% of the puzzle baseline
+ *              // 100*diff+40; cap-expiry partials always pay less than winning at
+ *              // the same depth, so running out the clock is never optimal.
+ *              // Verified by research/bal-retro-tetris.js
  *     summary: 'WELL CLEARED — n LINES' | 'BURIED — n LINES' | 'n LINES'
  *   }
  *
@@ -66,6 +70,17 @@
   function diffFor(depth) {
     return Math.max(1, Math.min(5, 1 + Math.floor((depth | 0) / 6)));
   }
+  /* Scoring economy (balance pass 2026-08-25): quota-met wins land ~96-114%
+   * of the engine puzzle baseline good-answer = 100*diff+40 (diff =
+   * clamp(1+floor(depth/6),1,5)). Cap-expiry partial credit is always worth
+   * less than winning at the same depth — waiting out the clock never beats
+   * playing; topout/cap with zero lines still costs 15 hp (unchanged rail).
+   * LINE_PTS stays flat diff4→5 to keep the quota-6 jackpot under the
+   * engine's 500-point clamp. Pure functions of ctx.depth: determinism
+   * untouched. */
+  var BASE_PTS = 30;
+  var LINE_PTS = [0, 40, 52, 62, 70, 70];   // per cleared line, by diff
+  var WIN_BONUS = 50;                       // quota met (early resolve)
   var QUOTA_BY_DIFF = [0, 2, 3, 4, 5, 6];
   var GRAV_BY_DIFF = [0, 900, 730, 560, 380, 220];
 
@@ -459,7 +474,7 @@
           resolve({
             kind: 'score',
             correct: lines >= QUOTA,
-            points: 60 + 45 * lines + (wonEarly ? 70 : 0),
+            points: wonEarly ? BASE_PTS + LINE_PTS[diff] * lines + WIN_BONUS : 0,
             hpDelta: lines === 0 ? -15 : 0,
             summary: summary.length <= 48 ? summary : summary.slice(0, 48)
           });

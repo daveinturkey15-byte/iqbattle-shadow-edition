@@ -5,7 +5,7 @@
 
    Registration shape (research/mode-contract.md v1):
      window.IQ.Stage.register({
-       id:'laserstorm', name:'LASER STORM', weight:6,
+       id:'laserstorm', name:'LASER STORM', weight:6, minDepth:3,
        worlds:['sky-laser'], aligns:['good'], net:'seed',
        mount(container,ctx) -> Promise<StageResult>
      });
@@ -178,6 +178,7 @@
     id: 'laserstorm',
     name: 'LASER STORM',
     weight: 6,
+    minDepth: 3,
     worlds: ['sky-laser'],
     aligns: ['good'],
     net: 'seed',

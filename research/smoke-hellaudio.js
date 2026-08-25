@@ -127,19 +127,22 @@ IQ.Hooks.dispatch('onRoundStart', { round: 4, align: 'bad', world: 'w1' }); // l
 ok(HellAudio._lastLayer === 2, 'hook dispatch drives drone to hellheaven layer 2');
 ok(IQ.HellHeaven.layer() === 2, 'sanity: real HellHeaven.layer() is 2');
 
-/* First deeper-layer entry screamed at audio-clock t=0 (unmuted, ctx live). */
+/* First deeper-layer entry (1->2) screamed at audio-clock t=0. Advance the
+ * stub clock past the 6 s throttle so the 2->3 entry may scream again. */
 const ac = HellAudio._ctx;
 const oscBefore = ac.created.osc.length;
+ac.currentTime += 7;
 IQ.Hooks.dispatch('onRoundStart', { round: 5, align: 'chaotic', world: 'w1' }); // runBad 1 again
 IQ.Hooks.dispatch('onRoundStart', { round: 6, align: 'bad', world: 'w1' });     // layer -> 3
 ok(HellAudio._lastLayer === 3, 'descent reaches layer 3');
 ok(ac.created.osc.length > oscBefore, 'layer increase spawned scream voices');
 
-/* Scream geometry: <= 900 ms total, bandpass present, gains capped. */
-const recentStops = [];
-ac.created.osc.forEach((o) => o.stops.forEach((t) => recentStops.push(t)));
-const maxStop = Math.max.apply(null, recentStops);
-ok(maxStop <= 0 + 0.901, 'scream scheduled length <= 900 ms (max stop ' + maxStop.toFixed(3) + 's)');
+/* Scream geometry: every voice <= 900 ms start->stop, bandpass present. */
+let maxSpan = 0;
+ac.created.osc.forEach((o) => {
+  o.stops.forEach((t) => { maxSpan = Math.max(maxSpan, t - o.starts[0]); });
+});
+ok(maxSpan <= 0.901, 'scream scheduled length <= 900 ms (max span ' + maxSpan.toFixed(3) + 's)');
 const bpUsed = ac.created.biquad.some((f) => f.type === 'bandpass');
 ok(bpUsed, 'scream routed through bandpass filter');
 const cappedGains = ac.created.gain.every((g) =>

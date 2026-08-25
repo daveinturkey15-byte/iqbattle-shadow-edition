@@ -34,7 +34,11 @@
  *     correct: true  = reached exit cell (or within 3 tiles of it when the cap fires),
  *              false = internal HP pool hit 0 ('CONSUMED BY THE CORRIDOR'),
  *              null  = cap fired while lost (partial — see design doc)
- *     points:  max(0, 140 + 60*kills + (exited ? 80 : 0) - 10*shotsMissed)   // typ 140-380
+ *     points:  doomPayout() — depth-tiered vs puzzle par 100*diff+40 (see below):
+ *              win   = (50+15k) + kills*(20+5k) + (50+20k) - 10*misses  // k=diff tier
+ *              dead  = -(10+10k)  // wrong-answer parity: dying never banks income
+ *              lost  = max(0, win formula without exit bonus); engine ignores (neutral)
+ *              wins land ~100-130% of par; engine caps any takeover at 100*k+60
  *     hpDelta: clamp(medkitsTaken*8 - hitsTaken*5, -15, +15)  // THE healing mode:
  *              every medkit banks real hp (+8); demon hits claw it back (-5 each);
  *              clamped both ways so a great run nets +15 max.
@@ -92,6 +96,36 @@
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function angNorm(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
 
+  /* ---------- payout model (pure; shared by resolveAll and smoke harnesses) ----------
+   * Economy parity (research/balance-pass.md §3c): puzzle par at difficulty tier
+   * k is 100*k+40. Takeover wins land inside [60%,135%] of par and the engine
+   * additionally caps any non-puzzle win at 100*k+60. Failure pays wrong-answer
+   * parity -(10+10*k) — index.html:745 uses STAGE points on correct:false, so a
+   * positive death payout would be free income (the old math banked +140..+380
+   * for being eaten). Timeout is never optimal: every exited run clears 60% of
+   * par, the corridor self-resolves at 45s (< the engine clock), and dying costs
+   * strictly more than the loss it replaces. Exposed as window.__DOOM_PAY__. */
+  function doomPayout(t) {
+    var k = clamp(t.diff | 0, 1, 5);
+    var exited = !!t.exited, dead = !!t.dead;
+    var correct = exited ? true : (dead ? false : null);
+    var points;
+    if (correct === false) {
+      points = -(10 + 10 * k);                      // death = a wrong answer, never income
+    } else {
+      points = Math.max(0,
+        (50 + 15 * k) +                             // survival base
+        (t.kills | 0) * (20 + 5 * k) +              // demon bounties scale with tier
+        (exited ? 50 + 20 * k : 0) -                // exit bonus
+        10 * (t.misses | 0));                       // wasted shells
+    }
+    return {
+      correct: correct, points: points,
+      hpDelta: clamp((t.medkitsTaken | 0) * 8 - (t.hitsTaken | 0) * 5, -15, 15)
+    };
+  }
+  window.__DOOM_PAY__ = doomPayout;                 // headless smoke hook (pure)
+
   /* pre-shaded palettes, 16 brightness levels (torch falloff), built once per mount */
   function hexToRgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -100,6 +134,7 @@
     var c = hexToRgb(hex), out = [];
     for (var i = 0; i < 16; i++) {
       var b = i / 15;
+
       out.push('rgb(' + ((c[0] * b) | 0) + ',' + ((c[1] * b) | 0) + ',' + ((c[2] * b) | 0) + ')');
     }
     return out;
@@ -528,9 +563,11 @@
           paused = false;
           window.cancelAnimationFrame(rafId);
           teardownInput();
-          var points = Math.max(0, 140 + 60 * kills + (exited ? 80 : 0) - 10 * misses);
-          var correct = exited ? true : (dead ? false : null);
-          var hpDelta = clamp(medkitsTaken * 8 - hitsTaken * 5, -15, 15);
+          var out = doomPayout({ diff: diff, kills: kills, exited: exited,
+            dead: dead, misses: misses, medkitsTaken: medkitsTaken, hitsTaken: hitsTaken });
+          var points = out.points;
+          var correct = out.correct;
+          var hpDelta = out.hpDelta;
           var summary = exited
             ? 'EXITED — ' + kills + ' DEMON' + (kills === 1 ? '' : 'S') + ' DOWN'
             : (dead ? 'CONSUMED BY THE CORRIDOR'

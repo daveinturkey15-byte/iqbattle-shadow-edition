@@ -29,9 +29,13 @@
  *   {
  *     kind:    'score',
  *     correct: cleared || (!caught && pelletsEaten >= 0.85*total at cap)
- *     points:  2*pelletsEaten + (cleared ? 120 : 0) + 50*ghostsEaten   // typ. 90–330
- *     hpDelta: caught ? -15 : 0
- *     summary: 'MAZE DEVOURED' | 'CAUGHT — x/y PELLETS'
+ *     points:  correct ? PELLET_PTS*eaten + (cleared ? CLEAR_BONUS[diff] : 0)
+ *              + GHOST_PTS[diff]*ghostsEaten : 0
+ *              // balance pass 2026-08-25: pellets 1 pt, CLEAR_BONUS
+ *              // [35,55,75,90,100], GHOST_PTS [15,35,55,65,75]; failures pay 0
+ *              // so the engine applies wrong-answer parity. Solid runs land
+ *              // ~90-133% of the puzzle baseline 100*diff+40. Verified by
+ *              // research/bal-retro-pacman.js
  *            | 'SURVIVED — x/y PELLETS' | 'STARVED — x/y PELLETS'
  *   }
  *
@@ -100,6 +104,18 @@
   var GHOST_SPEED = [0, 0.80, 0.88, 0.96, 1.00, 1.05];
   var FRIGHT_MS = [0, 6000, 5000, 4000, 3200, 2500];
   var RELEASE_AT = [400, 2600, 4800, 7000];
+  /* Scoring economy (balance pass 2026-08-25): pellets pay 1 pt each;
+   * depth-scaled clear + ghost bounties lift solid runs to ~90-133% of the
+   * engine puzzle baseline good-answer = 100*diff+40 (diff =
+   * clamp(1+floor(depth/6),1,5)) — more ghosts at depth means more bounty
+   * chances, offsetting the harder maze. correct:false (caught, or starved
+   * under 85% at cap) resolves points 0 so the engine applies its standard
+   * wrong-answer parity; getting caught still costs 15 hp. Idling feeds you
+   * to the ghosts — waiting out the clock never pays. Pure functions of
+   * ctx.depth: determinism untouched. */
+  var PELLET_PTS = 1;
+  var CLEAR_BONUS = [0, 35, 55, 75, 90, 100];   // ate every pellet, by diff
+  var GHOST_PTS = [0, 15, 35, 55, 65, 75];      // per ghost eaten, by diff
 
   var DESCRIPTOR = {
     id: 'pacman-maze',
@@ -470,7 +486,8 @@
           var clearedNow = cleared;
           var correct = clearedNow ||
             (!caught && capPath && eaten >= 0.85 * totalPellets);
-          var pts = 2 * eaten + (clearedNow ? 120 : 0) + 50 * ghostsEaten;
+          var pts = correct ? PELLET_PTS * eaten + (clearedNow ? CLEAR_BONUS[diff] : 0) +
+            GHOST_PTS[diff] * ghostsEaten : 0;
           var summary;
           if (clearedNow) summary = 'MAZE DEVOURED';
           else if (caught) summary = 'CAUGHT — ' + eaten + '/' + totalPellets + ' PELLETS';

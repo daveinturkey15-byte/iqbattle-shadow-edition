@@ -6,7 +6,7 @@
 
    Registration shape (research/mode-contract.md v1):
      window.IQ.Stage.register({
-       id:'dronedodge', name:'DRONE SWARM', weight:6,
+       id:'dronedodge', name:'DRONE SWARM', weight:6, minDepth:3,
        worlds:['wasteland-roads','riot'], aligns:['bad'], net:'seed',
        mount(container,ctx) -> Promise<StageResult>
      });
@@ -151,6 +151,7 @@
     id: 'dronedodge',
     name: 'DRONE SWARM',
     weight: 6,
+    minDepth: 3,
     worlds: ['wasteland-roads', 'riot'],
     aligns: ['bad'],
     net: 'seed',

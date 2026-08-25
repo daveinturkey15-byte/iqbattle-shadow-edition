@@ -42,8 +42,12 @@
  *   {
  *     kind:    'score',
  *     correct: true  (hits >= 12) | null (hits >= 6) | false (otherwise)
- *     points:  max(0, 25*normalHits + 80*goldHits - decoyCost*decoyShots
- *                     - 10*escapes)   [phoenix x1.5, capped 500]
+ *     points:  resolveRound() — scaled to puzzle par 100*eff+40:
+ *              normal = 5+3·eff, gold = 3×normal, crowns cost 2×normal
+ *              (harsh/fire doubles crown cost); escapes −2 each;
+ *              [phoenix ×1.5, floored 0, capped 500]
+ *              a failing round (<6 hits) pays wrong-answer parity -(10+10·eff) —
+ *              NEVER positive points; wins land ~100-130% of par
  *     hpDelta: escapes >= 6 ? (phase 'fire' ? -15 : -10) : 0
  *              (telegraphed by the booth dimming from escape 4)
  *     summary: '"N SPLATS · G GOLD"' (<=48 chars)

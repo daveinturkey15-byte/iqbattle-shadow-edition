@@ -42,8 +42,14 @@
  * StageResult (design §6 table):
  *   correct, zero stabilizes (motion on) -> true, base+30, 'DEEP READER'
  *   correct                              -> true, base,   'PATTERN FOUND IN THE DEEP'
- *   wrong                                -> false, 0, hpDelta 0, 'LOST IN THE ZOOM'
+ *   wrong                                -> false, -(10+10*diff), hpDelta 0, 'LOST IN THE ZOOM'
  *   timeout                              -> null, 0, hpDelta -5, 'THE FRACTAL CLOSED OVER YOU'
+ *   (balance pass 2026-08-25: base = 100*diff+40 with diff = min(5,1+floor(depth/6)),
+ *   matching the engine puzzle baseline 140/240/340 at depths 3/8/15; deep-reader
+ *   lands 121%/113%/109% of baseline — inside the 60%-135% takeover band at every
+ *   depth. Wrong now costs economy-standard -(10+10*diff) points instead of 0, so
+ *   guessing stays better than idling but free spam is gone; timeout (-5 hp) is
+ *   never the optimal line.)
  *
  * Fairness rails: IQB_MOTION off => ONE static deep-zoom keyframe, pattern
  * embedded once, stabilize free/inert and the deep-reader bonus disabled
@@ -61,6 +67,10 @@
   var LOOP_CAP_MS = 40000;      // fractal loop cap (design §6)
   var BUF_W = 144, BUF_H = 108; // low-res escape-time buffer, upscaled
   var ITER = 26;
+  var DEEP_BONUS = 30;          // zero-stabilize solve bonus (economy pass 2026-08-25)
+
+  /** Puzzle-economy difficulty: min(5, 1+floor(depth/6)) — baseline 100*diff+40. */
+  function diffFor(depth) { return clamp(1 + Math.floor((depth | 0) / 6), 1, 5); }
 
   /* ---------- gates ---------- */
   function motionOn() {
@@ -186,19 +196,25 @@
     return { q: q, opts: opts, correctIdx: correctIdx, motifIdx: motifIdx };
   }
 
-  /* ---------- scoring mapping (design §6 table) ---------- */
+  /* ---------- scoring mapping (design §6 table + economy pass 2026-08-25) ----------
+   * correct: base = 100*diff+40 (engine puzzle baseline), zero-stabilize motion-on
+   *          solves add DEEP_BONUS. wrong: -(10+10*diff) pts, hp untouched (the
+   *          zoom never wounds directly — only the -5 hp timeout does). timeout:
+   *          null / 0 / -5 hp, strictly dominated by attempting.
+   * diff comes in on res.diff; absent => diff 1 (shallow rounds). */
   function scoreFor(res) {
+    var d = clamp((res.diff | 0) || 1, 1, 5);
     if (res.correct === true) {
       var deep = res.stabs === 0 && res.motionOn;
       return {
         correct: true,
-        points: deep ? 130 : 100,
+        points: 100 * d + 40 + (deep ? DEEP_BONUS : 0),
         hpDelta: 0,
         summary: deep ? 'DEEP READER' : 'PATTERN FOUND IN THE DEEP'
       };
     }
     if (res.correct === false) {
-      return { correct: false, points: 0, hpDelta: 0, summary: 'LOST IN THE ZOOM' };
+      return { correct: false, points: -(10 + 10 * d), hpDelta: 0, summary: 'LOST IN THE ZOOM' };
     }
     return { correct: null, points: 0, hpDelta: -5, summary: 'THE FRACTAL CLOSED OVER YOU' };
   }
@@ -217,6 +233,7 @@
         return new Promise(function (resolve) {
           var depth = Math.max(1, ctx.depth | 0);
           var motion = motionOn();
+          var diff = diffFor(depth);           // economy pass: payout tracks puzzle baseline
 
           /* question FIRST (anti-leak ordering), then the layer params */
           var quiz = genQuestion(ctx.rng);
@@ -430,7 +447,7 @@
           function answer(idx) {
             if (finished) return;
             beep(idx === quiz.correctIdx ? 880 : 160, idx === quiz.correctIdx ? 80 : 160);
-            finish(scoreFor({ correct: idx === quiz.correctIdx, stabs: stabsUsed, motionOn: motion }));
+            finish(scoreFor({ correct: idx === quiz.correctIdx, stabs: stabsUsed, motionOn: motion, diff: diff }));
           }
 
           function stabilize() {
@@ -466,7 +483,7 @@
           }
 
           var watchdog = root.setTimeout(function () {
-            finish(scoreFor({ correct: null }));
+            finish(scoreFor({ correct: null, diff: diff }));
           }, Math.min(budgetMs, LOOP_CAP_MS));
 
           /* ---------- loop ---------- */
@@ -475,7 +492,7 @@
             frame++;
             var frozen = nowFn() < frozenUntil;
             var rem = remainingMs();
-            if (rem <= 0) { finish(scoreFor({ correct: null })); return; }
+            if (rem <= 0) { finish(scoreFor({ correct: null, diff: diff })); return; }
 
             var phase = phaseOf(clockSec(), layer.period);
             if (motion) {
@@ -607,17 +624,26 @@
       islandAlpha(0, 0, false) > islandAlpha(0, 0.37, false));
     ok('freeze pins readability', islandAlpha(0.3, 0.3, true) === 0.9);
 
-    // 6. scoring mapping (design §6 table)
-    var s1 = scoreFor({ correct: true, stabs: 0, motionOn: true }),
-      s2 = scoreFor({ correct: true, stabs: 1, motionOn: true }),
-      s3 = scoreFor({ correct: false }), s4 = scoreFor({ correct: null }),
-      s5 = scoreFor({ correct: true, stabs: 0, motionOn: false });
-    ok('deep reader bonus gated on zero stabs + motion', s1.points === 130 && s1.summary === 'DEEP READER');
-    ok('stabilized solve pays base only', s2.points === 100);
-    ok('motion-off solve never earns deep reader', s5.points === 100);
-    ok('wrong = false/0/hp 0', s3.correct === false && s3.points === 0 && s3.hpDelta === 0);
-    ok('timeout = null/-5hp', s4.correct === null && s4.hpDelta === -5);
-    [s1, s2, s3, s4].forEach(function (v) { ok('summary <=48: ' + v.summary, v.summary.length <= 48); });
+    var s1 = scoreFor({ correct: true, stabs: 0, motionOn: true, diff: 1 }),
+      s2 = scoreFor({ correct: true, stabs: 1, motionOn: true, diff: 1 }),
+      s3 = scoreFor({ correct: false, diff: 1 }), s4 = scoreFor({ correct: null, diff: 3 }),
+      s5 = scoreFor({ correct: true, stabs: 0, motionOn: false, diff: 1 }),
+      s6 = scoreFor({ correct: true, stabs: 0, motionOn: true, diff: 2 }),
+      s7 = scoreFor({ correct: true, stabs: 0, motionOn: true, diff: 3 }),
+      s8 = scoreFor({ correct: false, diff: 3 });
+    ok('deep reader bonus gated on zero stabs + motion',
+      s1.points === 170 && s1.summary === 'DEEP READER');
+    ok('stabilized solve pays base only', s2.points === 140);
+    ok('motion-off solve never earns deep reader', s5.points === 140);
+    ok('payouts track puzzle baseline at depth (d2/d3 deep reader)',
+      s6.points === 270 && s7.points === 370);
+    ok('band check: deep reader inside 60%-135% of baseline at depths 3/8/15',
+      [ [s1.points, 140], [s6.points, 240], [s7.points, 340] ].every(function (p) {
+        return p[0] >= p[1] * 0.6 && p[0] <= p[1] * 1.35;
+      }));
+    ok('wrong costs economy-standard points', s3.points === -20 && s8.points === -40);
+    ok('timeout = null/-5hp regardless of diff', s4.correct === null && s4.hpDelta === -5);
+    [s1, s2, s3, s4, s5, s6, s7, s8].forEach(function (v) { ok('summary <=48: ' + v.summary, v.summary.length <= 48); });
 
     var fails = checks.filter(function (c) { return !c.ok; });
     checks.forEach(function (c) { console.log((c.ok ? '  ok  ' : 'FAIL  ') + c.name); });
@@ -644,6 +670,7 @@
       _smoke: _smoke,
       genQuestion: genQuestion, deriveLayerParams: deriveLayerParams,
       scoreFor: scoreFor, phaseOf: phaseOf, islandAlpha: islandAlpha,
+      diffFor: diffFor,
       zoomPeriodFor: zoomPeriodFor, decoysFor: decoysFor
     };
   }

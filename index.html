@@ -180,8 +180,10 @@
 <script src="./sanctuary.js?v=w4"></script>
 <script src="./hellheaven.js?v=w4"></script>
 <script src="./hell-skin.js?v=w4"></script>
+<script src="./pack-hellaudio.js?v=w4"></script>
 <script src="./pack-popcult-a.js?v=w4"></script>
 <script src="./pack-popcult-b.js?v=w4"></script>
+<script src="./pack-story.js?v=w4"></script>
 <script src="./cameo-pack.js?v=w4"></script>
 <script src="./pack-funny.js?v=w4"></script>
 <script src="./pack-cavern.js?v=w4"></script>
@@ -490,7 +492,7 @@ function renderScores(){
   <div class="sc-ava">${o.ava}</div><div style="flex:1;min-width:0"><div class="sc-name">${esc(o.name)}</div>
   <div class="sc-sub">${o.me?(G.streak>1?'streak ×'+G.streak:(o.elim?'ELIMINATED':'you')):(o.elim?'ELIMINATED':'rival')}</div><div class="resp-clock"></div></div>
   <div class="sc-pts">${o.pts}</div></div>`).join('');
- if(G.lms&&G.mp.on){const cards=sp.querySelectorAll('.score-card:not(.me)');const targets=rows.filter(r=>!r.me&&r.uid);cards.forEach((c,i)=>{const row=targets[i];if(row)c.onclick=()=>tryAttack(row.uid)})}
+ if(G.lms&&G.mp.on){const cards=sp.querySelectorAll('.score-card:not(.me)');const rowsNM=rows.filter(r=>!r.me);rowsNM.forEach((row,i)=>{const c=cards[i];if(!c)return;c.onclick=(row.uid&&!row.elim)?()=>tryAttack(row.uid):null})}
 }
 
 function tryAttack(uid){
@@ -506,7 +508,7 @@ function tryAttack(uid){
  banner('ATTACK SENT — '+w.toUpperCase());
 }
 /* ---------- run flow ---------- */
-function startRun(){
+function startRun(skipDeal){
  $('#center-content').innerHTML='';
  G.round=0;G.score=0;G.streak=0;G.stage=-1;setStage(0);
  try{window.IQ&&IQ.Fun&&IQ.Fun.reset()}catch(e){}
@@ -515,7 +517,7 @@ function startRun(){
  G.hookScoreMul=1;G.invertUntil=0;G.disabledOpts=null;G.spectating=false;G.hookSeq=0;
  try{G.hookSeed=(Math.random()*0xFFFFFFFF)>>>0;window.IQ&&IQ.Hooks&&IQ.Hooks.beginRun&&IQ.Hooks.beginRun(G.mp.code||('solo-'+Date.now()),G.hookSeed)}catch(e){}
  G.lms=(function(){ if(!G.mp.on)return false; if(G.mpCfg&&G.mpCfg.lms!=null)return !!G.mpCfg.lms; var e=document.getElementById('cfg-lms'); return !!(e&&e.classList.contains('on')); })();
- G.remotePicks={};G.remoteAttacks={};G.humans=[];G.lastAppliedRevealRound=null;
+ G.remotePicks={};G.remoteAttacks={};G.humans=[];G.lastAppliedRevealRound=null;G.humanHp={};
  G.hp=100;G.w1=null;G.prevAlign=null;renderHp();
  try{window.IQ&&IQ.Stage&&IQ.Stage.reset&&IQ.Stage.reset()}catch(e){}
  try{window.IQ&&IQ.Worlds&&IQ.Worlds.clear()}catch(e){}
@@ -527,7 +529,7 @@ function startRun(){
  if(G.mp.on&&(G.players||[]).length<=1){G.mp={on:false,host:false,code:''}}
  G.opps=G.mp.on?[]:ROSTER.slice(0,2).map(o=>({...o,pts:0}));
  nav('play');updateTitle();renderScores();
- setTimeout(()=>nextRound(),800);
+ if(!skipDeal)setTimeout(()=>nextRound(),800);
 }
 
 function nextRound(){
@@ -710,6 +712,7 @@ function simOpponent(o){
 
 /* ---------- answering ---------- */
 function sendSr(res){
+ if(G.spectating)return; // the dead do not score
  try{IQ.Net.send({t:'sr',n:G.round,uid:(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():null,name:P.name,
   sr:{correct:res.correct===true?1:0,points:Math.round(clamp(+res.points||0,-80,400))}})}catch(e){}
 }
@@ -818,17 +821,25 @@ function postRoundChain(){
   for(const [att,w] of Object.entries(G.remoteAttacks||{})){
    const res=IQ.LMS.attackResult({scores:table.map(s=>({...s})),attackerUid:att,targetUid:w.targetUid,weapon:w.weapon,depthDiff:depthDiff()});
    if(res){attacked=true;
-    for(const row of res){const me2=row.uid===myUid;if(me2)G.score=row.pts;else{const h=(G.humans||[]).find(x=>x.uid===row.uid);if(h)h.pts=row.pts}}
+    for(const row of res){const me2=row.uid===myUid;if(me2)G.score=row.pts;else{const h=(G.humans||[]).find(x=>x.uid===row.uid);if(h){h.pts=row.pts;if(w.weapon==='curse'){G.humanHp=G.humanHp||{};G.humanHp[h.uid]=(G.humanHp[h.uid]==null?100:G.humanHp[h.uid])-10}}}}
     banner((w.targetUid===myUid?'YOU WERE HIT':'STRIKE LANDED')+' — '+w.weapon.toUpperCase());
     if(w.targetUid===myUid&&w.weapon==='curse')hurtHp(10);}
    delete G.remoteAttacks[att];
   }
   if(attacked)renderScores();
  }
- if(G.lms&&G.mp.host){
-  const alive=window.IQ&&IQ.LMS?IQ.LMS.remaining((G.humans||[]).filter(h=>!h.elim).map(h=>({uid:h.uid,pts:h.pts})).concat([{uid:'host',pts:G.score}])):null;
-  if(alive&&alive.length<=1){endMatchBroadcast();endRun();return}
- }
+if(G.lms&&G.mp.host&&window.IQ&&IQ.LMS){
+  const mu=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():'host';
+  G.humanHp=G.humanHp||{};
+  (G.humans||[]).forEach(h=>{if(!(h.uid in G.humanHp))G.humanHp[h.uid]=100});
+  const rows2=[{uid:mu,pts:G.score},...(G.humans||[]).filter(h=>!h.elim).map(h=>({uid:h.uid,pts:h.pts}))];
+  const dead=IQ.LMS.evaluateElimination(rows2,Object.assign({},G.humanHp,{[mu]:G.hp}),{mode:'and'});
+  if(dead.length){dead.forEach(u=>{if(u===mu)G.spectating=true;else{const h=(G.humans||[]).find(x=>x.uid===u);if(h)h.elim=true}});
+   try{IQ.Net.broadcast({t:'elim',uids:dead})}catch(e){}
+   banner(dead.includes(mu)?'YOU HAVE BEEN ELIMINATED — SPECTATING':'THE REAPER MARKS '+dead.length);renderScores()}
+  const alive=IQ.LMS.remaining((G.humans||[]).filter(h=>!h.elim).map(h=>({uid:h.uid,pts:h.pts})).concat(G.spectating?[]:[{uid:mu,pts:G.score}]));
+  if(!G.spectating&&alive&&alive.length<=1){endMatchBroadcast();endRun();return}
+}
  if(G.opps.length>0&&G.round%4===0&&G.usedEmeralds.size<EMERALDS.length)emeraldPick();
  else if(window.IQ&&IQ.Cleanse&&IQ.Cleanse.maybeTrigger(G.stage,G.round)){IQ.Cleanse.trigger&&IQ.Cleanse.trigger();try{window.IQ&&IQ.BoardMove&&IQ.BoardMove.pause(1800)}catch(e){};nextRound();return}
  else nextRound();
@@ -964,21 +975,33 @@ function applyScoresFrame(scores){
  });
  renderScores();
 }
-function leaveMp(){try{if(G.mp.on&&window.IQ&&IQ.Net)IQ.Net.leave()}catch(e){}G.mp={on:false,host:false,code:''};G.players=[]}
-function openLobby(title){$('#lobby-title').textContent=title;updateTitle();nav('lobby')}
+function leaveMp(){try{if(G.mp.on&&window.IQ&&IQ.Net)IQ.Net.leave()}catch(e){}G.mp={on:false,host:false,code:''};G.players=[];G.begunOnce=false}
+function openLobby(title){$('#lobby-title').textContent=title;updateTitle();nav('lobby');G.begunOnce=false}
 function listenNet(){
  try{
   IQ.Net.on('lobby',pl=>{G.players=(pl.players||[]);$('#lobby-count').textContent=G.players.length;});
+  IQ.Net.on('peer-leave',g=>{const id=g&&(g.id||g.uid);if(!id)return;
+   G.humans=(G.humans||[]).filter(h=>h.uid!==id);
+   if(G.remotePicks)delete G.remotePicks[id];
+   if(G.remoteAttacks)delete G.remoteAttacks[id];
+   renderScores()});
   IQ.Net.on('pick',pk=>onRemotePick(pk));
  IQ.Net.on('sr',m=>{if(!(G.mp.host&&m))return;
+  if(m.n!==G.round)return; // late frame from a previous depth — drop
   const uid=m.uid||('anon-'+(m.name||'P'));
+  if(m.sr&&m.sr.correct)m.sr.points=Math.min(m.sr.points|0,100*depthDiff()+40); // anti-spoof ceiling
   G.remotePicks[uid]={uid,n:m.name||'PLAYER',sr:m.sr||null};
   G.humans=G.humans||[];
-  if(!G.humans.find(h=>h.uid===uid))G.humans.push({uid,n:m.name||'PLAYER',pts:0});});
-   IQ.Net.on('begin',m=>{if(G.mp.on&&!G.mp.host){G.mpCfg={timer:m&&m.timer||60,lms:!!(m&&m.lms)};startRun()}});
-  IQ.Net.on('round',pl=>{if(G.mp.host)return;applyIncomingRound(pl)});
+  if(!G.humans.find(h=>h.uid===uid))G.humans.push({uid,n:m.name||'PLAYER',pts:0})});
+  IQ.Net.on('begin',m=>{if(G.mp.on&&!G.mp.host){if(G.begunOnce)return;G.begunOnce=true;G.mpCfg={timer:m&&m.timer||60,lms:!!(m&&m.lms)};startRun()}});
+  IQ.Net.on('round',pl=>{if(G.mp.host)return;
+   if(G.screen!=='play'){G.mpCfg=G.mpCfg||{timer:(pl&&pl.timerLen)||60,lms:false};try{startRun(true)}catch(e){}}
+   applyIncomingRound(pl)});
   IQ.Net.on('attack',a=>{if(!(G.mp.host&&a))return;const uid=a.from||a.uid||('anon-'+(a.n||''));G.remoteAttacks[uid]={targetUid:a.targetUid,weapon:a.weapon,n:a.n}});
-  IQ.Net.on('elim',m=>{if(!m||!m.uids)return;m.uids.forEach(u=>{const h=(G.humans||[]).find(x=>x.uid===u);if(h)h.elim=true});alertEv('ELIMINATED: '+(m.uids.length?m.uids.length:0)+' PLAYER(S)');renderScores()});
+  IQ.Net.on('elim',m=>{if(!m||!m.uids)return;const my=(window.IQ&&IQ.Net&&IQ.Net.myUid)?IQ.Net.myUid():null;
+   m.uids.forEach(u=>{if(u===my){G.spectating=true;alertEv('YOU ARE OUT — SPECTATING')}
+     const h=(G.humans||[]).find(x=>x.uid===u);if(h)h.elim=true});
+   renderScores()});
   IQ.Net.on('reveal',rv=>{if(G.mp.host)return;
    if(G.lastAppliedRevealRound===G.round)return; // idempotent: never double-apply a reveal
    G.lastAppliedRevealRound=G.round;
@@ -990,7 +1013,9 @@ function listenNet(){
    applyScoresFrame(rv.scores)});
   IQ.Net.on('end',m=>{
    if(m&&Array.isArray(m.scores)&&G.screen==='play'){applyScoresFrame(m.scores);alertEv('MATCH TERMINATED');return}
-   if(G.screen==='play'){alertEv('CONNECTION LOST');G.mp={on:false,host:false,code:''}}else alertEv('ROOM CLOSED')});
+   if(G.screen==='play'){try{cancelAnimationFrame(G.raf)}catch(e){}
+    alertEv('THE HOST VANISHED — ROOM COLLAPSED');G.mp={on:false,host:false,code:''};nav('landing')}
+   else alertEv('ROOM CLOSED')});
  }catch(e){}
 }
 function openSettings(){

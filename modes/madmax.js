@@ -13,22 +13,24 @@
  * HOW IT PLAYS
  *   Side-scrolling war-rig highway, 3 lanes. Up/Down to change lanes.
  *   - A rule banner at mount announces a seeded TRUE SIGN sequence (e.g. BONE -> BRASS ->
- *     VENOM). Collect skull signs in that order: each true pick pays 20 + 5*combo and
- *     advances the lock; completing it pays +60 ("SEQUENCE LOCKED").
+ *     VENOM). Collect skull signs in that order: each true pick pays (8+12*diff) + 5*combo
+ *     and advances the lock; completing it pays +12+24*diff ("SEQUENCE LOCKED").
  *   - Spike-trap potholes are telegraphed (amber marker while >= ~0.9 s out, spikes arm at
  *     that point): hit = internal integrity damage, mapped to hpDelta -8 per hit (cap -24).
  *   - Rival rig rams from behind when your combo drops (false sign / missed target /
  *     ram), diff>=2 only: horn telegraph 900 ms, then a charge down YOUR lane — change
- *     lanes inside the window to shake the tail (+15); eat it and you lose 30 pts.
+ *     lanes inside the window to shake the tail (+15); eat it and you lose 15+5*diff pts.
  *   - Guzzoline canisters add +6 s of cap time (banked up to +18 s).
  *   - Sandstorm brownouts: <=2 per round, each announced 800 ms ahead; visibility dips
  *     but the HUD NEXT chip never dims (fairness).
- *   - Reach the citadel before the cap: +200, "WHAT A DAY". Otherwise resolve at the cap:
- *     correct iff the sequence locked.
+ *   - Reach the citadel before the cap: +(60+44*diff), "WHAT A DAY". Otherwise resolve at
+ *     the cap: correct iff the sequence locked. (Balance probe: citadel reachable pre-cap
+ *     in 100% of median-lane-play sims at every depth; payouts scale on the shared diff
+ *     ladder so median totals track the takeover band [0.6,1.35]x puzzle payout.)
  *
  * StageResult (RAW points; engine layers streak/curse/hook modifiers):
  *   correct: citadel || sequenceLocked        (no neutral outcome)
- *   points:  picks/pickups/dodges − penalties + 200 citadel bonus, clamped [0,500]
+ *   points:  picks/pickups/dodges − penalties + (60+44*diff) citadel bonus, clamped [0,500]
  *   hpDelta: −8 * potholeHits, floored at −24 (engine clamps [-60,60])
  *   summary: ≤64 chars, e.g. "WHAT A DAY — CITADEL REACHED" / "STRANDED — SEQ 2/4 · DMG 3"
  *
@@ -64,8 +66,16 @@
   var STORM_WARN_MS = 800;
   var POT_WARN_S = 0.95;          // seconds of warning before spikes arm
   var HORN_MS = 900;              // rival telegraph
-  var CITADEL_BONUS = 200;
-  var SEQ_LOCK_BONUS = 60;
+  /* Payouts scale on the shared diff ladder min(5, 1+floor(depth/6)) so the
+   * takeover total tracks the puzzle envelope 100*diff+40 (band 60%-135%).
+   * Balance probe (.probe-madmax-balance.js): citadel reachable pre-cap 100%
+   * of median-lane-play runs at every depth, so the arrival bonus is scaled
+   * (was flat 200 = guaranteed income, over band at diff1, carrying deep runs
+   * whose pick economy went negative). */
+  function pickBaseFor(diff) { return 8 + 12 * diff; }      // was 20 flat
+  function seqLockBonusFor(diff) { return 12 + 24 * diff; } // was 60 flat
+  function citadelBonusFor(diff) { return 60 + 44 * diff; } // was 200 flat
+  function ramPenaltyFor(diff) { return 15 + 5 * diff; }    // was 30 flat
 
   var COLORS = [
     { id: 'RUST', hex: '#ff5040' },
@@ -558,19 +568,19 @@
           truePicks++;
           combo++;
           if (combo > bestCombo) bestCombo = combo;
-          pts += 20 + 5 * combo;
+          pts += pickBaseFor(diff) + 5 * combo;
           sfx('roadrun_pick');
           if (!seqDone) {
             seqIdx++;
             if (seqIdx >= seqLen) {
               seqDone = true;
-              pts += SEQ_LOCK_BONUS;
-              sayToast('SEQUENCE LOCKED +' + SEQ_LOCK_BONUS, 2200);
+              pts += seqLockBonusFor(diff);
+              sayToast('SEQUENCE LOCKED +' + seqLockBonusFor(diff), 2200);
             } else {
               sayToast('LOCK ' + seqIdx + '/' + seqLen + ' \u2014 ' + COLORS[neededCi()].id);
             }
           } else {
-            sayToast('TRUE SKULL +' + (20 + 5 * combo));
+            sayToast('TRUE SKULL +' + (pickBaseFor(diff) + 5 * combo));
           }
         } else {
           falsePicks++;
@@ -581,8 +591,8 @@
       }
 
       function onPot() {
-        dmg++;
         slowUntil = simMs + 900;
+        dmg++;
         sfx('roadrun_pot');
         fxs('shake', 6);
         sayToast('SPIKES! INTEGRITY \u2212' + POT_DMG_HP);
@@ -613,9 +623,10 @@
               sfx('roadrun_dodge');
             } else {
               rams++;
-              pts -= 30;
+              var ramPts = ramPenaltyFor(diff);
+              pts -= ramPts;
               fxs('shake', 10);
-              sayToast('RAMMED \u221230');
+              sayToast('RAMMED \u2212' + ramPts);
               sfx('roadrun_ram');
             }
             rival.state = 'idle';
@@ -658,7 +669,7 @@
       }
 
       function winCitadel() {
-        pts += CITADEL_BONUS;
+        pts += citadelBonusFor(diff);
         sfx('roadrun_win');
         finish('citadel', false);
       }

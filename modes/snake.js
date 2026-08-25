@@ -43,8 +43,8 @@
  *
  * Self-play / soak hook: while a round is live this file exposes window.__SERPENT__:
  *   .step(dir)   dir: 'up'|'down'|'left'|'right' — queues a turn and advances EXACTLY one
- *                tick synchronously (returns false once finished/dead)
- *   .state()  -> {len, apples, dead, survived, elapsedMs, head:{x,y}, apple:{x,y}|null}
+ *   .state()  -> {len, apples, dead, survived, elapsedMs, head:{x,y},
+ *                 apple:{x,y}|null, body:[{x,y}]}   // body: smoke/audit only
  *   .finish()    force-end as survival (cap) — fast-forward for soak tests
  */
 (function () {
@@ -52,6 +52,19 @@
 
   var GRID = 17;
   var CAP_MS = 45000;
+  /* Scoring economy (balance pass 2026-08-25): payout tracks the engine puzzle
+   * baseline good-answer = 100*diff+40, diff = clamp(1+floor(depth/6),1,5).
+   * APEX (8 apples) lands ~104-121% of baseline; a surviving median run
+   * ~70-90%; death keeps apple credit but forfeits the survival stipend.
+   * Idling out the clock is impossible (the serpent never stops moving), so
+   * survival is never a farmable optimum. Determinism untouched: these are
+   * pure functions of ctx.depth. */
+  var DIFF_FOR = function (depth) {
+    return Math.max(1, Math.min(5, 1 + Math.floor((depth | 0) / 6)));
+  };
+  var APPLE_PTS = [0, 12, 24, 40, 40, 40];       // per apple, by diff
+  var APEX_BONUS = [0, 50, 70, 90, 110, 130];    // ate APPLES_TO_WIN early
+  var SURVIVE_BONUS = [0, 40, 60, 80, 100, 120]; // reached the cap alive
   var APPLES_TO_WIN = 8;
   var active = null; // live-round handle for cleanup()
 
@@ -159,6 +172,7 @@
         var finished = false;
         var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
         var stepMs = stepMsFor(ctx.depth);
+        var diff = DIFF_FOR(ctx.depth);
         var capMs = Math.min(CAP_MS, Math.max(10000, ((ctx.timerLen | 0) || 45) * 1000));
         var timerId = null;
         var rafId = 0;
@@ -239,12 +253,11 @@
           teardown();
           ready.style.opacity = '0';   // round over — drop the onboarding legend
           if (silent) return;               // engine-aborted: engine injects its own result
-          foot.textContent = dead ? 'THE SERPENT FALLS' : (apex ? 'APEX SERPENT' : 'SURVIVED');
-          var bonus = apex ? 50 : (survived ? 20 : 0);
+          var bonus = apex ? APEX_BONUS[diff] : (survived ? SURVIVE_BONUS[diff] : 0);
           resolve({
             kind: 'score',
             correct: !!survived,
-            points: applesEaten * 25 + bonus,
+            points: dead ? -(10 + 10 * diff) : applesEaten * APPLE_PTS[diff] + bonus,
             hpDelta: dead ? -10 : 0,
             summary: ('snake len ' + snake.length + (apex ? ' · APEX SERPENT' : '')).slice(0, 64)
           });
@@ -345,7 +358,8 @@
               dead: dead, survived: finished && !dead,
               elapsedMs: Math.round(elapsed()),
               head: { x: snake[0].x, y: snake[0].y },
-              apple: apple ? { x: apple.x, y: apple.y } : null
+              apple: apple ? { x: apple.x, y: apple.y } : null,
+              body: snake.map(function (s) { return { x: s.x, y: s.y }; }) // smoke/audit
             };
           },
           finish: function () { if (!dead) finish(true, false, false); }

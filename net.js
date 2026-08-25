@@ -70,7 +70,9 @@
    joining: false,              // client: handshake in flight (enables join retry)
    dead: false,
    seen: {},                    // bus poll/event dedup of recent frame nonces
-   myUid: null                  // THIS side's stable uid ('HOST' for host, C<ts><rand> for client)
+   myUid: null,                 // THIS side's stable uid ('HOST' for host, C<ts><rand> for client)
+   sqOut: 0,                    // host broadcast sequence — clients drop already-seen seqs
+   sqSeen: {}                   // client-side dedupe of _sq across BOTH transports
   };
 
   // ---- tiny debug ring: last 20 net events, exposed via Net.debugLog() ------
@@ -108,6 +110,7 @@
       if (!m.uid) m.uid = m.src;
       emit('pick', m);
     } else if (state.role === 'client') {
+      if (m._sq != null && seenSq(m._sq)) return;
       logEv(m.t || '', 'in', true);
       emit(m.t || '', m);
     }
@@ -116,7 +119,19 @@
     try {
       if (!lsKey) return;
       frame.bc = 1; frame.src = lsMyId; frame._n = Date.now() + '' + Math.floor(Math.random() * 1e6);
-      root.localStorage.setItem(lsKey, JSON.stringify(frame));
+      var raw = JSON.stringify(frame);
+      root.localStorage.setItem(lsKey, raw);
+      /* Outbox ring: the single bus key is overwritten by burst writes
+       * (reveal+round back-to-back). Poll-only tabs drain THIS queue so
+       * no frame is lost between 400ms ticks. */
+      try {
+        var obk = lsKey + '-ob', box = null;
+        try { box = JSON.parse(root.localStorage.getItem(obk)); } catch (e) {}
+        if (!Array.isArray(box)) box = [];
+        box.push({ n: frame._n, v: raw });
+        if (box.length > 12) box.splice(0, box.length - 12);
+        root.localStorage.setItem(obk, JSON.stringify(box));
+      } catch (e) {}
     } catch (e) {}
   }
   function bcSend(frame) { lsSend(frame); }
@@ -126,8 +141,19 @@
   function lsPoll() {
     try {
       if (!lsKey) return;
+      var obk = lsKey + '-ob', box = null;
+      try { box = JSON.parse(root.localStorage.getItem(obk)); } catch (e) {}
+      if (Array.isArray(box) && box.length) {
+        var keep = [];
+        for (var i = 0; i < box.length; i++) {
+          var e2 = box[i];
+          if (!e2 || !e2.n || state.seen[e2.n]) continue;
+          try { lsHandler({ key: lsKey, newValue: e2.v }); } catch (e3) {}
+          if (!state.seen[e2.n]) keep.push(e2);
+        }
+        try { root.localStorage.setItem(obk, JSON.stringify(keep.slice(-12))); } catch (e5) {}
+      }
       var raw = root.localStorage.getItem(lsKey);
-      if (!raw || raw === lsLastNonce) { /* nonce lives inside; compare below */ }
       var m = null;
       try { m = JSON.parse(raw); } catch (e) { return; }
       if (!m || !m._n || m._n === lsLastNonce) return;
@@ -152,6 +178,7 @@
   function bcClose() {
     try { root.removeEventListener('storage', lsHandler); } catch (e) {}
     try { root.localStorage.removeItem('iqvs-bus-' + state.code); } catch (e) {}
+    try { if (lsKey) root.localStorage.removeItem(lsKey + '-ob'); } catch (e) {}
     lsKey = null; stopPoll();
   }
 
@@ -164,6 +191,17 @@
       try { list[i](payload || {}); }
       catch (e) { /* a broken UI callback must never kill the session */ }
     }
+  }
+  /* Cross-transport dedupe: clients receive every host frame on BOTH the
+   * PeerJS conn and the storage bus. Host stamps _sq in Net.broadcast;
+   * whichever copy arrives first wins, the duplicate is dropped. */
+  function seenSq(n) {
+    if (n == null) return false;
+    if (state.sqSeen[n]) return true;
+    state.sqSeen[n] = 1;
+    var k = Object.keys(state.sqSeen);
+    if (k.length > 120) delete state.sqSeen[k[0]];
+    return false;
   }
 
   function sanitizeCode(raw) {
@@ -226,9 +264,11 @@
         // Stamp the sender's stable uid (conn key) so scoring keys by uid,
         // never by display name (same-name tabs must stay distinct).
         if (!msg.uid) msg.uid = connKey(conn) || conn.peer;
+        if (msg._sq != null && seenSq(msg._sq)) return; // dual-transport duplicate
         emit(msg.t, msg);
       }
     } else if (state.role === 'client') {
+      if (msg._sq != null && seenSq(msg._sq)) return;
       if (msg.t === 'end' && !state.dead) {
         // host explicitly ended; fallthrough emit below still fires
       }
@@ -328,7 +368,7 @@
             try { peer.destroy(); } catch (e) {}
             tryOpen(); // id taken -> next suffix
           } else if (!peer.open) {
-            state.role = null;
+            state.role = null; bcClose();
             reject(err instanceof Error ? err : new Error(String(type || 'peer-error')));
           } else {
             emit('end', { reason: 'net-error', detail: type }); // mid-session broker hiccup
@@ -446,6 +486,7 @@
   Net.send = function (obj) {
     var ok = false;
     try {
+      if (state.role === 'client') obj._sq = (state.myUid || 'C') + ':' + (++state.sqOut); // host dedupes dual-transport copies
       if (state.role === 'client' && state.hostConn && state.hostConn.open) {
         state.hostConn.send(obj);
         ok = true;
@@ -466,6 +507,7 @@
   Net.broadcast = function (obj) {
     try {
       if (state.role === 'host') {
+        obj._sq = 'HOST:' + (++state.sqOut); // clients dedupe cross-transport copies by this
         var anyOpen = false, k;
         for (k in state.conns) {
           if (Object.prototype.hasOwnProperty.call(state.conns, k)) {
@@ -475,7 +517,7 @@
         }
         bcSend(obj);
         emit((obj && obj.t) || '', obj || {});
-    logEv((obj && obj.t) || 'broadcast', 'out', anyOpen);
+        logEv((obj && obj.t) || 'broadcast', 'out', anyOpen);
         return anyOpen;
       }
     } catch (e) { /* keep the host alive even if a pipe is broken */ }

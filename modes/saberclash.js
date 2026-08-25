@@ -516,6 +516,26 @@
     [cu, bo, cu2, bo1, verdictFor('curse', 0), verdictFor('bonus', 2)].forEach(function (v) {
       ok('summary <=48 chars: "' + v.summary + '"', v.summary.length <= 48);
     });
+    // 6b. economy contract (balance pass 2026-08-25): the duel NEVER pays or
+    // wounds directly — points stay 0 and hpDelta stays 0 in the StageResult;
+    // verdictFor may only speak in {correct, mult, summary}. Ladders must be
+    // strictly monotonic so more hits are never worse.
+    ['curse', 'bonus'].forEach(function (kind) {
+      [0, 1, 2, 3].forEach(function (h) {
+        var v = verdictFor(kind, h);
+        ok(kind + ' x' + h + ': no direct pay/wound fields', !('points' in v) && !('hpDelta' in v));
+      });
+      ok(kind + ' ladder monotonic', (function () {
+        var ms = [];
+        for (var h = 0; h <= 3; h++) ms.push(verdictFor(kind, h).mult);
+        if (kind === 'curse') return ms[0] >= ms[1] && ms[1] > ms[2] && ms[2] > ms[3];
+        return ms[0] <= ms[1] && ms[1] < ms[2] && ms[2] < ms[3];
+      })());
+      ok(kind + ' correct mapping 3/2/<=1',
+        verdictFor(kind, 3).correct === true &&
+        verdictFor(kind, 2).correct === null &&
+        verdictFor(kind, 1).correct === false);
+    });
 
     // 7. quantizeSec grid
     ok('bucket grid 60ms', quantizeSec(125) === 0.12 && quantizeSec(59) === 0 && quantizeSec(-5) === 0);

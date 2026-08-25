@@ -20,13 +20,14 @@
    Controls: D F J K or 1..4 tap lanes; pointer/touch taps pads; Esc ends the
    set early with the current tally (always escapable).
 
-   Result fields:
-     correct : true  (>=35% notes hit) -> points = earned (raw; engine layers flavor)
-               false (<35%)            -> points:-30, hpDelta:-6
-     points  : base 11 good / 16 perfect, downbeat accents x2, +15 per new
-               combo-tier of 5; capped 480 raw
-     hpDelta : 0 on success (misses NEVER hurt mid-play)
-     summary : '<hits>/<total> RIFFS' line, <=48 chars
+    correct : true  (>=35% notes hit) -> points = earned (raw; engine layers flavor)
+              false (<35%)            -> points:-(10+10*diff), hpDelta:-6
+    points  : base 11 good / 16 perfect, downbeat accents x2, +15 per new
+              combo-tier of 5; capped at the economy band top
+              min(480, round((100*diff+40)*1.35)) — full-combo peaks at ~135% of the
+              puzzle baseline 100*diff+40 (balance pass 2026-08-25).
+    hpDelta : 0 on success (misses NEVER hurt mid-play)
+    summary : '<hits>/<total> RIFFS' line, <=48 chars
 
    Fairness rails: IQB_MOTION off => stepped 110 ms quanta rendering and NO
    shake/banner-fx (judgment math IDENTICAL, uses real time); IQB_MUTED gates
@@ -96,6 +97,14 @@ var STEP_MS = 110;
 var CAP_EARNED = 480;
 var BPM = 92;                  // slower than glitter's 118
 var BEAT_MS = 60000 / BPM;
+/* ---------------- economy band (balance pass 2026-08-25) -------------------- */
+/* Puzzle baseline: good answer pays 100*diff+40 (diff = min(5,1+floor(depth/6)),
+   i.e. 140/240/340 at depths 3/8/15). Raw earnings cap at the takeover band TOP
+   (60%..135% of baseline): gold-accent full-combos peak at ~135%, weaker play
+   scales down inside the band. Fails cost -(10+10*diff) points. */
+function diffOf(diff) { return Math.min(5, Math.max(1, (diff | 0) || 1)); }
+function bandCap(diff) { return Math.min(CAP_EARNED, Math.round((100 * diffOf(diff) + 40) * 1.35)); }
+function failPoints(diff) { return -(10 + 10 * diffOf(diff)); }
 var SCREAMS = ['WHOA-OH', 'HEY!', 'RAAAGH', 'LOUDER!', 'BREAK IT DOWN!', 'ONE MORE TIME!'];
 
 function flagOff(name) {
@@ -144,13 +153,13 @@ function finish(reason) {
   var rate = total ? st.hits / total : 0;
   var res;
   if (rate >= 0.35) {
-    res = { kind: 'score', correct: true, points: Math.min(CAP_EARNED, st.earned),
+    res = { kind: 'score', correct: true, points: Math.min(bandCap(st.ctx.diff), st.earned),
             hpDelta: 0,
             summary: ('FORGE SET ' + st.hits + '/' + total + ' RIFFS C' + st.bestCombo).slice(0, 48) };
     try { st.ctx.audio.p('levelup', { vol: .3 }); } catch (e) {}
     try { st.ctx.fx.flash('rgba(255,106,26,.15)', 150); } catch (e) {}
   } else {
-    res = { kind: 'score', correct: false, points: -30, hpDelta: -6,
+    res = { kind: 'score', correct: false, points: failPoints(st.ctx.diff), hpDelta: -6,
             summary: ('OUT OF TUNE ' + st.hits + '/' + total + ' RIFFS').slice(0, 48) };
     try { st.ctx.audio.p('buzz', { vol: .25 }); } catch (e) {}
   }
