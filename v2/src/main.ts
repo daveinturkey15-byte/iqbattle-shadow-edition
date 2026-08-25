@@ -255,7 +255,7 @@ function deal(): void {
   const takeoverDue = plan.align !== 'good' && r.depth >= 4 && r.depth - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(r.depth, 2654435761)) >>> 0) % 100 < 42;
   const rp = roundPlan(r.seed, r.depth, ALL_FAMILIES.length, TAKEOVERS.length, (d) =>
     plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
-  if (mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 't' + rp.index : 'p' + rp.index, rp.seed, r.timerLen);
+  if (mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen);
   if (mpRole === 'client') { show(root); return; } /* clients mount on the round frame */
   if (rp.kind === 'takeover') { r.lastTakeover = r.depth; dealTakeover(root, rp.index, rp.seed); }
   else dealPuzzle(root, rp.index, rp.seed, r.depth);

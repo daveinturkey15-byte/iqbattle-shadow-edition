@@ -690,13 +690,21 @@ export function createNet(opts: NetOpts = {}): NetApi {
     bus = busFactory(base, myUid);
     bus?.onFrame(onBusFrame);
 
-    const Ctor = await makePeerImpl();
-    if (!Ctor) {
-      role = null;
-      busClose();
-      throw new Error('IQ2.Net: PeerJS unavailable');
-    }
+    // The host registers itself under its STABLE uid ('HOST') immediately —
+    // not under the peer id in the open handler — so the roster is correct
+    // even when the broker/CDN is dead and the room runs bus-only.
+    players.set('HOST', { id: 'HOST', name: clip(displayName || 'HOST'), isHost: true });
+
+    const Ctor = await makePeerImpl().catch(() => null);
     if (role !== 'host') throw new Error('IQ2.Net: session torn down while opening');
+    if (!Ctor) {
+      // BROKERLESS OPEN: no peerjs (CDN down, headless, blocked). Same-browser
+      // play continues on the bus alone; the keepalive sweep keeps re-arming
+      // makePeer so a cross-device leg can appear later without a restart.
+      logEv('peerjs-unavailable', 'err', false);
+      startKeepAlive();
+      return { code: base };
+    }
 
     let attempt = 0;
     let opened = false;
@@ -716,8 +724,6 @@ export function createNet(opts: NetOpts = {}): NetApi {
             bus?.onFrame(onBusFrame);
           }
           code = finalCode;
-          const selfId = String(args[0] ?? id);
-          players.set(selfId, { id: selfId, name: clip(displayName || 'HOST'), isHost: true });
           p.on('connection', (...cargs: unknown[]) => {
             // Script-tag peerjs is untyped; the conn contract is enforced by
             // wireConn's usage — named boundary cast, single point.
@@ -827,10 +833,18 @@ export function createNet(opts: NetOpts = {}): NetApi {
       }
     })();
   }
-
   function tryReconnect(): void {
     if (dead || role !== 'host') return;
-    if (!peer) return;
+    if (!peer) {
+      // Bus-only room (peerjs was unavailable at open): periodically retry
+      // raising the cross-device leg.
+      kaFails++;
+      if (kaFails >= REOPEN_AFTER_FAILS) {
+        kaFails = 0;
+        reopenRoomPeer();
+      }
+      return;
+    }
     if (peer.open) {
       kaFails = 0;
       return;
@@ -938,12 +952,20 @@ export function createNet(opts: NetOpts = {}): NetApi {
       sendHello();
 
       void (async () => {
-        const Ctor = await makePeerImpl();
-        if (settled) return;
-        if (!Ctor || role !== 'client') {
-          settle();
-          teardown();
-          reject(new Error('IQ2.Net: PeerJS unavailable'));
+        // The PeerJS leg is an UPGRADE, not a prerequisite: a dead/slow
+        // broker or CDN must never block a same-browser join that the bus
+        // can complete in milliseconds. The deadline below is the only
+        // failure path; if peerjs lands later the session just gains the
+        // cross-device leg.
+        let Ctor: PeerCtor | null = null;
+        try {
+          Ctor = await makePeerImpl();
+        } catch {
+          Ctor = null;
+        }
+        if (settled || role !== 'client') return;
+        if (!Ctor) {
+          logEv('peerjs-unavailable', 'err', false);
           return;
         }
         const p = new Ctor(null, { debug: 1 });

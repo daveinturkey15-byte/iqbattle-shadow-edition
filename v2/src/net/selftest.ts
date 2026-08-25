@@ -48,8 +48,19 @@ const DUP_P = 0.15; // chance any single delivery happens twice
 class StubWorld {
   rng: () => number;
   peers = new Map<string, PeerStub>();
-  busMembers = new Set<BusStub>();
+  // One hub PER ROOM CODE — real BroadcastChannels are namespaced by name,
+  // so frames must never leak across rooms (two hosts share myUid 'HOST').
+  hubs = new Map<string, Set<BusStub>>();
   scheduled = 0;
+
+  busHub(code: string): Set<BusStub> {
+    let s = this.hubs.get(code);
+    if (!s) {
+      s = new Set<BusStub>();
+      this.hubs.set(code, s);
+    }
+    return s;
+  }
 
   constructor(seed: number) {
     this.rng = mulberry32(seed);
@@ -190,16 +201,18 @@ class PeerStub implements PeerLike {
   }
 }
 
-/** BroadcastChannel stand-in wired to the shared hub (no echo to sender). */
+/** BroadcastChannel stand-in wired to its room's hub (no echo to sender). */
 class BusStub implements BusHandle {
   world: StubWorld;
   readonly myId: string;
+  readonly code: string;
   private cb: ((f: Frame) => void) | null = null;
 
-  constructor(world: StubWorld, myId: string) {
+  constructor(world: StubWorld, code: string, myId: string) {
     this.world = world;
+    this.code = code;
     this.myId = myId;
-    world.busMembers.add(this);
+    world.busHub(code).add(this);
   }
 
   onFrame(cb: (f: Frame) => void): void {
@@ -212,13 +225,13 @@ class BusStub implements BusHandle {
   }
 
   post(frame: Frame): void {
-    for (const m of [...this.world.busMembers]) {
+    for (const m of [...this.world.busHub(this.code)]) {
       if (m !== this) this.world.deliverToBus(m, frame);
     }
   }
 
   close(): void {
-    this.world.busMembers.delete(this);
+    this.world.busHub(this.code).delete(this);
   }
 }
 
@@ -355,7 +368,7 @@ async function transportScenario(): Promise<void> {
   const mkNet = () =>
     createNet({
       makePeer: async () => ctor,
-      busFactory: (_code, myId) => new BusStub(world, myId),
+      busFactory: (_code, myId) => new BusStub(world, _code, myId),
     });
 
   const H = mkNet();
@@ -571,13 +584,53 @@ async function transportScenario(): Promise<void> {
     // Fresh-tab repro: the script tag takes ~seconds on first load; the
     // stub compresses that to 60ms — still far above stub bus latency.
     makePeer: () => new Promise<PeerCtor>((resolve) => setTimeout(() => resolve(ctor), 60)),
-    busFactory: (_code, myId) => new BusStub(world, myId),
+    busFactory: (_code, myId) => new BusStub(world, _code, myId),
   });
   const j4 = await C4.join('RACE', 'EPSILON');
   check(
     'join completes when the host reply outruns the peer constructor',
     Array.isArray(j4.players),
     'players=' + JSON.stringify(j4.players?.length ?? 0),
+  );
+
+  /* ---- brokerless: peerjs never arrives — bus-only host + join ---- */
+  console.log('[brokerless] dead broker/CDN must not block same-browser MP');
+  const noPeer = {
+    makePeer: async (): Promise<PeerCtor | null> => null, // CDN down forever
+    busFactory: (_code: string, myId: string) => new BusStub(world, _code, myId),
+  };
+  const HB = createNet(noPeer);
+  const JB = createNet({ ...noPeer });
+  const hb = await HB.host('LONELY', 'HOSTB');
+  check('host opens WITHOUT peerjs (bus-only room)', hb.code === 'LONELY', hb.code);
+  const seenB = { hSize: 0, jSize: 0 };
+  HB.on('lobby', (m) => {
+    seenB.hSize = Array.isArray(m.players) ? m.players.length : 0;
+  });
+  const jb = await JB.join('LONELY', 'HERMIT');
+  JB.on('lobby', (m) => {
+    seenB.jSize = Array.isArray(m.players) ? m.players.length : 0;
+  });
+  check(
+    'join completes fully brokerless (zero PeerJS involvement)',
+    Array.isArray(jb.players),
+    JSON.stringify(jb.players?.length ?? 0),
+  );
+  // Poke: re-hello makes the bus-only host re-broadcast its roster for our
+  // post-handshake subscribers.
+  JB.send({ t: 'hello', uid: String(JB.myUid()), name: 'HERMIT' });
+  await waitFor('brokerless roster converges at 2', () => seenB.hSize === 2 && seenB.jSize === 2);
+  check('bus-only roster converges to 2', true);
+
+  // Joiner whose peer leg NEVER lands (hung WS handshake): bus carries it.
+  const C5 = createNet({
+    makePeer: () => new Promise<PeerCtor>(() => undefined), // never resolves
+    busFactory: (_code, myId) => new BusStub(world, _code, myId),
+  });
+  const j5 = await C5.join('RACE', 'FROZENLEG');
+  check(
+    'join resolves while the peer leg hangs forever',
+    Array.isArray(j5.players),
   );
 
   console.log('  (stub deliveries scheduled: ' + world.scheduled + ')');
