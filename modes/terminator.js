@@ -172,10 +172,10 @@ function makePattern(rng) {
     }, 'COLOR STEPS FORWARD');
   }
   if (kind === 1) {
-    var shape2 = SHAPES[Math.floor(rng() * SHAPES.length)];
     var col = Math.floor(rng() * 8);
-    base = Math.floor(rng() * 8);       /* 45-deg rotation units */
+    var shape2 = SHAPES[Math.floor(rng() * 4)]; /* square/diamond/tri/hex: rotation is visible (ring is not) */
     step = 1 + Math.floor(rng() * 2);
+    base = Math.floor(rng() * 8);       /* 45-deg rotation units */
     for (i = 0; i < 3; i++) vals.push((base + i * step) % 8);
     return finish(kind, vals, (base + 3 * step) % 8, 8, rng, function (v) {
       return glyphSVG(shape2, col, v * 45, 1);
@@ -258,13 +258,12 @@ var CSS =
   'box-shadow:0 0 4px rgba(255,32,56,.25)}' +
   '@media (prefers-reduced-motion:no-preference){.th-wrap.scan .th-eye{background:#ff2038;' +
   'box-shadow:0 0 14px 3px rgba(255,32,56,.85)}}' +
-  '.th-callout{position:absolute;left:0;right:26px;top:42%;text-align:center;font-size:17px;letter-spacing:.3em;' +
-  'color:#ff2038;text-shadow:0 0 8px rgba(255,32,56,.5);pointer-events:none;opacity:0;' +
+  '.th-callout{position:absolute;left:0;right:26px;top:42%;text-align:center;font-size:19px;letter-spacing:.3em;' +
+  'color:#ff5a76;text-shadow:0 0 10px rgba(255,32,56,.95),0 0 3px #ffb01e;pointer-events:none;opacity:0;' +
   'transition:opacity .12s linear}' +
   '.th-wrap.callout .th-callout{opacity:1}' +
   '.th-foot{font-size:12px;letter-spacing:.14em;color:#e8aab4;min-height:16px}' +
   '@media (prefers-reduced-motion:reduce){.th-callout{transition:none}}';
-
 /* ============================================================
    mount
    ============================================================ */
@@ -364,6 +363,9 @@ function mount(container, ctx) {
     var pointer = { x: -9999, inn: false };
     var solved = 0, catches = 0, dmg = 0;
     var pat = null, patStart = 0, patLocked = false;
+    var nextPatternAt = -1;      /* stage-clock beat: when to deal the next pattern */
+    var doorArmAt = -1;          /* stage-clock beat: escape sequence start */
+    var slamWinAt = -1;          /* stage-clock beat: door-slam resolution */
     var nextScanAt = scanPhase * scanPeriod;
     var lastFlashAt = -1e9;
     var stepAccum = 0;           /* lanes marched since last footstep */
@@ -450,7 +452,7 @@ function mount(container, ctx) {
       banner(slow ? 'TOO SLOW \u00B7 IT GAINS' : 'WRONG \u00B7 IT ADVANCES');
       thud(0.22, false);
       if (pos >= LANES) { catchPlayer(); return; }
-      setTimeout(function () { if (!finished) loadPattern(); }, WRONG_STALL_MS);
+      nextPatternAt = relT + WRONG_STALL_MS;
       pauseUntil = relT + WRONG_STALL_MS;
     }
     function solve(fast) {
@@ -461,12 +463,11 @@ function mount(container, ctx) {
         pauseUntil = relT + PUSHBACK_STALL_MS;
         banner('SHOVED BACK \u00B7 SOLVED ' + solved + '/' + P.need);
         thud(0.18, false);
-        if (solved >= P.need) { setTimeout(escapeDoor, 500); return; }
       } else {
         banner('SOLVED ' + solved + '/' + P.need + ' \u00B7 IT KEEPS COMING');
-        if (solved >= P.need) { setTimeout(escapeDoor, 500); return; }
       }
-      setTimeout(function () { if (!finished) loadPattern(); }, fast ? 450 : WRONG_STALL_MS);
+      if (solved >= P.need) { doorArmAt = relT + 500; return; }
+      nextPatternAt = relT + (fast ? 450 : WRONG_STALL_MS);
       if (!fast) pauseUntil = relT + WRONG_STALL_MS;
     }
     function choose(idx) {
@@ -488,23 +489,20 @@ function mount(container, ctx) {
       dmg += CATCH_HP;
       pos = LANES - RESET_LANES;             /* two lanes back — never death */
       pauseUntil = relT + CATCH_STALL_MS;
+      nextPatternAt = relT + CATCH_STALL_MS;
       glitch(); shakeIt();
       eyeFlash(true);
       thud(0.45, true);
       banner('CAUGHT \u00B7 HP \u2212' + CATCH_HP);
       banner('IT COMES BACK.');
       calloutText('IT COMES BACK.', 1300);
-      setTimeout(function () { if (!finished) loadPattern(); }, CATCH_STALL_MS);
     }
     function escapeDoor() {
       if (finished) return;
       calloutText('\u25B8 DOOR SLAM \u25C2', 900);
       thud(0.5, true);
       banner('DOOR SLAM \u00B7 ESCAPED');
-      setTimeout(function () {
-        resolveOnce({ kind: 'score', correct: true, points: WIN_POINTS,
-          hpDelta: -dmg, summary: 'DOOR SLAM \u00B7 ESCAPED THE HUNT' });
-      }, 850);
+      slamWinAt = relT + 850;
     }
     function surviveExit() {
       resolveOnce({ kind: 'score', correct: true, points: SURVIVE_POINTS,
@@ -531,6 +529,9 @@ function mount(container, ctx) {
         trackTop: gateH, trackBot: h - safeH, laneH: (h - safeH - gateH) / LANES };
     }
     function step(dtSec) {
+      /* stage-clock beats: deal next pattern, arm the escape door */
+      if (nextPatternAt >= 0 && relT >= nextPatternAt) { nextPatternAt = -1; loadPattern(); }
+      if (doorArmAt >= 0 && relT >= doorArmAt) { doorArmAt = -1; escapeDoor(); }
       var marching = relT >= pauseUntil;
       if (marching) {
         var prev = pos;
@@ -653,6 +654,11 @@ function mount(container, ctx) {
       relT += dtMs;
       if (relT >= pauseUntil) marchClock += dtMs;
       step(dtMs / 1000);
+      if (slamWinAt >= 0 && relT >= slamWinAt) {
+        resolveOnce({ kind: 'score', correct: true, points: WIN_POINTS,
+          hpDelta: -dmg, summary: 'DOOR SLAM \u00B7 ESCAPED THE HUNT' });
+        return;
+      }
       if (relT >= budgetMs || ctx.expired) surviveExit();
     }
 

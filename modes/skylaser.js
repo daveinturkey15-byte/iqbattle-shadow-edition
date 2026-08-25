@@ -620,7 +620,7 @@
           }
 
           function drawHero(g, hx, hy, saluting, tSec) {
-            var s = Math.max(14, g.W * 0.032);
+            var s = Math.max(14, canvas.width * 0.032); // NOTE: canvas, not ctx — no .W
             // cape (flutter gated by motion)
             var flap = motion ? Math.sin(tSec * 5) * s * 0.16 : 0;
             g.fillStyle = PAL.danger;

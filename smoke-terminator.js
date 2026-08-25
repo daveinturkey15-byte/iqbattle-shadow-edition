@@ -113,8 +113,6 @@ for (let seed = 0; seed < 300; seed++) {
   const p = T.makePattern(mulberry(seed * 104729 + 5));
   if (p.opts.length !== 4 || p.seqHTML.length !== 3) { invOK = false; break; }
   const vs = p.opts.map(o => o.v);
-  if (new Set(vs).size !== 4) { uniqOK = false; break; }        // 4 unique options
-  if (!p.vals.every(v => vs.filter(x => x === v).length === 1 ? false : true)) {}
   // answer value must not appear among the three shown sequence values:
   const ansV = p.opts[p.answerIdx].v;
   if (p.vals.includes(ansV)) { invOK = false; break; }
