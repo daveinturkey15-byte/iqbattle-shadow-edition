@@ -305,12 +305,25 @@ export class MpSession {
   private roster: PlayerRec[] = [];
   private roomLabel: string | null = null;
   private gone = false;
+  /** Last match-state frames — replayed to late joiners (mid-game catch-up). */
+  private lastBegin: Frame | null = null;
+  private lastRound: Frame | null = null;
 
-  constructor(net: NetApi, role: Role, handlers: MpHandlers = {}) {
+  /**
+   * @param initialRoster seed for the lobby screen — the handshake's roster
+   *   snapshot fired BEFORE this session subscribed, so it must be carried in
+   *   explicitly (joiners pass the resolved join.players).
+   */
+  constructor(
+    net: NetApi,
+    role: Role,
+    handlers: MpHandlers = {},
+    initialRoster: PlayerRec[] = [],
+  ) {
     this.net = net;
     this.role = role;
     this.handlers = handlers;
-
+    this.roster = [...initialRoster];
     const listen = (type: string, fn: (f: Frame) => MpEvent | null): void => {
       this.offs.push(
         net.on(type, (f) => {
@@ -409,6 +422,19 @@ export class MpSession {
       return { t: 'peer-join', id: asStr(f.id), name: asStr(f.name) || undefined };
     });
 
+    // Late joiner catch-up + room-name race-proofing. The joiner fires this
+    // automatically on its first lobby event; the host answers with a meta
+    // push AND a unicast replay of begin + the current round, so a client
+    // that joined mid-game mounts the exact challenge in flight.
+    listen('metaReq', (f) => {
+      if (this.role !== 'host') return null;
+      const uid = asStr(f.uid, asStr(f.src, '?'));
+      this.pushMeta();
+      if (this.lastBegin) this.net.unicast(uid, { ...this.lastBegin });
+      if (this.lastRound) this.net.unicast(uid, { ...this.lastRound });
+      return null;
+    });
+
     listen('peer-leave', (f) => ({
       t: 'peer-leave',
       id: asStr(f.id, asStr(f.src, '?')),
@@ -467,24 +493,28 @@ export class MpSession {
   begin(timerSec: number, lms: boolean, rn: string, runSeed: number): void {
     if (this.role !== 'host') return;
     this.setRoomName(rn);
-    this.net.broadcast({
+    const frame: Frame = {
       t: 'begin',
       timer: Math.max(TIMER_MIN, Math.min(TIMER_MAX, Math.round(timerSec))),
       lms: lms ? 1 : 0,
       rn: String(rn ?? '').slice(0, 24),
       sd: runSeed >>> 0,
-    });
+    };
+    this.net.broadcast(frame);
+    this.lastBegin = { ...frame }; // kept for late-joiner catch-up
   }
 
   /** round{n,stg{ id,seed},timerLen} — deals depth n identically everywhere. */
   round(n: number, stgId: string, seed: number, timerLen: number): void {
     if (this.role !== 'host') return;
-    this.net.broadcast({
+    const frame: Frame = {
       t: 'round',
       n: Math.round(n),
       stg: { id: String(stgId).slice(0, 32), seed: seed >>> 0 },
       timerLen: Math.max(TIMER_MIN, Math.min(TIMER_MAX, Math.round(timerLen))),
-    });
+    };
+    this.net.broadcast(frame);
+    this.lastRound = { ...frame }; // late joiners mount THIS round on arrival
   }
 
   /** reveal{n,answer,scores} — the ONLY frame allowed to carry an answer. */
@@ -601,7 +631,15 @@ async function buildMpScreen(
 }
 
 
-/** Host a room: creates the session, renders the live-roster lobby screen. */
+/**
+ * Host a room: creates the session, renders the live-roster lobby screen.
+ *
+ * ORDERING CONTRACT (regression-hardened): net.host()/net.join() call
+ * teardown() on entry, which CLEARS every handler registered before them —
+ * so MpSession (a pure bundle of net.on() subscriptions) MUST be constructed
+ * only AFTER the handshake resolves. Building it first silently dead-ends
+ * every wireMain handler while frames still reach net2.emit.
+ */
 export const MPHost = {
   async start(
     code: string,
@@ -610,10 +648,12 @@ export const MPHost = {
     opts: MpUiOpts = {},
   ): Promise<MpStartResult> {
     const net = createNet();
-    const mp = new MpSession(net, 'host');
     const rn = roomName || name + "'s Room";
-    mp.setRoomName(rn);
     const hosted = await net.host(code, name);
+    const mp = new MpSession(net, 'host', {}, [
+      { id: 'HOST', name: name || 'HOST', isHost: true },
+    ]);
+    mp.setRoomName(rn);
     const screen = await buildMpScreen(mp, rn, hosted.code, true, opts);
     return {
       mp,
@@ -631,8 +671,8 @@ export const MPHost = {
 export const MPJoin = {
   async start(code: string, name: string, opts: MpUiOpts = {}): Promise<MpStartResult> {
     const net = createNet();
-    const mp = new MpSession(net, 'client');
-    await net.join(code, name);
+    const joined = await net.join(code, name); // BEFORE MpSession — see note above
+    const mp = new MpSession(net, 'client', {}, joined.players);
     // The room displays under the HOST's name (roster seat 0) until the
     // meta/metaReq exchange delivers the real room label.
     const rn = (mp.names()[0] ?? name) + "'s Room";

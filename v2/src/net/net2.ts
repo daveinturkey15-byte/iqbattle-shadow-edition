@@ -362,6 +362,10 @@ const MAX_ID_RETRIES = 8; // iqvs-CODE, iqvs-CODE2, … before giving up
 const ID_CHARS = /^[A-Z0-9]{3,12}$/;
 const LOG_CAP = 20;
 const WM_HOLE_CAP = 32768; // valve >> any real reorder depth (bursts ~1e3)
+const JOIN_TIMEOUT_MS = 25000; // overall handshake deadline (was 15s — too tight for a rebuilding broker leg)
+const JOIN_RETRY_MS = 700; // continuous reconnect cadence until the deadline
+const MAX_JOIN_TRIES = 48; // backstop ~= JOIN_TIMEOUT_MS / JOIN_RETRY_MS
+const KEEPALIVE_MS = 5000; // host broker-leg sweep while the room is open
 
 export interface NetOpts {
   /** Override the PeerJS constructor source (tests inject a stub). */
@@ -377,6 +381,8 @@ export interface NetApi {
   send(obj: Frame): void;
   broadcast(obj: Frame): boolean;
   kick(id: string): boolean;
+  /** host→one client, both transports (bus copy carries `to: id`). */
+  unicast(id: string, obj: Frame): void;
   leave(): void;
   myUid(): string | null;
   debugLog(): LogEv[];
@@ -546,6 +552,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
 
   function acceptClientFrame(msg: Frame): void {
     if (msg.t === 'hello') return;
+    if (msg.to && msg.to !== myUid) return; // targeted unicast for someone else
     if (msg._sq != null && seenSq(msg._sq)) return;
     emit(msg);
   }
@@ -604,6 +611,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
   }
 
   function teardown(): void {
+    stopKeepAlive();
     retryJoinConn = null;
     dead = true;
     joining = false;
@@ -687,7 +695,8 @@ export function createNet(opts: NetOpts = {}): NetApi {
     if (role !== 'host') throw new Error('IQ2.Net: session torn down while opening');
 
     let attempt = 0;
-    return new Promise<{ code: string }>((resolve, reject) => {
+    let opened = false;
+    const openedRoom = await new Promise<{ code: string }>((resolve, reject) => {
       const tryOpen = (): void => {
         attempt++;
         const id = 'iqvs-' + base + (attempt > 1 ? String(attempt) : '');
@@ -712,6 +721,10 @@ export function createNet(opts: NetOpts = {}): NetApi {
             if (conn && typeof conn === 'object') wireConn(conn);
           });
           p.on('disconnected', () => {
+            // Silent broker drop (idle tab, heartbeat loss): reconnect at
+            // once; the keepalive sweep below retries until it sticks. The
+            // bus stays authoritative either way.
+            logEv('peer-disconnected', 'err', false);
             try {
               p.reconnect();
             } catch {
@@ -719,32 +732,78 @@ export function createNet(opts: NetOpts = {}): NetApi {
             }
           });
           p.on('close', () => {
-            if (!dead) role = null;
+            // v1 nulled `role` here, which killed BOTH transports when the
+            // broker connection died on an idle host — same-machine joiners
+            // could then never reach us (not even over BroadcastChannel).
+            // The room must survive on the bus alone; keep role + bus and
+            // let the keepalive sweep rebuild the broker leg.
+            logEv('peer-closed', 'err', false);
+            if (!dead) emit({ t: 'net-error', reason: 'peer-closed' });
           });
+          opened = true;
           resolve({ code: finalCode });
         });
         p.on('error', (err: unknown) => {
           const type = errorType(err);
           logEv(type || 'peer-error', 'err', false);
-          if ((type === 'unavailable-id' || type === 'invalid-id') && attempt < MAX_ID_RETRIES) {
-            try {
-              p.destroy();
-            } catch {
-              /* noop */
+          if (!opened) {
+            // Still opening: id collisions retry with a suffix; anything
+            // else fails the host() promise.
+            if ((type === 'unavailable-id' || type === 'invalid-id') && attempt < MAX_ID_RETRIES) {
+              try {
+                p.destroy();
+              } catch {
+                /* noop */
+              }
+              tryOpen(); // id taken -> next suffix
+            } else {
+              role = null;
+              busClose();
+              stopKeepAlive();
+              reject(err instanceof Error ? err : new Error(String(type ?? 'peer-error')));
             }
-            tryOpen(); // id taken -> next suffix
-          } else if (!p.open) {
-            role = null;
-            busClose();
-            reject(err instanceof Error ? err : new Error(String(type ?? 'peer-error')));
-          } else {
-            emit({ t: 'end', reason: 'net-error', detail: type }); // mid-session hiccup
+            return;
           }
+          // Mid-session broker hiccup: NEVER tear down the session — the bus
+          // is still authoritative and keepalive will rebuild this leg.
+          emit({ t: 'net-error', reason: 'net-error', detail: type });
+          tryReconnect();
         });
       };
       tryOpen();
     });
+    startKeepAlive();
+    return openedRoom;
   }
+
+  /* ---- broker keepalive ---------------------------------------------------- */
+  // PeerJS heartbeats can silently drop on idle/throttled tabs. A periodic
+  // sweep rebuilds the broker leg; the bus keeps the room alive meanwhile.
+  let keepAliveTimer: NodeJS.Timeout | number | null = null;
+
+  function tryReconnect(): void {
+    if (dead || !peer) return;
+    if (peer.open) return;
+    try {
+      peer.reconnect();
+      logEv('keepalive-reconnect', 'out', true);
+    } catch {
+      /* destroyed — sweep retries are harmless no-ops */
+    }
+  }
+
+  function startKeepAlive(): void {
+    stopKeepAlive();
+    keepAliveTimer = setInterval(tryReconnect, KEEPALIVE_MS);
+  }
+
+  function stopKeepAlive(): void {
+    if (keepAliveTimer) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
+  }
+
 
   /* ---- join ------------------------------------------------------------------ */
   async function join(roomCode: string, displayName: string): Promise<{ players: PlayerRec[] }> {
@@ -790,7 +849,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
           teardown();
           reject(new Error('IQ2.Net: join timeout'));
         }
-      }, 15000);
+      }, JOIN_TIMEOUT_MS);
       const settle = (): void => {
         if (settled) return;
         settled = true;
@@ -820,10 +879,14 @@ export function createNet(opts: NetOpts = {}): NetApi {
         });
       };
       const scheduleRetry = (): void => {
-        if (settled || tryN >= 3) return; // exhausted -> 15s failTimer rejects
+        // Retry CONTINUOUSLY until the deadline (not a fixed 3 attempts):
+        // the host's broker leg may be rebuilding via keepalive, and each
+        // retry also re-fires the bus hello path implicitly. The failTimer
+        // is the only give-up point.
+        if (settled || tryN >= MAX_JOIN_TRIES) return;
         setTimeout(() => {
-          if (!settled) attemptConn();
-        }, 600);
+          if (!settled && role === 'client') attemptConn();
+        }, JOIN_RETRY_MS);
       };
       retryJoinConn = scheduleRetry;
 
@@ -912,6 +975,19 @@ export function createNet(opts: NetOpts = {}): NetApi {
     return anyOpen;
   }
 
+  /** host→one client on BOTH transports; others never see the frame. */
+  function unicast(id: string, obj: Frame): void {
+    if (role !== 'host') return;
+    try {
+      const c = conns.get(id);
+      if (c && c.open) c.send(obj);
+      bus?.post(stampNonce(Object.assign({}, obj, { to: id })));
+      logEv(obj?.t ?? 'unicast', 'out', !!(c && c.open));
+    } catch {
+      /* a broken pipe never kills the host */
+    }
+  }
+
   function kick(id: string): boolean {
     try {
       if (role !== 'host') return false;
@@ -962,6 +1038,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
     send,
     broadcast,
     kick,
+    unicast,
     leave,
     myUid: () => myUid, // stable uid — scoring keys by this, NEVER by name
     debugLog: () => logRing.slice(),

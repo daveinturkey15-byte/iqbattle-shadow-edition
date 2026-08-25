@@ -151,7 +151,8 @@ function mountPlan(rp: { kind: string; index: number }, seed: number): void {
 
 function mountRemoteRound(e: MpEvent): void {
   if (e.t !== 'round') return;
-  const rp = parseStg(e.stg as unknown as string);
+  const stgId = typeof e.stg === 'string' ? e.stg : e.stg.id;
+  const rp = parseStg(stgId);
   if (!rp) return;
   const sd = (e as unknown as { seed: number }).seed ?? 0;
   if (!run) startRun(myName, 'Room', e.timerLen, sd);

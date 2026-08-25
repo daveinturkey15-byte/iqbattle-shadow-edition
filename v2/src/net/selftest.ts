@@ -166,13 +166,27 @@ class PeerStub implements PeerLike {
   }
 
   reconnect(): void {
-    /* registry-based stub: never disconnects */
+    // Registry-based stub "rebuilds the broker leg": re-register + open.
+    this.open = true;
+    if (this.id && !this.destroyed && !this.world.peers.has(this.id)) {
+      this.world.peers.set(this.id, this);
+    }
   }
 
+  private destroyed = false;
+
   destroy(): void {
+    this.destroyed = true;
     this.open = false;
     this.cbs.clear();
     if (this.id) this.world.peers.delete(this.id);
+  }
+
+  /** Simulate a silent broker drop on a live peer (idle host repro). */
+  simulateBrokerDeath(): void {
+    if (this.id) this.world.peers.delete(this.id);
+    this.open = false;
+    this.fire('close', []);
   }
 }
 
@@ -503,6 +517,53 @@ async function transportScenario(): Promise<void> {
     cliEv.join(','),
   );
   check('host sr relay observed exactly once', hostEv.filter((t) => t === 'sr').length === 1, hostEv.join(','));
+
+  /* ---- resilience: host broker leg dies mid-lobby (idle-host repro) ---- */
+  console.log('[resilience] host broker death → bus-only join must succeed');
+  const hostPeer = world.peers.get('iqvs-RACE') ?? world.peers.get('iqvs-RACE2');
+  check('host peer currently registered with broker', hostPeer != null);
+  hostPeer?.simulateBrokerDeath();
+
+  const C3 = mkNet();
+  const seen3 = { lobbySize: 0, roundN: -1 };
+  const j3 = await C3.join('RACE', 'GAMMA'); // peer.connect now dead — bus must carry it
+  check(
+    'join resolves while host has NO broker connection',
+    Array.isArray(j3.players),
+    'players=' + JSON.stringify(j3.players),
+  );
+  C3.on('lobby', (m) => {
+    seen3.lobbySize = Array.isArray(m.players) ? m.players.length : 0;
+  });
+  C3.on('round', (m) => {
+    if (typeof m.n === 'number') seen3.roundN = m.n;
+  });
+
+  // Mid-game catch-up: GAMMA joined AFTER begin/round fired. Its MpSession's
+  // first lobby event triggers metaReq; the host must unicast the begin
+  // frame AND the in-flight round so the joiner mounts the live challenge.
+  const m3 = new MpSession(C3, 'client', {}, j3.players);
+  const caught = { begin: false, round: false };
+  m3.subscribe((e) => {
+    if (e.t === 'begin' && e.sd === 0x1234abcd) caught.begin = true;
+    if (e.t === 'round' && e.n === 3 && e.stg.seed === 999) caught.round = true;
+  });
+
+  // Poke the roster so post-subscribe observers see convergence at 4.
+  C1.send({ t: 'hello', uid: String(C1.myUid()), name: 'ALPHA' });
+  await waitFor('roster converges to 4 everywhere', () => hc.lastLobbySize === 4 && c2.lastLobbySize === 4 && seen3.lobbySize === 4);
+  check('4-player roster converges over surviving transport', true);
+
+  H.broadcast({ t: 'round', n: 600 });
+  await waitFor('post-death broadcast reaches GAMMA', () => seen3.roundN === 600);
+  check('host still authoritative after broker death', seen3.roundN === 600);
+
+  await waitFor('mid-game catch-up delivered to GAMMA', () => caught.begin && caught.round);
+  check(
+    'late joiner received begin + in-flight round via unicast replay',
+    caught.begin && caught.round,
+    JSON.stringify(caught),
+  );
 
   console.log('  (stub deliveries scheduled: ' + world.scheduled + ')');
 }
