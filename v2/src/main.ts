@@ -3,14 +3,29 @@ import { T, STAGE_W, STAGE_H } from './theme.ts';
 import { buildGameScene, panel, text } from './scenes/game.ts';
 import { FAMILIES } from './puzzles/families.ts';
 import { FAMILIES2 } from './puzzles/families2.ts';
+import { FAMILIES3 } from './puzzles/families3.ts';
 import { buildLanding } from './scenes/landing.ts';
 import { buildLobby } from './scenes/lobby.ts';
 import { Shell } from './scenes/shell.ts';
 import { planArc, type ArcPlan } from './arc-data.ts';
 import { applyArc, sanctuaryOn, sanctuaryOff, layerBanner } from './scenes/arc.ts';
+import { initAudio, sfx } from './audio/audio.ts';
+import { setAlignment, setLayer, sting } from './audio/beds.ts';
+import { setLayer as setDreadLayer } from './audio/beds.ts';
+import { initShadow, say, announce, noteRound } from './shadow/shadow.ts';
+import { maybeFate } from './fate/fate.ts';
+import { emeraldPick, buildInterlude } from './scenes/interlude.ts';
 import { mountRedLight, type StageResult } from './scenes/takeovers/redlight.ts';
 import { mountTidePool } from './scenes/takeovers/tidepool.ts';
 import { mountSerpent } from './scenes/takeovers/serpent.ts';
+import { mountFloorFall } from './scenes/takeovers/floorfall.ts';
+import { mountHunterDodge } from './scenes/takeovers/hunterdodge.ts';
+import { mountLaserStorm } from './scenes/takeovers/laserstorm.ts';
+import { mountDroneDodge } from './scenes/takeovers/dronedodge.ts';
+import { mountSaberClash } from './scenes/takeovers/saberclash.ts';
+import { mountSlots } from './scenes/takeovers/slots.ts';
+import { mountSlimeGallery } from './scenes/takeovers/slimegallery.ts';
+import { mountWell } from './scenes/takeovers/well.ts';
 
 const app = new Application();
 await app.init({ width: STAGE_W, height: STAGE_H, background: T.bg, antialias: true });
@@ -23,8 +38,8 @@ function fit(): void {
 }
 window.addEventListener('resize', fit); fit();
 
-const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2];
-const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent];
+const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3];
+const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell];
 
 function code5(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -32,22 +47,35 @@ function code5(): string {
   for (let i = 0; i < 5; i++) c += chars[Math.floor(Math.random() * chars.length)];
   return c;
 }
+function mulberry(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 type Screen = Container | null;
 let current: Screen = null;
-
 function show(s: Screen): void {
   if (current) { app.stage.removeChild(current); current.destroy({ children: true }); }
   current = s;
   if (s) app.stage.addChild(s);
 }
+function toastNow(root: Container, msg: string, color: string): void {
+  const bar = panel(root, 40, 820, 920, 40);
+  text(bar, msg.slice(0, 90), 16, 10, 15, color, true);
+}
 
-/* ---------- landing ---------- */
+/* ---------- landing / lobby ---------- */
 function toLanding(): void {
+  initAudio();
   show(buildLanding({
     onCreateRoom: (name, roomName) => toLobby(name || 'PLAYER', roomName),
-    onHowToPlay: () => toast('HOW TO PLAY — spot the rule across rows and columns; one tile completes it. Pick fast: speed pays.'),
-    onSignIn: () => toast('NO ACCOUNTS. NO MERCY.'),
+    onHowToPlay: () => toastNow(current ?? new Container(), 'Spot the rule across rows and columns; one tile completes it. Speed pays.', T.accentB),
+    onSignIn: () => toastNow(current ?? new Container(), 'NO ACCOUNTS. NO MERCY.', T.muted),
   }));
 }
 
@@ -66,27 +94,24 @@ interface Run {
   name: string; roomName: string; timerLen: number;
   seed: number; plan: ArcPlan[];
   depth: number; hp: number; score: number; streak: number;
-  prevAlign: string | null;
+  prevAlign: string | null; emeralds: string[]; lastTakeover: number;
 }
 let run: Run | null = null;
-let shell: Shell | null = null;
 let lastLayer = 0;
 
-function toast(msg: string): void {
-  import('./scenes/shell.ts').then(m => { if (current) m.toast(current, msg, 'info'); });
-}
-
 function startRun(name: string, roomName: string, timerLen: number): void {
-  const seed = (Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1);
-  run = { name, roomName, timerLen, seed, plan: planArc(seed), depth: 1, hp: 100, score: 0, streak: 0, prevAlign: null };
+  const seed = ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1)) >>> 0;
+  run = { name, roomName, timerLen, seed, plan: planArc(seed), depth: 1, hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99 };
   lastLayer = 0;
+  initShadow(app.stage);
   deal();
 }
 
 function endRun(): void {
   const r = run!;
+  sfx(r.hp > 0 ? 'laugh' : 'scream');
   const root = new Container();
-  const bg = panel(root, 0, 0, STAGE_W, STAGE_H);
+  panel(root, 0, 0, STAGE_W, STAGE_H);
   text(root, 'MATCH TERMINATED', STAGE_W / 2 - 120, 260, 20, T.muted, true);
   text(root, `DEPTH ${r.depth - 1} · SCORE ${r.score}`, STAGE_W / 2 - 150, 320, 42, T.ink, true);
   const again = panel(root, STAGE_W / 2 - 260, 480, 240, 64);
@@ -103,63 +128,80 @@ function endRun(): void {
 /* ---------- depth dealing ---------- */
 function deal(): void {
   const r = run!;
-  if (r.hp <= 0) { endRun(); return; }
-  if (r.depth > r.plan.length) { endRun(); return; }
+  if (r.hp <= 0 || r.depth > r.plan.length) { endRun(); return; }
   const plan = r.plan[r.depth - 1];
   const root = new Container();
 
-  shell = Shell.attach(root,{
+  Shell.attach(root, {
     onLobby: () => { run = null; toLanding(); },
     roomTitle: (r.roomName || 'PRIVATE ROOM') + ' · DEPTH ' + r.depth,
     onLeave: () => { run = null; toLanding(); },
   });
 
-  // corruption arc tokens + sanctuary flip
   applyArc(root, plan);
   if (plan.sanctuary) sanctuaryOn(root); else sanctuaryOff(root);
 
-  // layer banner on deepening
   if (plan.align !== 'good' && plan.layer > lastLayer && plan.layer >= 2) {
     const spec = layerBanner(root, plan.layer);
     text(root, spec.text, spec.x - 160, 120, 26, T.bad, true);
+    say('whisper', {});
   }
-  lastLayer = plan.layer;
-
-  // pain beat on alignment flips
-  if (r.prevAlign && plan.align !== r.prevAlign && plan.align !== 'good') {
-    text(root, 'PAIN — THE PLAN SHIFTS', STAGE_W / 2 - 160, 140, 18, T.bad, true);
-  }
+  setDreadLayer(plan.align === 'good' ? 0 : plan.layer);
+  if (plan.align !== r.prevAlign && r.prevAlign !== null) sting(plan.align === 'good' ? 'heal' : 'pain');
+  setAlignment(plan.align === 'chaotic' ? 'chaotic' : plan.align);
+  noteRound(plan.align, plan.layer, plan.sanctuary ? 1 : 0);
   r.prevAlign = plan.align;
 
-  const takeoverDue = plan.align !== 'good' && r.depth >= 4 && ((r.seed ^ (r.depth * 2654435761)) >>> 0) % 100 < 42;
-  if (takeoverDue) {
-    dealTakeover(root, plan);
-  } else {
-    dealPuzzle(root, plan);
+  // emerald interlude every 4th depth
+  if (r.depth % 4 === 0 && r.depth > 1) {
+    const offers = emeraldPick((r.seed ^ Math.imul(r.depth, 7919)) >>> 0, r.emeralds);
+    if (offers.length) {
+      const pickRoot = buildInterlude(offers, (id) => {
+        r.emeralds.push(id);
+        toastNow(root, 'THE ' + id.toUpperCase().replace('_', ' ') + ' IS YOURS', T.gold);
+        sfx('levelup');
+        setTimeout(() => { r.depth++; deal(); }, 900);
+      });
+      root.addChild(pickRoot);
+      show(root);
+      return;
+    }
   }
+
+  // fate roll (hostile/neutral flavor events)
+  const fate = maybeFate({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA7E)) >>> 0), hp: r.hp, seed: r.seed });
+  if (fate) {
+    if (fate.bannerText) toastNow(root, fate.bannerText, T.gold);
+    if (typeof fate.timerDelta === 'number' && fate.timerDelta < 0) r.hp -= 0; // timer handled per-scene
+  }
+
+  const takeoverDue = plan.align !== 'good' && r.depth >= 4 && r.depth - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(r.depth, 2654435761)) >>> 0) % 100 < 42;
+  if (takeoverDue) { r.lastTakeover = r.depth; dealTakeover(root, plan); }
+  else dealPuzzle(root, plan);
   show(root);
 }
 
 function dealTakeover(root: Container, plan: ArcPlan): void {
   const r = run!;
-  const kind = ((r.seed ^ (r.depth * 97)) >>> 0) % 3;
-  const mount = TAKEOVERS[kind];
+  const idx = ((r.seed ^ Math.imul(r.depth, 97)) >>> 0) % TAKEOVERS.length;
+  announce(TAKEOVER_NAMES[idx]);
   const box = new Container();
   box.x = 40; box.y = 164;
   root.addChild(box);
-  const t0 = performance.now();
+  const mount = TAKEOVERS[idx];
   mount({
-    depth: r.depth, seed: (r.seed ^ (r.depth * 0x9E37)) >>> 0, timerLen: r.timerLen,
-    container: box, rng: mulberry((r.seed ^ (r.depth * 0x9E37)) >>> 0),
+    depth: r.depth, seed: (r.seed ^ Math.imul(r.depth, 0x9E37)) >>> 0, timerLen: r.timerLen,
+    container: box, rng: mulberry((r.seed ^ Math.imul(r.depth, 0x9E37)) >>> 0),
     onDone: (res: StageResult) => {
       r.score = Math.max(0, r.score + res.points);
       r.hp = Math.max(0, Math.min(100, r.hp + res.hpDelta));
+      if (res.correct === true) { r.streak++; say('right', {}); } else if (res.correct === false) { r.streak = 0; say('wrong', {}); }
       toastNow(root, res.summary, res.correct === true ? T.good : res.correct === false ? T.bad : T.gold);
       setTimeout(() => { r.depth++; deal(); }, 1500);
-      void t0;
     },
   });
 }
+const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL'];
 
 function dealPuzzle(root: Container, plan: ArcPlan): void {
   const r = run!;
@@ -171,15 +213,22 @@ function dealPuzzle(root: Container, plan: ArcPlan): void {
 
   const scene = buildGameScene(p, (idx, correct) => {
     const diffV = diff;
+    const midas = fateMidasActive();
     if (correct) {
       r.streak++;
-      r.score += 100 * diffV + 40 + (r.streak - 1) * 20;
+      let pts = 100 * diffV + 40 + (r.streak - 1) * 20;
+      if (midas) pts = Math.round(pts * 1.5);
+      r.score += pts;
       if (plan.sanctuary) r.hp = Math.min(100, r.hp + 20);
-      toastNow(root, 'CORRECT — ' + p.rule, T.good);
+      sfx('chime');
+      say('right', {});
+      toastNow(root, (midas ? 'MIDAS · ' : '') + '+' + pts + ' — ' + p.rule, T.good);
     } else {
       r.streak = 0;
       r.score = Math.max(0, r.score - 40);
       r.hp = Math.max(0, r.hp - 12);
+      sting('pain');
+      say('wrong', {});
       toastNow(root, 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
     }
     setTimeout(() => { r.depth++; deal(); }, 1400);
@@ -187,19 +236,10 @@ function dealPuzzle(root: Container, plan: ArcPlan): void {
   root.addChild(scene);
 }
 
-function toastNow(root: Container, msg: string, color: string): void {
-  const bar = panel(root, 40, 820, 920, 40);
-  text(bar, msg.slice(0, 90), 16, 10, 15, color, true);
-}
-
-function mulberry(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+function fateMidasActive(): boolean {
+  // fate.ts owns its state; midas is expressed as a banner in v2 port —
+  // treat the most recent hostile round's fate as active for one answer.
+  return false; // wired via fate modifiers in a later gauntlet pass
 }
 
 toLanding();

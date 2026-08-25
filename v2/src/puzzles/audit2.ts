@@ -1,6 +1,6 @@
 /**
  * Gauntlet gate — independent solver audit for EVERY puzzle family
- * (v1 set from families.ts + v2 set from families2.ts).
+ * (v1 set from families.ts + v2 set from families2.ts + wave-3 set from families3.ts).
  *
  * Run directly with node (type stripping):
  *   node src/puzzles/audit2.ts
@@ -31,6 +31,7 @@ function key(prims: unknown[]): string {
 interface FamilyModules {
   FAMILIES: Family[];
   FAMILIES2: Family[];
+  FAMILIES3: Family[];
 }
 
 /**
@@ -49,6 +50,7 @@ function loadFamilies(): FamilyModules {
     ['glyphs.ts', resolve(here, '../glyphs.ts')],
     ['families.ts', join(here, 'families.ts')],
     ['families2.ts', join(here, 'families2.ts')],
+    ['families3.ts', join(here, 'families3.ts')],
   ];
   for (const [name, path] of sources) {
     const src = readFileSync(path, 'utf8');
@@ -66,7 +68,8 @@ function loadFamilies(): FamilyModules {
   const req = createRequire(join(outDir, 'entry.js'));
   const families = req('./families.js');
   const families2 = req('./families2.js');
-  return { FAMILIES: families.FAMILIES, FAMILIES2: families2.FAMILIES2 };
+  const families3 = req('./families3.js');
+  return { FAMILIES: families.FAMILIES, FAMILIES2: families2.FAMILIES2, FAMILIES3: families3.FAMILIES3 };
 }
 
 function auditFamily(f: Family, hue: string): string[] {
@@ -121,7 +124,7 @@ function auditFamily(f: Family, hue: string): string[] {
 export function runAudit(): boolean {
   const hue = '#d4a017';
   const mods = loadFamilies();
-  const all = [...mods.FAMILIES, ...mods.FAMILIES2];
+  const all = [...mods.FAMILIES, ...mods.FAMILIES2, ...mods.FAMILIES3];
   console.log(`auditing ${all.length} families x 30 seeds x diff 1..5 @ hue ${hue}`);
   const errors = all.flatMap(f => auditFamily(f, hue));
   if (errors.length > 0) {
