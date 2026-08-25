@@ -252,6 +252,8 @@
         // replayed frame whose original is itself still out-of-order would be
         // accepted twice — exactly the D5 duplication this table exists to kill.
         if (num <= w.hi || w.hole[num]) return true;
+        w.hole[num] = 1; w.hc++;
+        while (w.hole[w.hi + 1]) { delete w.hole[w.hi + 1]; w.hc--; w.hi++; }
         // Memory guard ONLY: a sender that dies mid-stream could otherwise pin
         // holes forever. Clearing needs >32k frames concurrently out of order —
         // unreachable in a browser tab (a full round burst is ~1e3 frames).

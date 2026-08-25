@@ -27,6 +27,8 @@
  * drained (zero churn over 2 further poll ticks) and bounded.
  *
  * Run: node research/net-transport-proof.js     (exit 0 = EXTINCT)
+ * Debug knobs: IQ_NET_OVERRIDE=<file> swaps the module under test;
+ * IQ_TRACE=1 enables per-realm __trace instrumentation of a patched copy.
  * ============================================================================*/
 'use strict';
 const fs = require('fs');

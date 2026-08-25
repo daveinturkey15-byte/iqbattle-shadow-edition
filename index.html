@@ -905,6 +905,10 @@ function endRun(deathMsg){
   '<button class="btn btn-primary" id="home-btn">Back To Lobby</button>'+
   '<button class="btn btn-danger" id="again-btn">Descend Again</button></div>';
  $('#home-btn').onclick=()=>nav('landing');
+ $('#again-btn').onclick=()=>{ /* EvidenceGrid: was a dead button — solo restarts instantly, MP returns to lobby */
+  if(G.mp.on){G.mp={on:false,host:false,code:''};nav('landing');alertEv('RE-ENTER A ROOM TO DESCEND AGAIN')}
+  else startRun();
+ };
  AU.p(won?'laugh':'scream');CX.shake(10,380);
  if(G.stage>=3)SH.say(SH.q(won?'win':'lose'),true);
 }
