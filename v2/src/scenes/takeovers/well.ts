@@ -131,10 +131,13 @@ export function mergePiece(grid: WellGrid, piece: Piece): void {
   }
 }
 
-/** Remove every full row; returns how many fell. */
+/** Remove every full row in one pass; returns how many fell. */
 export function clearFullRows(grid: WellGrid): number {
-  let cleared = 0;
-  for (let y = ROWS - 1; y >= 0; y--) {
+  // Filter rows by fullness, then splice survivors bottom-up so adjacent
+  // full rows can never strand (bottom-up shifting would re-fill slots
+  // already scanned).
+  const keepRows: number[] = [];
+  for (let y = 0; y < ROWS; y++) {
     let full = true;
     for (let x = 0; x < COLS; x++) {
       if (cellAt(grid, x, y) < 0) {
@@ -142,14 +145,17 @@ export function clearFullRows(grid: WellGrid): number {
         break;
       }
     }
-    if (!full) continue;
-    cleared++;
-    for (let yy = y; yy > 0; yy--) {
-      for (let x = 0; x < COLS; x++) grid[yy * COLS + x] = grid[(yy - 1) * COLS + x];
-    }
-    for (let x = 0; x < COLS; x++) grid[x] = -1;
+    if (!full) keepRows.push(y);
   }
-  return cleared;
+  const removed = ROWS - keepRows.length;
+  if (removed === 0) return 0;
+  const next = emptyGrid();
+  for (let i = 0; i < keepRows.length; i++) {
+    const dst = (ROWS - keepRows.length + i) * COLS;
+    for (let x = 0; x < COLS; x++) next[dst + x] = grid[keepRows[i] * COLS + x];
+  }
+  grid.set(next);
+  return removed;
 }
 
 /** Try a rotation (CW/CCW) with simple wall kicks (0, ±1, ±2 horizontal). */
@@ -513,6 +519,56 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   if (clearFullRows(g) !== 1) failures.push('full row not cleared');
   if (cellAt(g, 3, ROWS - 2) !== 3) failures.push('block below cleared row must stay put');
 
+  // F8 regression: adjacent full rows must all clear in one pass
+  const fillRow = (grid: WellGrid, y: number, id = 1) => {
+    for (let x = 0; x < COLS; x++) grid[y * COLS + x] = id;
+  };
+  const g2 = emptyGrid();
+  mergePiece(g2, (() => { const p = makePiece(3); p.y = ROWS - 4; return p; })()); // anchor below
+  fillRow(g2, ROWS - 3);
+  fillRow(g2, ROWS - 2);
+  if (clearFullRows(g2) !== 2) failures.push('2-stack must clear exactly 2');
+  if (cellAt(g2, 3, ROWS - 2) !== 3 || cellAt(g2, 4, ROWS - 2) !== 3) {
+    failures.push('anchor block must drop below cleared 2-stack');
+  }
+  for (let y = 0; y < ROWS; y++) {
+    let full = true;
+    for (let x = 0; x < COLS; x++) if (cellAt(g2, x, y) < 0) { full = false; break; }
+    if (full) { failures.push('stranded full row after 2-stack clear'); break; }
+  }
+
+  const g3 = emptyGrid();
+  fillRow(g3, ROWS - 3);
+  fillRow(g3, ROWS - 2);
+  fillRow(g3, ROWS - 1);
+  if (clearFullRows(g3) !== 3) failures.push('3-stack must clear exactly 3');
+  if (g3.some((v) => v >= 0)) failures.push('3-stack must leave an empty well');
+
+  // property: over random stacks, removed === pre-count of full rows, none stranded
+  for (let seed = 1; seed <= 200; seed++) {
+    const rng = mulberry32(seed * 7919);
+    const gp = emptyGrid();
+    let expected = 0;
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        if (rng() < 0.6) gp[y * COLS + x] = Math.floor(rng() * PIECE_COUNT);
+      }
+    }
+    for (let y = 0; y < ROWS; y++) {
+      let full = true;
+      for (let x = 0; x < COLS; x++) if (gp[y * COLS + x] < 0) { full = false; break; }
+      if (full) expected++;
+    }
+    if (expected === 0) continue;
+    const got = clearFullRows(gp);
+    if (got !== expected) { failures.push(`property: cleared ${got} but ${expected} full rows existed (seed=${seed})`); continue; }
+    for (let y = 0; y < ROWS; y++) {
+      let full = true;
+      for (let x = 0; x < COLS; x++) if (gp[y * COLS + x] < 0) { full = false; break; }
+      if (full) { failures.push(`property: stranded full row after clear (seed=${seed})`); break; }
+    }
+  }
+
   // verdict ladder
   const q = quotaFor(4);
   const vWin = verdictFor(q, 4, false);
@@ -531,3 +587,10 @@ export function selfTest(): { ok: boolean; failures: string[] } {
 }
 
 export const __selfTest = selfTest;
+
+/* Node smoke entry: node --experimental-strip-types src/scenes/takeovers/well.ts */
+if (typeof process !== 'undefined' && process.argv[1]?.replace(/\\/g, '/').endsWith('/well.ts')) {
+  const r = selfTest();
+  console.log(r.ok ? '[selftest] WELL OK' : `[selftest] WELL FAIL\n  ${r.failures.join('\n  ')}`);
+  process.exitCode = r.ok ? 0 : 1;
+}

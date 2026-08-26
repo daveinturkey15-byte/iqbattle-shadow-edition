@@ -25,11 +25,13 @@ import type { StageResult, TakeoverCtx } from './redlight.ts';
 
 export const GRID_COLS = 26;
 export const GRID_ROWS = 15;
-/** spawn: 3 segments heading right at these cells (excluded from apple draws) */
+/** spawn: 3 segments heading right — body[0] is the HEAD, trailing cells behind
+ * it (excluded from apple draws). Head-first so the first rightward step lands
+ * on free ground instead of body[1]. */
 export const SPAWN_CELLS: Array<{ x: number; y: number }> = [
-  { x: 4, y: Math.floor(GRID_ROWS / 2) },
-  { x: 5, y: Math.floor(GRID_ROWS / 2) },
   { x: 6, y: Math.floor(GRID_ROWS / 2) },
+  { x: 5, y: Math.floor(GRID_ROWS / 2) },
+  { x: 4, y: Math.floor(GRID_ROWS / 2) },
 ];
 
 export function quota(depth: number): number {
@@ -84,6 +86,29 @@ const DIRS: Record<'up' | 'down' | 'left' | 'right', Dir> = {
   right: { dx: 1, dy: 0 },
 };
 
+/** Keyboard key → turn direction; null for unhandled keys. */
+export function keyToDir(key: string): keyof typeof DIRS | null {
+  switch (key) {
+    case 'ArrowUp':
+    case 'w':
+    case 'W':
+      return 'up';
+    case 'ArrowDown':
+    case 's':
+    case 'S':
+      return 'down';
+    case 'ArrowLeft':
+    case 'a':
+    case 'A':
+      return 'left';
+    case 'ArrowRight':
+    case 'd':
+    case 'D':
+      return 'right';
+    default:
+      return null;
+  }
+}
 /* ------------------------------------------------------------------ */
 /* Scene                                                               */
 /* ------------------------------------------------------------------ */
@@ -225,36 +250,13 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   /* ---- input ---- */
   function onKey(e: KeyboardEvent): void {
     if (dead) return;
-    switch (e.key) {
-      case 'ArrowUp':
-      case 'w':
-      case 'W':
-        e.preventDefault();
-        turn('up');
-        break;
-      case 'ArrowDown':
-      case 's':
-      case 'S':
-        e.preventDefault();
-        turn('down');
-        break;
-      case 'ArrowLeft':
-      case 'a':
-      case 'A':
-        e.preventDefault();
-        turn('left');
-        break;
-      case 'ArrowRight':
-      case 'd':
-      case 'D':
-        e.preventDefault();
-        break;
-      case 'Escape':
-        timeEscapeNeutral();
-        break;
-      default:
-        break;
+    const d = keyToDir(e.key);
+    if (d) {
+      e.preventDefault();
+      turn(d);
+      return;
     }
+    if (e.key === 'Escape') timeEscapeNeutral();
   }
   function timeEscapeNeutral(): void {
     timeUp();
@@ -330,7 +332,38 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     if (appleQueue(seed)[0].x !== appleQueue(seed + 1)[0].x || appleQueue(seed)[0].y !== appleQueue(seed + 1)[0].y) differing++;
   }
   if (differing < 30) failures.push(`apple sequences barely vary across seeds (${differing}/50)`);
+  // F2 regression rail: spawn is head-first — the head stepping in the spawn
+  // direction (right) must land on a free cell, never on its own body.
+  {
+    const head = SPAWN_CELLS[0];
+    if (head.x <= SPAWN_CELLS[1].x) failures.push(`spawn not head-first: head.x=${head.x} vs next=${SPAWN_CELLS[1].x}`);
+    const rest = new Set(SPAWN_CELLS.slice(1).map((c) => `${c.x},${c.y}`));
+    const nx = (head.x + DIRS.right.dx + GRID_COLS) % GRID_COLS;
+    const ny = (head.y + DIRS.right.dy + GRID_ROWS) % GRID_ROWS;
+    if (rest.has(`${nx},${ny}`)) failures.push('first step right collides with own body');
+    for (const c of SPAWN_CELLS) {
+      if (c.y !== SPAWN_CELLS[0].y) failures.push(`spawn segments misaligned at ${c.x},${c.y}`);
+    }
+  }
+  // F3 regression rail: every arrow/WASD key maps, right included
+  const KEY_TO_EXPECTED: Record<string, keyof typeof DIRS | null> = {
+    ArrowUp: 'up', w: 'up', W: 'up',
+    ArrowDown: 'down', s: 'down', S: 'down',
+    ArrowLeft: 'left', a: 'left', A: 'left',
+    ArrowRight: 'right', d: 'right', D: 'right',
+    q: null, Enter: null,
+  };
+  for (const [key, want] of Object.entries(KEY_TO_EXPECTED)) {
+    if (keyToDir(key) !== want) failures.push(`keyToDir(${key}) != ${String(want)}`);
+  }
   return { ok: failures.length === 0, failures };
+}
+
+/* Node smoke entry: node --experimental-strip-types src/scenes/takeovers/serpent.ts */
+if (typeof process !== 'undefined' && process.argv[1]?.replace(/\\/g, '/').endsWith('/serpent.ts')) {
+  const r = selfTest();
+  console.log(r.ok ? '[selftest] SERPENT OK' : `[selftest] SERPENT FAIL\n  ${r.failures.join('\n  ')}`);
+  process.exitCode = r.ok ? 0 : 1;
 }
 
 export const __selfTest = selfTest;

@@ -32,7 +32,7 @@ import type { Chip, StageResult, TakeoverCtx } from './redlight.ts';
 const ROWS = 5; // shore rows: 0 = waterline, 4 = high shelf
 export const RAIL = 0.35; // correct row must be dry >= 35% of each cycle
 const PERIODS = [8000, 9000, 10000, 11000];
-const TP_PAY = [130, 200, 280, 370, 460]; // win points by depth tier (clamped at index 4)
+const TP_PAY = [130, 200, 280, 370, 460]; // win points by depth tier
 const BONUS_DRY = 15;
 
 export interface TideSchedule {
@@ -80,7 +80,7 @@ export function submergedAt(sch: TideSchedule, row: number, ms: number): boolean
  *   2 tide phase      rng()          (0 .. 1)
  *   3 tide period     rng()          (index into PERIODS)
  *   4 sequence        K*2 rng()      chip kind+n per step (K=3, +1 when depth>=6)
- *   5 distractors     variable rng() until 8 unique chips
+ *   5 distractors     variable rng() until 8 unique chips (answer KIND excluded)
  *   6 shuffle         7 rng()        Fisher-Yates from last
  *   7 answer row      rng()          among rows meeting the RAIL
  *   8 distractor rows ROWS rng()     any row (traps allowed)
@@ -107,9 +107,12 @@ export function drawSchedule(seed: number, depth: number): TideSchedule {
   const ansKind = nxt.kind === step.kind ? (nxt.kind + 1) % CHIP_KINDS_TP : nxt.kind;
   const ansN = 1 + Math.floor(rng() * 2);
   sch.opts.push({ kind: ansKind, n: ansN });
+  // F7 fairness: the rule pins only ansKind, so every decoy must differ in KIND —
+  // a same-kind/different-n pool would make the answer ambiguous.
   while (sch.opts.length < 8) {
     const m: Chip = { kind: Math.floor(rng() * CHIP_KINDS_TP), n: 1 + Math.floor(rng() * 2) };
-    if (!sch.opts.some((o) => o.kind === m.kind && o.n === m.n)) sch.opts.push(m);
+    if (m.kind !== ansKind && !sch.opts.some((o) => o.kind === m.kind && o.n === m.n))
+      sch.opts.push(m);
   }
   for (let i = sch.opts.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -123,6 +126,11 @@ export function drawSchedule(seed: number, depth: number): TideSchedule {
   for (let i = 1; i < 8; i++) sch.rows.push(Math.floor(rng() * ROWS));
   return sch;
 }
+/** win payout by depth tier, index clamped into [0, TP_PAY.length-1] */
+export function payFor(depth: number): number {
+  return TP_PAY[Math.max(0, Math.min(TP_PAY.length - 1, depth - 1))];
+}
+
 
 const CHIP_KINDS_TP = 6; // same primitive families as redlight chips
 
@@ -184,7 +192,7 @@ export function mountTidePool(ctx: TakeoverCtx): void {
   const hue = T.boardHues[ctx.seed % T.boardHues.length];
   const settle = onceResolve(ctx.onDone);
   const sch = drawSchedule(ctx.seed, ctx.depth);
-  const pay = TP_PAY[Math.min(TP_PAY.length - 1, ctx.depth - 1)];
+  const pay = payFor(ctx.depth);
 
   /* ---- chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -388,6 +396,27 @@ export function selfTest(): { ok: boolean; failures: string[] } {
       failures.push(`seed=${seed} high shelf unexpectedly submerged at trough-peak sample`);
     }
   }
+  // F7 fairness over 2000 seeds: exactly one tile matches the answer KIND —
+  // the rule pins kind only, so any same-kind decoy would make n unguessable.
+  for (let seed = 1; seed <= 2000; seed++) {
+    const depth = (seed % 12) + 1;
+    const sch = drawSchedule(seed, depth);
+    const step = sch.seq[sch.seq.length - 2];
+    const nxt = sch.seq[sch.seq.length - 1];
+    const ansKind = nxt.kind === step.kind ? (nxt.kind + 1) % CHIP_KINDS_TP : nxt.kind;
+    const sameKind = sch.opts.filter((o) => o.kind === ansKind);
+    if (sameKind.length !== 1) {
+      failures.push(`seed=${seed} ${sameKind.length} options share answer kind ${ansKind}`);
+      continue;
+    }
+    const idx = sch.opts.indexOf(sameKind[0]);
+    if (idx !== sch.answerIdx) failures.push(`seed=${seed} answerIdx=${sch.answerIdx} != unique-kind idx ${idx}`);
+  }
+  // F12 payout clamp: depth tiers clamp into [0, TP_PAY.length-1] on both ends
+  if (payFor(0) !== TP_PAY[0] || payFor(-3) !== TP_PAY[0]) failures.push('payFor does not clamp depth<=0');
+  if (payFor(99) !== TP_PAY[TP_PAY.length - 1]) failures.push('payFor does not cap high depths');
+  for (let d = 1; d <= TP_PAY.length; d++)
+    if (payFor(d) !== TP_PAY[d - 1]) failures.push(`payFor(${d}) != TP_PAY[${d - 1}]`);
   // coverage sanity: distinct seeds must draw materially different schedules
   // (phase/max/period/rows are all seeded draws — collisions should be ~zero)
   const shapes = new Set<string>();

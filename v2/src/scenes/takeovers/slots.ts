@@ -4,8 +4,8 @@
  *
  * MECHANIC — three spins, you stop every reel yourself:
  *   Space / Enter / click stops the leftmost spinning reel (one press per reel,
- *   three per spin, three spins). An un-stopped reel auto-stops after 7 s so
- *   the round always resolves inside ctx.timerLen.
+ *   three per spin, three spins). An un-stopped reel auto-stops on a budget
+ *   that scales down with ctx.timerLen so the round always resolves inside it.
  *   The landed payline pays: PAIR = small, TRIPLE = big, THREE STARS = JACKPOT
  *   (+10 hp bonus). Total paid 0 across all spins -> correct false ("the house
  *   wins"); anything paid -> correct true.
@@ -43,6 +43,39 @@ export const REELS = 3;
 export const STRIP_LEN = 20;
 export const SPIN_TICK_MS = 40;
 export const AUTO_STOP_MS = 7000;
+export const SPINS = 3;
+
+/** Settle margin subtracted from the round timer before budgeting (ms). */
+export const TIMER_MARGIN_MS = 700;
+/** Cabinet warm-up pause and between/after-spin pause at full length. */
+export const FIRST_SETTLE_MS = 600;
+export const INTER_SETTLE_MS = 1100;
+/** Worst-case wall clock at full length (idle player): 24.9 s. */
+export const WORST_CASE_MS =
+  FIRST_SETTLE_MS + SPINS * (AUTO_STOP_MS + INTER_SETTLE_MS);
+/** Headroom so floor-quantized components never exceed the budget. */
+const TIMING_SAFETY_MS = SPIN_TICK_MS + 8;
+
+export interface SlotsTiming {
+  autoStopMs: number;
+  firstSettleMs: number;
+  interSettleMs: number;
+}
+
+/**
+ * F5 rail: every wall-clock component scales by k so the worst path
+ * (first settle + SPINS x (auto-stop + inter-settle)) never exceeds
+ * min(WORST_CASE_MS, ctx.timerLen*1000 - TIMER_MARGIN_MS).
+ */
+export function timingFor(timerLenSec: number): SlotsTiming {
+  const budget = Math.min(WORST_CASE_MS, Math.max(0, timerLenSec * 1000 - TIMER_MARGIN_MS));
+  const k = Math.max(0, (budget - TIMING_SAFETY_MS) / WORST_CASE_MS);
+  return {
+    autoStopMs: Math.max(SPIN_TICK_MS, Math.floor((k * AUTO_STOP_MS) / SPIN_TICK_MS) * SPIN_TICK_MS),
+    firstSettleMs: Math.max(0, Math.floor(k * FIRST_SETTLE_MS)),
+    interSettleMs: Math.max(0, Math.floor(k * INTER_SETTLE_MS)),
+  };
+}
 
 /** STAR = wildcard + jackpot symbol · VOID = skull-equivalent, breaks pairs. */
 export const STAR = 0;
@@ -135,8 +168,6 @@ export function verdictFor(total: number, jackpot: boolean): SlotsVerdict {
 /* Scene                                                               */
 /* ------------------------------------------------------------------ */
 
-const SPINS = 3;
-
 /** Primitive glyph per symbol id (DNA marks only — structure carries meaning). */
 function symbolPrims(sym: number): Prim[] {
   switch (sym) {
@@ -185,6 +216,7 @@ export function mountSlots(ctx: TakeoverCtx): void {
   const settle = onceResolve(ctx.onDone);
   const pay = paytableFor(diffFor(ctx.depth));
   const { strips, salts } = buildStrips(ctx.seed, ctx.depth);
+  const timing = timingFor(ctx.timerLen);
 
   /* ---- static chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -270,7 +302,7 @@ export function mountSlots(ctx: TakeoverCtx): void {
   let stopCount = 0;
   let tickAcc = 0;
   let tickIndex = 0;
-  let settleMs = 600; // pause between spins / before verdict
+  let settleMs = timing.firstSettleMs; // pause between spins / before verdict
   let dead = false;
 
   function finish(r: StageResult): void {
@@ -311,7 +343,7 @@ export function mountSlots(ctx: TakeoverCtx): void {
       : res.kind === 'pair' ? `PAIR — PAYS ${res.amount}`
       : 'THE GOD KEEPS IT';
     refreshProgress();
-    settleMs = 1100;
+    settleMs = timing.interSettleMs;
     // next tick block transitions to the following spin or the verdict
     spin++;
   }
@@ -347,7 +379,7 @@ export function mountSlots(ctx: TakeoverCtx): void {
       tickIndex++;
       for (let r = stopCount; r < REELS; r++) phase[r]++;
       redrawReels();
-      if (tickIndex * SPIN_TICK_MS >= AUTO_STOP_MS) stopCurrentReel();
+      if (tickIndex * SPIN_TICK_MS >= timing.autoStopMs) stopCurrentReel();
     }
   };
   Ticker.shared.add(onTick);
@@ -453,6 +485,19 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const vFail = verdictFor(0, false);
   if (vFail.correct !== false || vFail.points >= 0 || vFail.hpDelta !== -10) failures.push('fail verdict wrong');
 
+  // F5 rail: idle worst path fits every legal MP timer
+  let prevAutoStop = 0;
+  for (let tl = 1; tl <= 120; tl++) {
+    const t = timingFor(tl);
+    const worst = t.firstSettleMs + SPINS * (t.autoStopMs + t.interSettleMs);
+    if (worst > Math.min(WORST_CASE_MS, tl * 1000 - TIMER_MARGIN_MS)) {
+      failures.push(`slots worst path overruns timerLen=${tl} worst=${worst}`);
+    }
+    if (t.autoStopMs > AUTO_STOP_MS || t.autoStopMs < prevAutoStop) {
+      failures.push(`auto-stop curve bad at timerLen=${tl}`);
+    }
+    prevAutoStop = t.autoStopMs;
+  }
   return { ok: failures.length === 0, failures };
 }
 

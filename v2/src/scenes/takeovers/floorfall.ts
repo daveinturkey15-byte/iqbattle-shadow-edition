@@ -34,6 +34,7 @@
  * shake); overlays escapable; all text >= 11 px.
  */
 import { Container, Graphics, Rectangle, Sprite, Text, Texture, Ticker } from 'pixi.js';
+import type { FederatedPointerEvent } from 'pixi.js';
 import type { Chip } from './redlight.ts';
 import { CHIP_KINDS, chipPrims } from './redlight.ts';
 import { mulberry32, onceResolve, escaped } from './redlight.ts';
@@ -284,7 +285,7 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
   /* ---- input ---- */
   root.eventMode = 'static';
   root.hitArea = new Rectangle(0, 0, STAGE_W, STAGE_H);
-  root.on('pointermove', (e) => {
+  const onMove = (e: FederatedPointerEvent): void => {
     const gx = e.global.x;
     const gy = e.global.y;
     cursorTile = -1;
@@ -295,7 +296,8 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
         break;
       }
     }
-  });
+  };
+  root.on('pointermove', onMove);
 
   function onKey(e: KeyboardEvent): void {
     if (dead) return;
@@ -359,6 +361,7 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
   function teardown(): void {
     Ticker.shared.remove(onTick);
     window.removeEventListener('keydown', onKey);
+    root.off('pointermove', onMove);
     root.removeChildren().forEach((c) => c.destroy({ children: true }));
   }
 

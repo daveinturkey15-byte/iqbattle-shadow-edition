@@ -80,8 +80,10 @@ const RL_SALT = 0x5f3759df;
 
 /**
  * Seeded cadence. Greens shrink as the run goes on (and with depth); reds
- * grow. The whole schedule fits inside timerLen*1000 minus a settle margin,
- * so the scene always self-resolves before the engine timer would.
+ * grow. Each duration carries a seed-driven ±80 ms jitter (F9), so schedules
+ * vary across seeds while staying monotone (jitter < the 190 ms green step)
+ * and inside timerLen*1000 minus a settle margin, so the scene always
+ * self-resolves before the engine timer would.
  */
 export function buildCadence(seed: number, depth: number, timerLenSec: number): RLPhase[] {
   const rng = mulberry32((seed ^ RL_SALT) >>> 0);
@@ -89,9 +91,10 @@ export function buildCadence(seed: number, depth: number, timerLenSec: number): 
   const phases: RLPhase[] = [];
   let used = 0;
   for (let i = 0; i < 12; i++) {
-    const greenMs = Math.max(950, Math.round(2500 - i * 190 - (depth - 1) * 80));
-    const redMs = Math.min(2600, 900 + Math.round((i + depth) * 140));
-    if (used + greenMs + redMs > budget || rng() < 0) break; // rng draw keeps schedule seed-dependent
+    // per-phase rng gate: ±80 ms on both durations (draw order fixed)
+    const greenMs = Math.max(950, Math.round(2500 - i * 190 - (depth - 1) * 80)) + Math.round(rng() * 160) - 80;
+    const redMs = Math.min(2600, 900 + Math.round((i + depth) * 140)) + Math.round(rng() * 160) - 80;
+    if (used + greenMs + redMs > budget || greenMs <= 0 || redMs <= 0) break;
     phases.push({ greenMs, redMs });
     used += greenMs + redMs;
   }
@@ -440,6 +443,15 @@ export function selfTest(): { ok: boolean; failures: string[] } {
       if (a.some((p) => p.greenMs <= 0 || p.redMs <= 0)) failures.push(`nonpositive phase seed=${seed}`);
       if (a.length >= 2 && a[a.length - 1].greenMs > a[0].greenMs) failures.push(`greens should shrink seed=${seed}`);
     }
+  }
+  // F9 regression guard: cadence must actually vary across seeds (300-seed probe)
+  const cadenceVariants = new Set<string>();
+  for (let seed = 1; seed <= 300; seed++) {
+    cadenceVariants.add(JSON.stringify(buildCadence(seed, 7, 30)));
+  }
+  if (cadenceVariants.size < 10) failures.push(`cadence seed-blind: only ${cadenceVariants.size} distinct schedules over 300 seeds`);
+  if (JSON.stringify(buildCadence(111, 7, 30)) === JSON.stringify(buildCadence(999999, 7, 30))) {
+    failures.push('cadence identical for seeds 111 and 999999');
   }
   for (let seed = 1; seed <= 200; seed++) {
     const pa = makePattern(mulberry32(seed));

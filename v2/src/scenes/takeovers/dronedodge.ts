@@ -29,6 +29,7 @@
  * identical); keyboard evader parity; overlays escapable; text >= 11 px.
  */
 import { Container, Graphics, Rectangle, Sprite, Texture, Ticker } from 'pixi.js';
+import type { FederatedPointerEvent } from 'pixi.js';
 import type { Chip } from './redlight.ts';
 import { CHIP_KINDS, chipPrims } from './redlight.ts';
 import { mulberry32, onceResolve, escaped } from './redlight.ts';
@@ -111,6 +112,23 @@ export function steer(heading: number, targetAngle: number, dtSec: number, maxTu
   const diff = wrapAngle(targetAngle - heading);
   const step = Math.max(-maxTurn * dtSec, Math.min(maxTurn * dtSec, diff));
   return heading + step;
+}
+
+/** What the loop does with a drone this tick. Pure so the rails self-test. */
+export type DroneFate = 'expire' | 'contact' | 'keep';
+
+/**
+ * Expiry outranks contact (a drone at end-of-life despawns as a dodge even
+ * while overlapping). Contact only fires outside the invulnerability window;
+ * the scene splices the drone on contact, so one drone deals exactly one hit.
+ */
+export function droneFate(
+  ageMs: number, lifeMs: number, shardLifeMs: number, shard: boolean,
+  distPx: number, hitR: number, cursorR: number, invulnerable: boolean,
+): DroneFate {
+  if (ageMs > (shard ? shardLifeMs : lifeMs)) return 'expire';
+  if (!invulnerable && distPx < hitR + cursorR) return 'contact';
+  return 'keep';
 }
 
 export const GUARD_MAX = 2;
@@ -291,10 +309,11 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   /* ---- input ---- */
   root.eventMode = 'static';
   root.hitArea = new Rectangle(0, 0, STAGE_W, STAGE_H);
-  root.on('pointermove', (e) => {
+  const onMove = (e: FederatedPointerEvent): void => {
     cursor = { x: e.global.x, y: e.global.y };
     kbCursor = null;
-  });
+  };
+  root.on('pointermove', onMove);
 
   function nudge(dx: number, dy: number): void {
     const c = kbCursor ?? cursor ?? { x: STAGE_W / 2, y: STAGE_H / 2 };
@@ -385,12 +404,19 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
       d.spr.y = d.y;
       d.spr.rotation = d.h;
 
-      if (age > (d.shard ? p.shardLife : p.life)) {
+      const fate = droneFate(
+        age, p.life, p.shardLife, d.shard,
+        Math.hypot(d.x - cur.x, d.y - cur.y),
+        d.shard ? p.shardR : p.hitR, p.cursorR, clock <= invulnUntil,
+      );
+      if (fate === 'expire') {
         despawn(d);
         continue;
       }
-      if (clock > invulnUntil && Math.hypot(d.x - cur.x, d.y - cur.y) < (d.shard ? p.shardR : p.hitR) + p.cursorR) {
+      if (fate === 'contact') {
         registerHit();
+        removeDrone(d, false); // F11: a hitting drone despawns — never re-hits
+        continue;
       }
     }
     paint();
@@ -428,6 +454,7 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   function teardown(): void {
     Ticker.shared.remove(onTick);
     window.removeEventListener('keydown', onKey);
+    root.off('pointermove', onMove);
     root.removeChildren().forEach((c) => c.destroy({ children: true }));
   }
 
@@ -482,6 +509,28 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   if (held !== GUARD_MAX) failures.push(`guard banking wrong held=${held}`);
   if (onDodgeBank(2, 0) !== 0 || onDodgeBank(4, 1) !== 1) failures.push('guard must bank only on multiples of 3');
   if (onDodgeBank(6, GUARD_MAX) !== GUARD_MAX) failures.push('guard cap broken');
+
+  // contact rule (F11): contact fires only outside invuln; expiry outranks it
+  if (droneFate(1000, 5000, 3500, false, 10, 13, 9, false) !== 'contact') failures.push('contact must fire on overlap');
+  if (droneFate(1000, 5000, 3500, false, 10, 13, 9, true) !== 'keep') failures.push('invuln must suppress contact');
+  if (droneFate(7001, 7000, 3500, false, 0, 13, 9, false) !== 'expire') failures.push('expiry must outrank contact');
+  if (droneFate(5000, 5000, 3500, false, 999, 13, 9, false) !== 'keep') failures.push('no contact beyond overlap radius');
+  // single hit per drone: with despawn-on-contact a drone parked on the cursor
+  // deals exactly −7 hp total, even long after the invuln window lapses
+  {
+    let hp = 0;
+    let invulnLeft = 0;
+    let present = true;
+    for (let t = 16; present && t <= 4000; t += 16) {
+      invulnLeft = Math.max(0, invulnLeft - 16);
+      if (droneFate(t, 30000, 3500, false, 5, 13, 9, invulnLeft > 0) === 'contact') {
+        hp -= 7;
+        invulnLeft = 600;
+        present = false; // the scene splices the drone on contact
+      }
+    }
+    if (hp !== -7) failures.push(`single hit per drone violated hp=${hp}`);
+  }
   return { ok: failures.length === 0, failures };
 }
 

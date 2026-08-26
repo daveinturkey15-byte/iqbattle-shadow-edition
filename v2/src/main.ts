@@ -13,8 +13,17 @@ import { initAudio, sfx } from './audio/audio.ts';
 import { setAlignment, setLayer, sting } from './audio/beds.ts';
 import { setLayer as setDreadLayer } from './audio/beds.ts';
 import { initShadow, say, announce, noteRound } from './shadow/shadow.ts';
+import { initLarge, announceLarge, setPresence } from './shadow/large.ts';
+import { initDirector, onAct, onReveal as dirOnReveal, onEmerald, onHpThreshold } from './audio/director.ts';
+import { maybeFlavorA } from './fate/flavor-a.ts';
+import { maybeFlavorB } from './fate/flavor-b.ts';
 import { maybeFate } from './fate/fate.ts';
 import { emeraldPick, buildInterlude } from './scenes/interlude.ts';
+import { applyBackdrop } from './worlds/backdrops.ts';
+import { pick as pickWorld } from './worlds/registry.ts';
+import { maybeCurse } from './fate/cursepack.ts';
+import { playReveal } from './fx/reveal.ts';
+import { goalCardFor, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
 import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, foldScore, evaluateElimination, type MpSession, type MpEvent } from './scenes/mp.ts';
 import { mountRedLight, type StageResult } from './scenes/takeovers/redlight.ts';
 import { mountTidePool } from './scenes/takeovers/tidepool.ts';
@@ -151,11 +160,12 @@ function mountPlan(rp: { kind: string; index: number }, seed: number): void {
 
 function mountRemoteRound(e: MpEvent): void {
   if (e.t !== 'round') return;
-  const stgId = typeof e.stg === 'string' ? e.stg : e.stg.id;
-  const rp = parseStg(stgId);
+  const stgRef = typeof e.stg === 'string' ? { id: e.stg, seed: 0 } : e.stg;
+  const rp = parseStg(stgRef.id);
   if (!rp) return;
-  const sd = (e as unknown as { seed: number }).seed ?? 0;
+  const sd = stgRef.seed >>> 0;
   if (!run) startRun(myName, 'Room', e.timerLen, sd);
+  run!.seed = sd; /* clients derive every board from the HOST's seed */
   const r0 = run!;
   r0.depth = e.n; r0.timerLen = e.timerLen;
   DBG.mounts++;
@@ -170,17 +180,20 @@ interface Run {
   name: string; roomName: string; timerLen: number;
   seed: number; plan: ArcPlan[];
   depth: number; hp: number; score: number; streak: number;
-  prevAlign: string | null; emeralds: string[]; lastTakeover: number;
+  prevAlign: string | null; emeralds: string[]; lastTakeover: number; forgiveNext: boolean; prevSanctuary: boolean; depthStartedAt: number; fateScoreMul?: number;
 }
 let run: Run | null = null;
 let lastLayer = 0;
 
 function startRun(name: string, roomName: string, timerLen: number, seed?: number): void {
   seed = (seed ?? ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1))) >>> 0;
-  run = { name, roomName, timerLen, seed, plan: planArc(seed), depth: 1, hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99 };
+  run = { name, roomName, timerLen, seed, plan: planArc(seed, 2000), depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99, forgiveNext: false, prevSanctuary: false };
   DBG.startRuns++;
   lastLayer = 0;
   initShadow(app.stage);
+  initLarge(app.stage);
+  initDirector();
+  resetLegendRun();
   deal();
 }
 
@@ -217,12 +230,34 @@ function deal(): void {
 
   applyArc(root, plan);
   if (plan.sanctuary) sanctuaryOn(root); else sanctuaryOff(root);
+  try {
+    const wd = pickWorld(plan.align === 'chaotic' ? 'chaotic' : plan.align === 'good' ? 'good' : plan.align === 'neutral' ? 'neutral' : 'bad', mulberry((r.seed ^ Math.imul(r.depth, 0xBEEF)) >>> 0));
+    applyBackdrop(root, wd.id);
+  } catch { /* backdrop optional */ }
+  try {
+    const cm = maybeCurse({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xCA75E)) >>> 0), hp: r.hp, seed: r.seed });
+    if (cm) {
+      if (typeof cm.hpDelta === 'number') r.hp = Math.max(0, Math.min(100, r.hp + cm.hpDelta));
+      if (typeof cm.scoreMul === 'number') r.fateScoreMul = cm.scoreMul; else r.fateScoreMul = undefined;
+      if (cm.bannerText) toastNow(root, cm.bannerText, T.gold);
+    }
+  } catch { /* fate optional */ }
 
+  onAct(Math.min(3, Math.floor(plan.layer / 2)));
   if (plan.align !== 'good' && plan.layer > lastLayer && plan.layer >= 2) {
     const spec = layerBanner(root, plan.layer);
     text(root, spec.text, spec.x - 160, 120, 26, T.bad, true);
     say('whisper', {});
+    announceLarge('layer', spec.text);
   }
+  if (plan.sanctuary && !r.prevSanctuary) announceLarge('sanctuary', 'THE ORIGINAL LIGHT RETURNS');
+  r.prevSanctuary = !!plan.sanctuary;
+  try {
+    const fa = maybeFlavorA({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA1A7 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
+    if (fa && fa.bannerText) toastNow(root, fa.bannerText, T.gold);
+    const fb = maybeFlavorB({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFB2B3 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
+    if (fb && fb.bannerText) toastNow(root, fb.bannerText, T.muted);
+  } catch { /* flavor optional */ }
   setDreadLayer(plan.align === 'good' ? 0 : plan.layer);
   if (plan.align !== r.prevAlign && r.prevAlign !== null) sting(plan.align === 'good' ? 'heal' : 'pain');
   setAlignment(plan.align === 'chaotic' ? 'chaotic' : plan.align);
@@ -237,6 +272,7 @@ function deal(): void {
         r.emeralds.push(id);
         toastNow(root, 'THE ' + id.toUpperCase().replace('_', ' ') + ' IS YOURS', T.gold);
         sfx('levelup');
+        try { onEmerald(); } catch {}
         setTimeout(() => { r.depth++; deal(); }, 900);
       });
       root.addChild(pickRoot);
@@ -257,7 +293,7 @@ function deal(): void {
     plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
   if (mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen);
   if (mpRole === 'client') { show(root); return; } /* clients mount on the round frame */
-  if (rp.kind === 'takeover') { r.lastTakeover = r.depth; dealTakeover(root, rp.index, rp.seed); }
+  if (rp.kind === 'takeover') { r.lastTakeover = r.depth; setPresence('hidden'); dealTakeover(root, rp.index, rp.seed); }
   else dealPuzzle(root, rp.index, rp.seed, r.depth);
   show(root);
 }
@@ -265,6 +301,10 @@ function deal(): void {
 function dealTakeover(root: Container, idx: number, planSeed: number): void {
   const r = run!;
   announce(TAKEOVER_NAMES[idx]);
+  try {
+    const gc = goalCardFor(['red-light','tide-pool','serpent','floor-fall','hunter-dodge','laser-storm','drone-dodge','saber-clash','slots','slime-gallery','the-well'][idx]);
+    if (gc) text(root, gc.title + ' — ' + gc.controls, STAGE_W / 2 - 300, 150, 13, T.muted);
+  } catch { /* card optional */ }
   const box = new Container();
   box.x = 40; box.y = 164;
   root.addChild(box);
@@ -302,6 +342,7 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       r.score += pts;
       if (plan.sanctuary) r.hp = Math.min(100, r.hp + 20);
       sfx('chime');
+      dirOnReveal(true, r.streak);
       say('right', {});
       toastNow(root, (midas ? 'MIDAS · ' : '') + '+' + pts + ' — ' + p.rule, T.good);
     } else {
@@ -309,6 +350,7 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       r.score = Math.max(0, r.score - 40);
       r.hp = Math.max(0, r.hp - 12);
       sting('pain');
+      dirOnReveal(false, 0);
       say('wrong', {});
       toastNow(root, 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
     }

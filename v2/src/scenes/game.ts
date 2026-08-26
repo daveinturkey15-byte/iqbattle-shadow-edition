@@ -30,10 +30,13 @@ export function buildGameScene(p: Puzzle, onAnswer: (idx: number, correct: boole
   const boardW = p.cols * cellSize + (p.cols - 1) * gap;
   const bx = (920 - boardW) / 2;
   const by = 40;
-  for (let i = 0; i < p.cells.length; i++) {
+  const totalTiles = Math.max(p.cells.length, p.cols * p.rows, p.holeIndex + 1);
+  for (let i = 0; i < totalTiles; i++) {
     const col = i % p.cols, row = Math.floor(i / p.cols);
     const hole = i === p.holeIndex;
-    const s = spriteFrom(tileCanvas(p.cells[i], p.hue, cellSize, { hole }));
+    const prims = p.cells[i];
+    if (!hole && !prims && i >= p.cells.length) continue;
+    const s = spriteFrom(tileCanvas(prims ?? [], p.hue, cellSize, { hole }));
     s.x = bx + col * (cellSize + gap); s.y = by + row * (cellSize + gap);
     boardPanel.addChild(s);
   }
@@ -60,8 +63,8 @@ export function buildGameScene(p: Puzzle, onAnswer: (idx: number, correct: boole
   text(side, '0', 500, 20, 16, T.ink, true);
   text(side, 'shadow awaits', 24, 48, 12, T.muted);
 
-  // rule line (shown small under board — reveal clarity)
-  text(root, p.rule, 40, 840, 14, T.muted);
+  /* rule sentence intentionally NOT shown during play — it is revealed in
+   * the answer toast (DNA: the board teaches the rule, not a caption). */
 
   void timer;
   return root;

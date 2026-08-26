@@ -4,7 +4,7 @@
  * MECHANIC — three timed taps, one verb:
  *   A marker sweeps around a ring; a seeded SWEET ARC is marked on the ring.
  *   Tap (Space / click / touch) while the marker is inside the arc = HIT.
- *   Three rounds, one ring each; a miss OR a 4 s ring timeout burns the round.
+ *   Three rounds, one ring each; a miss OR a ring timeout burns the round.
  *   Verdict re-weights the round stake:
  *     3 hits -> correct true  (points 80 + 20*depth)
  *     2 hits -> correct null, partial (points 25 + 8*depth)
@@ -24,7 +24,8 @@
  *
  * FAIRNESS RAILS: feedback is a <=160 ms localized arc pulse (never fullscreen);
  * feint telegraph is a small marker blink; Esc bails NEUTRAL at any time; every
- * text >= 11 px; self-resolves well inside ctx.timerLen (3 rounds x 4 s cap).
+ * text >= 11 px; self-resolves inside ctx.timerLen (per-ring cap scales down
+ * from 4 s to fit).
  */
 import { Container, Graphics, Sprite, Texture, Ticker } from 'pixi.js';
 import type { Text } from 'pixi.js';
@@ -41,6 +42,18 @@ import { text } from '../game.ts';
 export const TAP_BUCKET_MS = 60;
 export const ROUNDS = 3;
 export const ROUND_CAP_MS = 4000;
+/** settle margin subtracted from the round timer before budgeting (ms) */
+export const TIMER_MARGIN_MS = 700;
+
+/**
+ * Per-ring cap scaled from the round timer. Worst path (ROUNDS x cap) never
+ * exceeds min(ROUND_CAP_MS * ROUNDS, ctx.timerLen*1000 - TIMER_MARGIN_MS),
+ * so an idle player always settles inside the round timer.
+ */
+export function roundCapMs(timerLenSec: number): number {
+  const total = Math.min(ROUND_CAP_MS * ROUNDS, Math.max(0, timerLenSec * 1000 - TIMER_MARGIN_MS));
+  return Math.max(1, Math.floor(total / ROUNDS));
+}
 /** telegraph window before the feint reversal (marker blinks) */
 export const FEINT_TELEGRAPH_MS = 350;
 
@@ -86,11 +99,20 @@ export function buildPlan(seed: number, depth: number): Ring[] {
   }
   return rings;
 }
+/** Signed arc offset (fraction of the ring) swept by the marker at ms. */
+export function offsetAt(ring: Ring, ms: number): number {
+  if (ring.feintMs === null || ms < ring.feintMs) {
+    return ring.dir * ring.speed * (ms / 1000);
+  }
+  // True reversal: integrate forward to feintMs, then walk BACK along the
+  // ring — position is continuous across the reversal (no mirror jump).
+  const pre = ring.dir * ring.speed * (ring.feintMs / 1000);
+  return pre - ring.dir * ring.speed * ((ms - ring.feintMs) / 1000);
+}
 
 /** Marker position on the ring at ms into the round, wrapped to [0,1). */
 export function posAt(ring: Ring, ms: number): number {
-  const rev = ring.feintMs !== null && ms >= ring.feintMs ? -1 : 1;
-  const p = ring.center + ring.dir * rev * ring.speed * (ms / 1000);
+  const p = ring.center + offsetAt(ring, ms);
   return ((p % 1) + 1) % 1;
 }
 
@@ -137,6 +159,7 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
   const hueNum = parseInt(hue.slice(1), 16);
   const settle = onceResolve(ctx.onDone);
   const plan = buildPlan(ctx.seed, ctx.depth);
+  const capMs = roundCapMs(ctx.timerLen);
 
   /* ---- static chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -260,7 +283,7 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
     drawRing();
     drawPulse(roundMs);
 
-    if (roundMs >= ROUND_CAP_MS) burnRound();
+    if (roundMs >= capMs) burnRound();
   };
   Ticker.shared.add(onTick);
 
@@ -352,6 +375,29 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   }
   if (verdictFor(3, 5).points <= verdictFor(3, 1).points) failures.push('win pay should scale with depth');
+
+  // F4 rail: worst path (ROUNDS x per-ring cap) fits every legal MP timer
+  for (let tl = 1; tl <= 120; tl++) {
+    const worst = roundCapMs(tl) * ROUNDS;
+    if (worst > Math.min(12000, tl * 1000 - TIMER_MARGIN_MS)) {
+      failures.push(`ring budget overruns timerLen=${tl} worst=${worst}`);
+    }
+  }
+
+  // F10 rail: feint reversal is continuous — no teleport across the ring
+  outer: for (let seed = 1; seed <= 60; seed++) {
+    for (const r of buildPlan(seed * 7919 + 6, 6)) {
+      if (r.feintMs === null) continue;
+      const step = 10;
+      for (let ms = r.feintMs - 100; ms < r.feintMs + 100; ms += step) {
+        const jump = angDist(posAt(r, ms), posAt(r, ms + step));
+        if (jump > (r.speed * step) / 1000 + 1e-9) {
+          failures.push(`feint reversal teleports marker seed=${seed}`);
+          break outer;
+        }
+      }
+    }
+  }
 
   return { ok: failures.length === 0, failures };
 }

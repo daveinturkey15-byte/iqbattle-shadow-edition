@@ -3,8 +3,8 @@
  * modes/slime.js, mechanic not code).
  *
  * MECHANIC — quota under the big top:
- *   Nine portholes (3x3). A seeded PUBLIC schedule pops slimes (~26 across
- *   30 s). Click / tap a lane (or keys 1-9) to fire — 250 ms recoil cooldown.
+ *   Nine portholes (3x3). A seeded PUBLIC schedule pops slimes across the
+ *   round. Click / tap a lane (or keys 1-9) to fire — 250 ms recoil cooldown.
  *   SPLAT every plain slime you can: hit the QUOTA (12 splats = win,
  *   6..11 = partial) before the booth closes.
  *   CROWNED slimes are DECOYS: shooting one COSTS you double a splat's worth.
@@ -46,6 +46,14 @@ import type { StageResult, TakeoverCtx } from './redlight.ts';
 
 export const LANES = 9;
 export const ROUND_MS = 30000;
+/** ms for a slime's rise-in / sink-away animation; an escape counts once fully sunk */
+export const RISE_SINK_MS = 180;
+/** Settle margin left under ctx.timerLen so the engine never sees an overrun */
+export const ROUND_SETTLE_MARGIN_MS = 700;
+/** Round settle budget — honors ctx.timerLen (F6), hard-capped at ROUND_MS. */
+export function roundBudgetMs(timerLenSec: number): number {
+  return Math.max(1, Math.min(ROUND_MS, Math.round(Math.max(0, timerLenSec) * 1000) - ROUND_SETTLE_MARGIN_MS));
+}
 /** generous window around emergence/descent where a shot still connects */
 export const HIT_WINDOW_MS = 120;
 export const FIRE_COOLDOWN_MS = 250;
@@ -157,6 +165,80 @@ export function scoreRound(s: ScoreInput, depth: number): GalleryVerdict {
   return { correct: false, points: -(10 + 10 * eff), hpDelta, summary };
 }
 
+/* ---- pure tick core (driven by the live ticker AND by selfTest) ---- */
+
+export interface GalleryTickState {
+  /** simulated clock in ms */
+  clock: number;
+  spawnIdx: number;
+  /** lane -> schedule index of the pop currently up there (null when free) */
+  lanePop: Array<number | null>;
+  resolved: Set<number>;
+  tallies: { normal: number; gold: number; decoy: number; escapes: number };
+  lastFireMs: number;
+  finished: boolean;
+}
+
+export function newGalleryState(): GalleryTickState {
+  return {
+    clock: 0,
+    spawnIdx: 0,
+    lanePop: Array.from({ length: LANES }, () => null),
+    resolved: new Set<number>(),
+    tallies: { normal: 0, gold: 0, decoy: 0, escapes: 0 },
+    lastFireMs: -FIRE_COOLDOWN_MS,
+    finished: false,
+  };
+}
+
+/**
+ * Advance the gallery by one dtMs step against `budgetMs`: spawn due pops into
+ * free lanes (a busy lane's pop escapes unresolved), count fully-sunk slimes as
+ * escapes, finish on budget or schedule exhaustion.
+ */
+export function stepGallery(schedule: Pop[], st: GalleryTickState, dtMs: number, budgetMs: number): void {
+  if (st.finished) return;
+  st.clock += dtMs;
+  while (st.spawnIdx < schedule.length && schedule[st.spawnIdx].t <= st.clock) {
+    const idx = st.spawnIdx++;
+    if (st.resolved.has(idx)) continue;
+    const pop = schedule[idx];
+    if (st.lanePop[pop.lane] !== null) continue;
+    st.lanePop[pop.lane] = idx;
+  }
+  for (let lane = 0; lane < LANES; lane++) {
+    const idx = st.lanePop[lane];
+    if (idx === null) continue;
+    const pop = schedule[idx];
+    if (st.clock - pop.t >= pop.up + RISE_SINK_MS) {
+      st.lanePop[lane] = null;
+      st.resolved.add(idx);
+      if (pop.type !== 'decoy') st.tallies.escapes++;
+    }
+  }
+  const allResolved = st.spawnIdx >= schedule.length && st.lanePop.every((l) => l === null);
+  if (st.clock >= budgetMs || allResolved) st.finished = true;
+}
+
+export type FireOutcome = SlimeType | 'miss' | null;
+
+/**
+ * Fire at a lane on the shared clock: respects the recoil cooldown, connects
+ * only inside the live window, resolves hits immediately. Returns the hit
+ * type, 'miss', or null when finished/cooldown-swallowed.
+ */
+export function fireGalleryLane(schedule: Pop[], st: GalleryTickState, lane: number): FireOutcome {
+  if (st.finished || st.clock - st.lastFireMs < FIRE_COOLDOWN_MS) return null;
+  st.lastFireMs = st.clock;
+  const idx = st.lanePop[lane];
+  if (idx === null || !popLiveAt(schedule[idx], st.clock)) return 'miss';
+  const type = schedule[idx].type;
+  st.tallies[type]++;
+  st.lanePop[lane] = null;
+  st.resolved.add(idx);
+  return type;
+}
+
 /* ------------------------------------------------------------------ */
 /* Scene                                                               */
 /* ------------------------------------------------------------------ */
@@ -181,19 +263,14 @@ function slimePrims(kind: SlimeType): Prim[] {
   return prims;
 }
 
-interface LiveSlime {
-  pop: Pop;
-  idx: number;
-  sprite: Sprite;
-  shot: boolean;
-}
-
 export function mountSlimeGallery(ctx: TakeoverCtx): void {
   const root = ctx.container;
   const hue = T.boardHues[(ctx.seed >>> 5) % T.boardHues.length];
   const hueNum = parseInt(hue.slice(1), 16);
   const settle = onceResolve(ctx.onDone);
   const schedule = buildSchedule(ctx.seed, ctx.depth);
+  /** F6: settle budget honors ctx.timerLen instead of a hard-coded 30 s round */
+  const budgetMs = roundBudgetMs(ctx.timerLen);
 
   /* ---- static chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -249,20 +326,15 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
   text(root, 'CLICK A PORTHOLE OR PRESS 1-9 TO FIRE', ox, oy + rows * (cell + gap) + 128, 13, T.muted);
 
   function refreshProgress(): void {
-    const splats = tallies.normal + tallies.gold;
+    const splats = st.tallies.normal + st.tallies.gold;
     ui.progress.text =
-      `SPLATS ${splats}/${QUOTA_WIN} · GOLD ${tallies.gold} · CROWNS SHOT ${tallies.decoy}`;
+      `SPLATS ${splats}/${QUOTA_WIN} · GOLD ${st.tallies.gold} · CROWNS SHOT ${st.tallies.decoy}`;
   }
 
-  /* ---- state machine ---- */
-  const liveByLane: Array<LiveSlime | null> = Array.from({ length: LANES }, () => null);
-  const resolved = new Set<number>();
-  const tallies: { normal: number; gold: number; decoy: number; escapes: number } = {
-    normal: 0, gold: 0, decoy: 0, escapes: 0,
-  };
-  let clock = 0;
-  let spawnIdx = 0;
-  let lastFireMs = -FIRE_COOLDOWN_MS;
+  /* ---- state machine: pure tick core + sprite layer ---- */
+  const st = newGalleryState();
+  const spritesByLane: Array<Sprite | null> = Array.from({ length: LANES }, () => null);
+  let seenEscapes = 0;
   let dead = false;
 
   function finish(r: StageResult): void {
@@ -273,90 +345,80 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
   }
 
   function endRound(): void {
-    finish({ ...scoreRound(tallies, ctx.depth) });
+    finish({ ...scoreRound(st.tallies, ctx.depth) });
   }
 
-  function despawn(live: LiveSlime, shot: boolean): void {
-    resolved.add(live.idx);
-    if (live.sprite.parent) live.sprite.parent.removeChild(live.sprite);
-    liveByLane[live.pop.lane] = null;
-    if (!shot && live.pop.type !== 'decoy') {
-      tallies.escapes++;
+  /** Mirror st into sprites: create on spawn, animate rise/sink, drop when gone. */
+  function syncSprites(): void {
+    for (let lane = 0; lane < LANES; lane++) {
+      const idx = st.lanePop[lane];
+      const spr = spritesByLane[lane];
+      if (idx !== null && !spr) {
+        const s2 = new Sprite(texByKind[schedule[idx].type]);
+        s2.x = holes[lane].x;
+        s2.y = holes[lane].y;
+        s2.alpha = 0; // rises via alpha/scale so it never covers neighbouring lanes
+        s2.scale.set(0.6);
+        root.addChild(s2);
+        spritesByLane[lane] = s2;
+        continue;
+      }
+      if (idx === null && spr) {
+        if (spr.parent) spr.parent.removeChild(spr);
+        spr.destroy();
+        spritesByLane[lane] = null;
+        continue;
+      }
+      if (!spr || idx === null) continue;
+      // Rise = alpha/scale in over RISE_SINK_MS; sink = back out.
+      const age = st.clock - schedule[idx].t;
+      const rise = Math.min(1, Math.max(0, age / RISE_SINK_MS));
+      const sinkAge = age - schedule[idx].up;
+      const sink = sinkAge > 0 ? Math.min(1, sinkAge / RISE_SINK_MS) : 0;
+      const vis = rise * (1 - sink);
+      spr.alpha = vis;
+      spr.scale.set(0.6 + 0.4 * vis);
+    }
+    if (st.tallies.escapes !== seenEscapes) {
+      seenEscapes = st.tallies.escapes;
       refreshProgress();
     }
   }
 
-  function spawnDue(): void {
-    while (spawnIdx < schedule.length && schedule[spawnIdx].t <= clock) {
-      const pop = schedule[spawnIdx];
-      const idx = spawnIdx;
-      spawnIdx++;
-      // a lane still busy keeps its current slime; the pop escapes unresolved
-      if (liveByLane[pop.lane] || resolved.has(idx)) continue;
-      const sprite = new Sprite(texByKind[pop.type]);
-      const hole = holes[pop.lane];
-      sprite.x = hole.x;
-      sprite.y = hole.y;
-      sprite.alpha = 0; // rises via alpha/scale so it never covers neighbouring lanes
-      sprite.scale.set(0.6);
-      root.addChild(sprite);
-      liveByLane[pop.lane] = { pop, idx, sprite, shot: false };
-    }
-  }
-
-  /** Rise = alpha/scale in over 180 ms; sink = back out. No cross-lane overlap. */
-  function animateSlimes(): void {
-    for (const live of liveByLane) {
-      if (!live) continue;
-      const age = clock - live.pop.t;
-      const rise = Math.min(1, Math.max(0, age / 180));
-      const sinkAge = age - live.pop.up;
-      const sink = sinkAge > 0 ? Math.min(1, sinkAge / 180) : 0;
-      const vis = rise * (1 - sink);
-      live.sprite.alpha = vis;
-      live.sprite.scale.set(0.6 + 0.4 * vis);
-      if (sink >= 1) despawn(live, false);
-    }
+  function dropSprite(lane: number): void {
+    const spr = spritesByLane[lane];
+    if (!spr) return;
+    if (spr.parent) spr.parent.removeChild(spr);
+    spr.destroy();
+    spritesByLane[lane] = null;
   }
 
   function fire(lane: number): void {
-    if (dead || clock - lastFireMs < FIRE_COOLDOWN_MS) return;
-    lastFireMs = clock;
-    const live = liveByLane[lane];
-    if (live && !live.shot && popLiveAt(live.pop, clock)) {
-      live.shot = true;
-      if (live.pop.type === 'decoy') {
-        tallies.decoy++;
-        ui.status.text = 'THE CROWN COSTS YOU';
-      } else if (live.pop.type === 'gold') {
-        tallies.gold++;
-        ui.status.text = 'GOLD SPLAT — TREBLE PAY';
-      } else {
-        tallies.normal++;
-        ui.status.text = 'SPLAT!';
-      }
-      despawn(live, true);
-      refreshProgress();
-      if (tallies.normal + tallies.gold >= QUOTA_WIN) endRound();
-    } else {
+    if (dead) return;
+    const hit = fireGalleryLane(schedule, st, lane);
+    if (hit === null) return; // cooldown-swallowed or already finished
+    if (hit === 'miss') {
       ui.status.text = 'MISS — RECOILING';
+      return;
     }
+    ui.status.text =
+      hit === 'decoy' ? 'THE CROWN COSTS YOU'
+        : hit === 'gold' ? 'GOLD SPLAT — TREBLE PAY'
+          : 'SPLAT!';
+    dropSprite(lane);
+    refreshProgress();
+    if (st.tallies.normal + st.tallies.gold >= QUOTA_WIN) endRound();
   }
 
   const barW = rowW;
   const onTick = (tk: Ticker): void => {
     if (dead) return;
-    clock += tk.deltaMS;
-    spawnDue();
-    animateSlimes();
-    ui.timerBar.width = Math.max(2, barW * Math.max(0, 1 - clock / ROUND_MS));
-    ui.timerBar.tint = clock > ROUND_MS * 0.7 ? T.bad : hueNum;
-    if (clock >= ROUND_MS || spawnIdx >= schedule.length) {
-      const allResolved = spawnIdx >= schedule.length && liveByLane.every((l) => !l);
-      if (clock >= ROUND_MS || allResolved) endRound();
-    }
+    stepGallery(schedule, st, tk.deltaMS, budgetMs);
+    syncSprites();
+    ui.timerBar.width = Math.max(2, barW * Math.max(0, 1 - st.clock / budgetMs));
+    ui.timerBar.tint = st.clock > budgetMs * 0.7 ? T.bad : hueNum;
+    if (st.finished) endRound();
   };
-
 
   holes.forEach((h, lane) => {
     h.on('pointerdown', () => fire(lane));
@@ -372,6 +434,9 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
     if (n >= 1 && n <= LANES) fire(n - 1);
   }
   window.addEventListener('keydown', onKey);
+
+  // F1 fix: this registration was missing entirely — the scene was born frozen
+  Ticker.shared.add(onTick);
 
   function teardown(): void {
     Ticker.shared.remove(onTick);
@@ -471,6 +536,38 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const parCheck = scoreRound({ normal: QUOTA_WIN, gold: 0, decoy: 0, escapes: 0 }, 1);
   if (parCheck.points !== 140) failures.push(`par normalization off (${parCheck.points})`);
 
+
+  // F6 regression: settle budget honors ctx.timerLen (700 ms engine margin, capped at ROUND_MS)
+  if (roundBudgetMs(20) !== 19300 || roundBudgetMs(8) !== 7300) failures.push('budget curve wrong');
+  if (roundBudgetMs(120) !== ROUND_MS || roundBudgetMs(300) !== ROUND_MS) failures.push('budget cap wrong');
+
+  // F1 regression: ticks advance state without Esc — an idle run must self-settle
+  for (const depth of [1, 11, 30]) {
+    const sch = buildSchedule(depth * 48611 + 7, depth);
+    const budget = roundBudgetMs(20);
+    const STEP = 1000 / 60;
+    const a = newGalleryState();
+    const b = newGalleryState();
+    let steps = 0;
+    while (!a.finished && steps <= Math.ceil(budget / STEP) + 1) {
+      stepGallery(sch, a, STEP, budget);
+      steps++;
+    }
+    // an early allResolved settle must leave every lane free; a budget
+    // settle may legitimately catch slimes still up mid-round
+    if (a.clock < budget && a.lanePop.some((l) => l !== null)) failures.push(`lane still occupied at settle depth=${depth}`);
+    if (a.clock <= 0 || a.clock > budget + STEP) failures.push(`clock ${a.clock} outside budget depth=${depth}`);
+    if (a.tallies.escapes <= 0) failures.push(`ticks spawned nothing depth=${depth}`);
+    let bSteps = 0;
+    while (!b.finished && bSteps <= Math.ceil(budget / STEP) + 1) {
+      stepGallery(sch, b, STEP, budget);
+      bSteps++;
+    }
+    if (JSON.stringify({ c: b.clock, s: b.spawnIdx, t: b.tallies })
+      !== JSON.stringify({ c: a.clock, s: a.spawnIdx, t: a.tallies })) {
+      failures.push(`tick sim nondeterministic depth=${depth}`);
+    }
+  }
   return { ok: failures.length === 0, failures };
 }
 
