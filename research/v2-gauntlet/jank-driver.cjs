@@ -8,6 +8,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const os = require('os');
 const SOLVER_SRC = require('./jank-solver.cjs');
+const { boot: jboot } = require('./jank-cdp.cjs');
 
 const APP = 'http://127.0.0.1:8795/';
 const DEBUG_PORT = 9337;
@@ -118,30 +119,7 @@ class Tab {
 
 async function boot(c) {
   const t = new Tab(c);
-  await c.send('Page.enable');
-  await c.send('Runtime.enable');
-  await c.send('Network.enable');
-  await c.send('Network.setCacheDisabled', { cacheDisabled: true }).catch(() => {});
-  await c.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false });
-  await c.send('Fetch.enable', { patterns: [{ urlPattern: '*main.ts*', requestStage: 'Response' }] });
-  const INJECT = ';window.__Q={run:()=>{try{return (typeof run!=="undefined"&&run)?{seed:run.seed,depth:run.depth,hp:run.hp,timerLen:run.timerLen,score:run.score,streak:run.streak,lastTakeover:run.lastTakeover}:null}catch(e){return null}}};';
-  c.on('Fetch.requestPaused', async (e) => {
-    try {
-      const u = new URL(e.request.url);
-      const body = await fetchDev(u.pathname + u.search);
-      const nb = body.includes('__Q') ? body : body + INJECT;
-      await c.send('Fetch.fulfillRequest', { requestId: e.requestId, responseCode: 200,
-        responseHeaders: [{ name: 'content-type', value: 'text/javascript' }],
-        body: Buffer.from(nb, 'utf8').toString('base64') });
-    } catch (x) { try { await c.send('Fetch.continueRequest', { requestId: e.requestId }); } catch (y) {} }
-  });
-  c.on('Runtime.exceptionThrown', (e) => { const d = e.exceptionDetails; t.errs.push(String(d && d.exception && d.exception.description || d && d.text).slice(0, 200)); });
-  c.on('Runtime.consoleAPICalled', (e) => { if (e.type === 'error') t.errs.push((e.args || []).map(a => a.value || a.description || '').join(' ').slice(0, 200)); });
-  await c.send('Page.navigate', { url: APP });
-  for (let i = 0; i < 30 && !(await t.refreshRect()); i++) await sleep(600);
-  if (!t.rect) throw new Error('boot: no canvas');
-  await sleep(1000);
-  await t.ev(SOLVER_SRC, true);
+  await jboot(c, t);
   return t;
 }
 
@@ -160,17 +138,22 @@ async function enterRun(t, why) {
     const st = await t.q();
     if (st && st.seed != null) return st;
   }
+  say('enterRun-debug hooks=' + (await t.ev('JSON.stringify({Q:typeof window.__Q,START:typeof window.__START,S:typeof window.__SOLVE,href:location.href})').catch(e=>'ERR')) + ' errs=' + JSON.stringify(t.errs.slice(0,3)));
   throw new Error('enterRun: could not start a run');
 }
 
 /* Option-tile stage coords, mirroring scenes/game.ts layout math. */
 function optionCenter(sol, idx) {
-  const rows = sol.rows || 3, cols = sol.cols || 3;
-  const cell = cols === 2 ? 150 : 118, gap = 14;
-  const optSize = rows >= 3 ? 88 : 108;
-  const ox = (920 - (4 * optSize + 36)) / 2;
-  const oy = 40 + rows * (cell + gap) + 30;
-  return [40 + ox + (idx % 4) * (optSize + 12) + optSize / 2, 164 + oy + Math.floor(idx / 4) * (optSize + 12) + optSize / 2];
+  /* mirrors scenes/layouthelper.ts puzzleLayout() exactly (live rev) */
+  var rows = sol.rows || 3, cols = sol.cols || 3;
+  var GAP = 14, cell = cols === 2 ? 150 : 118;
+  var boardH = rows * cell + (rows - 1) * GAP;
+  var avail = 640 - 20 - boardH - 24 - 14;
+  var optSize = Math.max(72, Math.min(120, Math.floor((avail - GAP) / 2)));
+  var ox = Math.round((920 - (4 * optSize + 3 * GAP)) / 2);
+  var oy = 20 + boardH + 24;
+  return [40 + ox + (idx % 4) * (optSize + GAP) + optSize / 2,
+          164 + oy + Math.floor(idx / 4) * (optSize + GAP) + optSize / 2];
 }
 
 (async () => {
@@ -190,6 +173,7 @@ function optionCenter(sol, idx) {
   const c = await connectWS(tgt.webSocketDebuggerUrl);
   let t = null;
   let total = 0, guard = 0, runRestarts = 0;
+  const seenDepth = new Set();
   const t0 = Date.now();
   try { t = await boot(c); } catch (e) { say('FATAL boot: ' + e.message); try { chrome.kill(); } catch (x) {} process.exit(2); }
   await enterRun(t, 'initial');
@@ -208,6 +192,10 @@ function optionCenter(sol, idx) {
       sanctuary: sol.sanctuary, hp: st.hp, streak: st.streak, timerLen: st.timerLen };
     const shots = [];
     const f = await t.shot('d' + pad(depth) + '-a'); if (f) shots.push(['a', f]);
+    if (depth === 1 && sol.kind === 'puzzle') {
+      await sleep(4000);
+      const ft = await t.shot('d' + pad(depth) + '-timer'); if (ft) shots.push(['timer', ft]);
+    }
 
     /* ---- interlude overlay (every 4th depth) ---- */
     if (sol.interlude) {
@@ -215,7 +203,7 @@ function optionCenter(sol, idx) {
       const mode = depth === 4 ? 'esc' : depth === 8 ? 'auto' : 'click';
       rec.mode = mode;
       if (mode === 'esc') {
-        await sleep(1300); // past ESCAPE_AFTER_MS (1000)
+        await sleep(2000); // comfortably past ESCAPE_AFTER_MS (1000)
         const fh = await t.shot('d' + pad(depth) + '-hint'); if (fh) shots.push(['hint', fh]);
         await t.esc();
       } else if (mode === 'auto') {
@@ -230,7 +218,7 @@ function optionCenter(sol, idx) {
       rec.hpAfter = (await t.q() || {}).hp;
       rec.probe = await t.probeSnap();
       rec.newErrs = t.errs.slice(errsBefore); rec.shots = shots;
-      jlog(rec); total++;
+      jlog(rec); if (rec.advanced && !seenDepth.has(depth)) { seenDepth.add(depth); total++; }
       say('[d' + pad(depth) + '] interlude mode=' + mode + ' dt=' + r.dt + ' advanced=' + rec.advanced);
       continue;
     }
@@ -254,7 +242,7 @@ function optionCenter(sol, idx) {
       rec.hpAfter = (await t.q() || {}).hp;
       rec.probe = await t.probeSnap();
       rec.newErrs = t.errs.slice(errsBefore); rec.shots = shots;
-      jlog(rec); total++;
+      jlog(rec); if (!seenDepth.has(depth)) { seenDepth.add(depth); total++; }
       say('[d' + pad(depth) + '] takeover ' + sol.name + ' dt=' + r.dt + ' noop=' + !!rec.escNoop);
       continue;
     }
@@ -273,12 +261,12 @@ function optionCenter(sol, idx) {
     }
     const r = await t.waitDepthChange(depth, 9000);
     rec.wrong = wrong; rec.picked = idx;
-    rec.dtAnswerToAdvance = r.dt;
+    rec.dtAnswerToAdvance = (r.st || r.st === null) ? Date.now() - clickT : r.dt;
     rec.runEnded = r.st === null;
     rec.hpAfter = (await t.q() || {}).hp;
     rec.probe = await t.probeSnap();
     rec.newErrs = t.errs.slice(errsBefore); rec.shots = shots;
-    jlog(rec); total++;
+    jlog(rec); if ((r.st || r.st === null) && !seenDepth.has(depth)) { seenDepth.add(depth); total++; }
     say('[d' + pad(depth) + '] puzzle ' + sol.famName + ' wrong=' + wrong + ' dt=' + r.dt + (r.st === null ? ' RUN-ENDED' : ''));
   }
 

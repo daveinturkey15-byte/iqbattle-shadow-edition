@@ -139,6 +139,7 @@ const DBG = (window as any).__DBG as any;
 function advance(): void { if (!run) return; run.depth++; DBG.rounds++; deal(); }
 
 function toLanding(): void {
+  stopTick();
   initAudio();
   mp?.leave(); mp = null; mpRole = null;
   show(buildLanding({
@@ -228,14 +229,17 @@ interface Run {
   name: string; roomName: string; timerLen: number;
   seed: number; plan: ArcPlan[];
   depth: number; hp: number; score: number; streak: number;
-  prevAlign: string | null; emeralds: string[]; lastTakeover: number; forgiveNext: boolean; prevSanctuary: boolean; depthStartedAt: number; fateScoreMul?: number;
+  prevAlign: string | null; emeralds: string[]; lastTakeover: number; forgiveNext: boolean; prevSanctuary: boolean; depthStartedAt: number; fateScoreMul?: number; token: number;
 }
 let run: Run | null = null;
+let runToken = 0;
+let shell: Shell | null = null;
 let lastLayer = 0;
 
 function startRun(name: string, roomName: string, timerLen: number, seed?: number): void {
   seed = (seed ?? ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1))) >>> 0;
-  run = { name, roomName, timerLen, seed, plan: planArc(seed, 2000), depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99, forgiveNext: false, prevSanctuary: false };
+  const token = ++runToken;
+  run = { name, roomName, timerLen, seed, plan: planArc(seed, 2000), depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99, forgiveNext: false, prevSanctuary: false, token };
   DBG.startRuns++;
   lastLayer = 0;
   initShadow(view);
@@ -246,6 +250,8 @@ function startRun(name: string, roomName: string, timerLen: number, seed?: numbe
 }
 
 function endRun(): void {
+  stopTick();
+  shell = null;
   const r = run!;
   sfx(r.hp > 0 ? 'laugh' : 'scream');
   const root = new Container();
@@ -270,7 +276,7 @@ function deal(): void {
   const plan = r.plan[r.depth - 1];
   const root = new Container();
 
-  const shell = Shell.attach(root, {
+  shell = Shell.attach(root, {
     onLobby: () => { run = null; toLanding(); },
     roomTitle: (r.roomName || 'PRIVATE ROOM') + ' · DEPTH ' + r.depth,
     onLeave: () => { run = null; toLanding(); },
@@ -278,18 +284,7 @@ function deal(): void {
   shell.setDepth(r.depth);
   shell.setTimer(1, fmtClock(r.timerLen));
   r.depthStartedAt = performance.now();
-  const tickTimer = () => {
-    const rr = run;
-    if (!rr || rr.depthStartedAt !== r.depthStartedAt) return;
-    const left = Math.max(0, r.timerLen - (performance.now() - r.depthStartedAt) / 1000);
-    shell.setTimer(left / r.timerLen, fmtClock(Math.ceil(left)));
-    if (left <= 0) { r.hp = Math.max(0, r.hp - 12); r.streak = 0; toastNow(root, 'TIME DROWNED YOU', T.bad); r.depth++; deal(); }
-  };
-  const tickId = setInterval(tickTimer, 250);
-  const stopTick = () => clearInterval(tickId);
-  (root as Container & { __stopTick?: () => void }).__stopTick = stopTick;
-  const origDestroy = root.destroy.bind(root);
-  root.destroy = ((...a: Parameters<Container['destroy']>) => { stopTick(); origDestroy(...a); }) as typeof root.destroy;
+  startTick(root);
 
   applyArc(root, plan);
   if (plan.sanctuary) sanctuaryOn(root); else sanctuaryOff(root);
@@ -310,7 +305,7 @@ function deal(): void {
   onAct(Math.min(3, Math.floor(plan.layer / 2)));
   if (plan.align !== 'good' && plan.layer > lastLayer && plan.layer >= 2) {
     const spec = layerBanner(root, plan.layer);
-    text(root, spec.text, spec.x - 160, 120, 26, T.bad, true);
+    text(root, spec.text, STAGE_W / 2 - Math.min(560, spec.text.length * 9) / 2, 120, 26, T.bad, true);
     say('whisper', {});
     announceLarge('layer', spec.text);
   }
@@ -337,7 +332,7 @@ function deal(): void {
         toastNow(root, 'THE ' + id.toUpperCase().replace('_', ' ') + ' IS YOURS', T.gold);
         sfx('levelup');
         try { onEmerald(); } catch {}
-        setTimeout(() => { r.depth++; deal(); }, 900);
+        scheduleAdvance(r, r.depth, 900);
       });
       root.addChild(pickRoot);
       show(root);
@@ -356,10 +351,39 @@ function deal(): void {
   const rp = roundPlan(r.seed, r.depth, ALL_FAMILIES.length, TAKEOVERS.length, (d) =>
     plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
   if (mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen);
-  if (mpRole === 'client') { show(root); return; } /* clients mount on the round frame */
+  if (mpRole === 'client') { startTick(root); show(root); return; } /* clients mount on the round frame */
   if (rp.kind === 'takeover') { r.lastTakeover = r.depth; setPresence('hidden'); dealTakeover(root, rp.index, rp.seed); }
   else dealPuzzle(root, rp.index, rp.seed, r.depth);
+  startTick(root);
   show(root);
+}
+
+/* ONE tick for the whole run — per-deal intervals accumulated into ghost
+ * storms (BugSweep BUG 1/3/4/5). The tick self-cancels when the run dies. */
+let tickId: ReturnType<typeof setInterval> | null = null;
+function stopTick(): void { if (tickId !== null) { clearInterval(tickId); tickId = null; } }
+function startTick(root: Container): void {
+  stopTick();
+  const r = run!;
+  tickId = setInterval(() => {
+    if (run !== r) { stopTick(); return; }
+    const left = Math.max(0, r.timerLen - (performance.now() - r.depthStartedAt) / 1000);
+    shell?.setTimer(left / r.timerLen, fmtClock(Math.ceil(left)));
+    if (left <= 0) {
+      stopTick();
+      r.hp = Math.max(0, r.hp - 12); r.streak = 0;
+      toastNow(root, 'TIME DROWNED YOU', T.bad);
+      r.depth++; deal();
+    }
+  }, 250);
+}
+/* Guarded deferred advance: fires only if the SAME run is still on the SAME
+ * depth (stale timers from a previous depth or after death are dropped). */
+function scheduleAdvance(r: Run, fromDepth: number, delayMs: number): void {
+  setTimeout(() => {
+    if (run !== r || r.depth !== fromDepth) return;
+    r.depth++; deal();
+  }, delayMs);
 }
 
 function dealTakeover(root: Container, idx: number, planSeed: number): void {
@@ -388,7 +412,7 @@ function dealTakeover(root: Container, idx: number, planSeed: number): void {
       r.hp = Math.max(0, Math.min(100, r.hp + res.hpDelta));
       if (res.correct === true) { r.streak++; say('right', {}); } else if (res.correct === false) { r.streak = 0; say('wrong', {}); }
       toastNow(root, res.summary, res.correct === true ? T.good : res.correct === false ? T.bad : T.gold);
-      setTimeout(() => { r.depth++; deal(); }, 1500);
+      scheduleAdvance(r, r.depth, 1500);
     },
   });
 }
@@ -403,7 +427,10 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
   const p = fam.generate((planSeed ^ Math.imul(depth, 7919)) >>> 0, diff, hue);
   if (plan.sanctuary) sanctuaryOn(root);
 
+  let answered = false;
   const scene = buildGameScene(p, (idx, correct) => {
+    if (answered) return; /* F2 lock: one answer per board */
+    answered = true;
     const diffV = diff;
     const midas = fateMidasActive();
     if (correct) {
@@ -425,7 +452,7 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       say('wrong', {});
       toastNow(root, 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
     }
-    setTimeout(() => { r.depth++; deal(); }, 1400);
+    scheduleAdvance(r, r.depth, 1400);
   }, depth, {
     score: () => r.score,
     players: () => [{ name: r.name || 'YOU', score: r.score, you: true }],

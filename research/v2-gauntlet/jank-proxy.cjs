@@ -6,7 +6,7 @@
 const http = require('http');
 const UPSTREAM = { host: '127.0.0.1', port: 8791 };
 const LISTEN = 8795;
-const INJECT = ';window.__Q={run:()=>{try{return (typeof run!=="undefined"&&run)?{seed:run.seed,depth:run.depth,hp:run.hp,timerLen:run.timerLen,score:run.score,streak:run.streak,lastTakeover:run.lastTakeover}:null}catch(e){return null}}};window.__START=(s)=>{try{startRun("JANK","JANK ROOM",60,(s>>>0)||20260826)}catch(e){}};';
+const INJECT = ';window.__Q={run:()=>{try{return (typeof run!=="undefined"&&run)?{seed:run.seed,depth:run.depth,hp:run.hp,timerLen:run.timerLen,score:run.score,streak:run.streak,lastTakeover:run.lastTakeover}:null}catch(e){return null}}};window.__START=(s)=>{try{startRun("JANK","JANK ROOM",60,(s>>>0)||20260828)}catch(e){}};';
 
 const server = http.createServer((req, res) => {
   if (req.url.startsWith('/@vite/client') || req.url.startsWith('/@vite/')) {

@@ -1,0 +1,70 @@
+{
+  "depths": 34,
+  "runRestarts": 1,
+  "wallSec": 586,
+  "puzzle": {
+    "n": 41,
+    "dtMedian": 4029,
+    "dtP90": 9030,
+    "dtMax": 9040,
+    "over1600ms": 21
+  },
+  "takeover": {
+    "n": 2,
+    "escNoop": 2,
+    "stuck": 0,
+    "names": [
+      "SABER CLASH(esc-noop)",
+      "ONE-ARMED GOD(esc-noop)"
+    ]
+  },
+  "interlude": {
+    "n": 31,
+    "modes": [
+      "esc:FAIL",
+      "esc:FAIL",
+      "esc:FAIL",
+      "esc:FAIL",
+      "esc:FAIL",
+      "esc:ok",
+      "auto:ok",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:ok",
+      "click:ok",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:ok",
+      "click:ok",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:FAIL",
+      "click:ok",
+      "click:ok"
+    ]
+  },
+  "maxFrameGap": 68,
+  "longtasks": 1,
+  "pageErrors": [
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0",
+    "InvalidStateError: Failed to execute 'start' on 'AudioBufferSourceNode': cannot call start more than once.\n    at add (http://127.0.0.1:8795/src/audio/director.ts:52:7)\n    at buildLayer (http://127.0"
+  ]
+}

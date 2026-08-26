@@ -11,6 +11,7 @@ module.exports = `(async function(){
   const ALL = [...f1.FAMILIES, ...f2.FAMILIES2, ...f3.FAMILIES3];
   const imul = Math.imul;
   window.__SOLVE = function(seed, depth, lastTakeover) {
+    if ((lastTakeover | 0) > 1000000) lastTakeover = -99; /* unsigned -99 artifact */
     const planArr = arc.planArc(seed >>> 0, 2000);
     const plan = planArr[depth-1] || {align:'bad', layer:1, sanctuary:false};
     const canTk = plan.align !== 'good' && depth >= 4 && depth - lastTakeover >= 3 &&
