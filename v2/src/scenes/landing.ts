@@ -95,8 +95,8 @@ export function buildLanding(cb: LandingCallbacks): Container {
   }, 'primary');
 
   /* join-by-code row (MP) */
-  const codeIn = makeTextInput(card, 40, 310, inW - 150, 46, 'Room code', 24);
-  makeButton(card, inW - 100, 310, 100, 46, 'JOIN', () => {
+  const codeIn = makeTextInput(card, 40, 306, inW - 160, 46, 'Room code', 24);
+  makeButton(card, inW - 110, 306, 100, 46, 'JOIN', () => {
     const code = codeIn.value.trim().toUpperCase();
     if (code.length >= 3) cb.onJoin(code, nameIn.value.trim() || 'Player');
   }, 'ghost');

@@ -106,7 +106,8 @@ export function drawSchedule(seed: number, depth: number): TideSchedule {
   // continue-the-pattern rule: repeat kind advances it; otherwise keep kind
   const ansKind = nxt.kind === step.kind ? (nxt.kind + 1) % CHIP_KINDS_TP : nxt.kind;
   const ansN = 1 + Math.floor(rng() * 2);
-  sch.opts.push({ kind: ansKind, n: ansN });
+  const ans: Chip = { kind: ansKind, n: ansN };
+  sch.opts.push(ans);
   // F7 fairness: the rule pins only ansKind, so every decoy must differ in KIND —
   // a same-kind/different-n pool would make the answer ambiguous.
   while (sch.opts.length < 8) {
@@ -118,7 +119,7 @@ export function drawSchedule(seed: number, depth: number): TideSchedule {
     const j = Math.floor(rng() * (i + 1));
     [sch.opts[i], sch.opts[j]] = [sch.opts[j], sch.opts[i]];
   }
-  sch.answerIdx = 0;
+  sch.answerIdx = sch.opts.indexOf(ans);
   const eligible: number[] = [];
   for (let r = 0; r < ROWS; r++) if (dryFrac(r, sch.max) >= RAIL) eligible.push(r);
   sch.answerRow = eligible[Math.floor(rng() * eligible.length)];

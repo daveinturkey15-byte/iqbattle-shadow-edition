@@ -8,20 +8,9 @@ import type { Puzzle } from '../puzzles/types.ts';
 export function buildGameScene(p: Puzzle, onAnswer: (idx: number, correct: boolean) => void, depth = 1): Container {
   const root = new Container();
 
-  // background
-  const bg = new Sprite(Texture.WHITE);
-  bg.width = STAGE_W; bg.height = STAGE_H; bg.tint = T.bg;
-  root.addChild(bg);
-
-  // header
-  text(root, 'LOBBY', 40, 26, 15, T.muted);
-  text(root, 'PRIVATE ROOM', STAGE_W / 2 - 90, 26, 17, T.ink, true);
-
-  // status strip panel
-  const strip = panel(root, 40, 70, 920, 74);
-  text(strip, `DEPTH ${depth}`, 24, 12, 20, T.ink, true);
-  const timer = text(strip, '01:00', 820, 12, 20, T.ink, true);
-  (strip as any).__timer = timer;
+  /* Chrome (header, status strip, timer) is owned by Shell.attach in main.ts —
+   * this scene renders ONLY the play surface so Shell chrome stays visible. */
+  void depth;
 
   // board panel (board + options live here, centered in the left region)
   const boardPanel = panel(root, 40, 164, 920, 640);
@@ -41,15 +30,15 @@ export function buildGameScene(p: Puzzle, onAnswer: (idx: number, correct: boole
     boardPanel.addChild(s);
   }
 
-  // options 4x2
-  const optSize = 118;
-  const optW = 4 * optSize + 3 * gap;
+  // options 4x2 — sized to fit inside the 640px board panel at every row count
+  const optSize = p.rows >= 3 ? 88 : 108;
+  const optW = 4 * optSize + 3 * 12;
   const ox = (920 - optW) / 2;
-  const oy = by + p.rows * (cellSize + gap) + 36;
+  const oy = by + p.rows * (cellSize + gap) + 30;
   p.options.forEach((prims, idx) => {
     const s = spriteFrom(tileCanvas(prims, p.hue, optSize));
-    s.x = ox + (idx % 4) * (optSize + gap);
-    s.y = oy + Math.floor(idx / 4) * (optSize + gap);
+    s.x = ox + (idx % 4) * (optSize + 12);
+    s.y = oy + Math.floor(idx / 4) * (optSize + 12);
     s.eventMode = 'static'; s.cursor = 'pointer';
     s.on('pointerdown', () => onAnswer(idx, idx === p.answer));
     boardPanel.addChild(s);
@@ -66,7 +55,6 @@ export function buildGameScene(p: Puzzle, onAnswer: (idx: number, correct: boole
   /* rule sentence intentionally NOT shown during play — it is revealed in
    * the answer toast (DNA: the board teaches the rule, not a caption). */
 
-  void timer;
   return root;
 }
 

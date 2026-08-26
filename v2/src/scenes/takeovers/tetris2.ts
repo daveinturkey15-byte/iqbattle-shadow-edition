@@ -141,18 +141,21 @@ export function mergePiece(grid: WellGrid, piece: Piece): void {
 }
 /** Remove every full row; returns how many fell. */
 export function clearFullRows(grid: WellGrid): number {
+  /* W5: remove ALL full rows in one pass — the old bottom-up shift stranded
+   * adjacent stacks (2-stack cleared 1, 3-stack cleared 2). */
+  const keep: number[][] = [];
   let cleared = 0;
-  for (let y = ROWS - 1; y >= 0; y--) {
+  for (let y = 0; y < ROWS; y++) {
     let full = true;
     for (let x = 0; x < COLS; x++) {
       if (cellAt(grid, x, y) < 0) { full = false; break; }
     }
-    if (!full) continue;
-    cleared++;
-    for (let yy = y; yy > 0; yy--) {
-      for (let x = 0; x < COLS; x++) grid[yy * COLS + x] = grid[(yy - 1) * COLS + x];
-    }
-    for (let x = 0; x < COLS; x++) grid[x] = -1;
+    if (full) { cleared++; continue; }
+    keep.push(Array.from({ length: COLS }, (_, x) => cellAt(grid, x, y)));
+  }
+  while (keep.length < ROWS) keep.unshift(Array.from({ length: COLS }, () => -1));
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) grid[y * COLS + x] = keep[y][x];
   }
   return cleared;
 }

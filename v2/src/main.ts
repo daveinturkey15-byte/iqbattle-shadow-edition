@@ -6,7 +6,7 @@ import { FAMILIES2 } from './puzzles/families2.ts';
 import { FAMILIES3 } from './puzzles/families3.ts';
 import { buildLanding } from './scenes/landing.ts';
 import { buildLobby } from './scenes/lobby.ts';
-import { Shell } from './scenes/shell.ts';
+import { Shell, fmtClock } from './scenes/shell.ts';
 import { planArc, type ArcPlan } from './arc-data.ts';
 import { applyArc, sanctuaryOn, sanctuaryOff, layerBanner } from './scenes/arc.ts';
 import { initAudio, sfx } from './audio/audio.ts';
@@ -74,7 +74,9 @@ function show(s: Screen): void {
   current = s;
   if (s) app.stage.addChild(s);
 }
+let backdropStop: (() => void) | null = null;
 function clearCurrent(): void {
+  try { if (backdropStop) { backdropStop(); backdropStop = null; } } catch { /* optional */ }
   if (current) { app.stage.removeChild(current); current.destroy({ children: true }); current = null; }
 }
 function toastNow(root: Container, msg: string, color: string): void {
@@ -222,17 +224,32 @@ function deal(): void {
   const plan = r.plan[r.depth - 1];
   const root = new Container();
 
-  Shell.attach(root, {
+  const shell = Shell.attach(root, {
     onLobby: () => { run = null; toLanding(); },
     roomTitle: (r.roomName || 'PRIVATE ROOM') + ' · DEPTH ' + r.depth,
     onLeave: () => { run = null; toLanding(); },
   });
+  shell.setDepth(r.depth);
+  shell.setTimer(1, fmtClock(r.timerLen));
+  r.depthStartedAt = performance.now();
+  const tickTimer = () => {
+    const rr = run;
+    if (!rr || rr.depthStartedAt !== r.depthStartedAt) return;
+    const left = Math.max(0, r.timerLen - (performance.now() - r.depthStartedAt) / 1000);
+    shell.setTimer(left / r.timerLen, fmtClock(Math.ceil(left)));
+    if (left <= 0) { r.hp = Math.max(0, r.hp - 12); r.streak = 0; toastNow(root, 'TIME DROWNED YOU', T.bad); r.depth++; deal(); }
+  };
+  const tickId = setInterval(tickTimer, 250);
+  const stopTick = () => clearInterval(tickId);
+  (root as Container & { __stopTick?: () => void }).__stopTick = stopTick;
+  const origDestroy = root.destroy.bind(root);
+  root.destroy = ((...a: Parameters<Container['destroy']>) => { stopTick(); origDestroy(...a); }) as typeof root.destroy;
 
   applyArc(root, plan);
   if (plan.sanctuary) sanctuaryOn(root); else sanctuaryOff(root);
   try {
     const wd = pickWorld(plan.align === 'chaotic' ? 'chaotic' : plan.align === 'good' ? 'good' : plan.align === 'neutral' ? 'neutral' : 'bad', mulberry((r.seed ^ Math.imul(r.depth, 0xBEEF)) >>> 0));
-    applyBackdrop(root, wd.id);
+    backdropStop = applyBackdrop(root, wd.id);
   } catch { /* backdrop optional */ }
   try {
     const cm = maybeCurse({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xCA75E)) >>> 0), hp: r.hp, seed: r.seed });
