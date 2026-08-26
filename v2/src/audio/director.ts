@@ -103,7 +103,7 @@ function buildLayer(act: number, c: AudioContext, t0: number): Layer | null {
 
   const nodes: AudioScheduledSourceNode[] = [];
   const add = (n: AudioScheduledSourceNode): void => {
-    n.start(t0);
+    try { n.start(t0); } catch { /* noiseSource auto-starts its buffer — a second start throws InvalidStateError (J1: this froze deal()) */ }
     nodes.push(n);
   };
 

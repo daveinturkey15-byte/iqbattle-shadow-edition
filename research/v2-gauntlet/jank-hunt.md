@@ -63,9 +63,16 @@
 - **Takeover Esc: UNVERIFIED live** — every takeover the solver predicted (SABER CLASH d14, ONE-ARMED GOD d33, plus probe-run gates) was skipped by J1 before rendering; THE WELL (pass 1) mounted but was left to run its timer. Needs re-audit after J1. Note THE WELL's on-screen controls advertise "P pause" but no Esc hint (checklist #4 exposure).
 - **Cosmetic (new, minor):** the interlude's 0.92-dim backdrop lets the frozen shell's fate banner ("THE WALLS ARE TITTERING") collide with the gold title "A CHAOS EMERALD SURFACES" in the same y-band (`il08-hint.png`). Same band-collision class as J3.
 
-## Probe results summary
 
-## Esc-path probe (seed 20260828) — see § Probe results below
+## Polish-checklist scorecard (Main's 6 points)
+| # | Point | Verdict |
+|---|-------|---------|
+| 1 | Goal card first 2s, no option overlap | **FAIL** — takeover goal line overprinted by announce banner (J3); interlude cards PASS |
+| 2 | HUD clearance, ≥11px + contrast | **FAIL** — announce/goal band collision (J3), fate-banner vs interlude title (probe); all text ≥11px PASS |
+| 3 | Click-to-feedback <100ms | **PASS** — tint+toast at +120ms (`d07-b.png`); but ~25% of transitions never mount (J1) |
+| 4 | Esc hint in 2s, Esc resolves neutral | **PARTIAL** — interlude PASS when mounted (953ms neutral); takeover Esc UNVERIFIED, no Esc hint on takeover goal lines |
+| 5 | Contrast worst-case | **PASS (borderline)** — 13px muted goal line over busy backdrop is the worst case; readable unless overlapped (J3) |
+| 6 | Summary ≤64 chars, no truncation | **FAIL** — 90-char hard slice truncates mid-word ("top vert", `d07-b.png`) (J4) |
 
 ## Ranked fix list (hand to scene owners)
 1. **J1** director.ts: never restart spent AudioBufferSourceNodes; try/catch `onAct` inside `deal()` (audio must never block mounting). Restores ~25% of depth transitions currently freezing for ~60s.
