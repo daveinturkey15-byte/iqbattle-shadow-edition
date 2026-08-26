@@ -402,7 +402,8 @@ function scheduleAdvance(r: Run, fromDepth: number, delayMs: number): void {
 
 function dealTakeover(root: Container, idx: number, planSeed: number): void {
   const r = run!;
-  announce(TAKEOVER_NAMES[idx]);
+  announce('CHAOS ROUND — ' + TAKEOVER_NAMES[idx]);
+  text(root, 'CHAOS ROUND · ' + TAKEOVER_NAMES[idx], STAGE_W / 2 - 220, 148, 15, T.gold, true);
   try {
     const gc = goalCardFor(['red-light','tide-pool','serpent','floor-fall','hunter-dodge','laser-storm','drone-dodge','saber-clash','slots','slime-gallery','the-well'][idx]);
     if (gc) text(root, gc.title + ' — ' + gc.controls, STAGE_W / 2 - 300, 150, 13, T.muted);
