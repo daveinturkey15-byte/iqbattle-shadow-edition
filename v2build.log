@@ -1,0 +1,19 @@
+vite v5.4.21 building for production...
+transforming...
+✓ 763 modules transformed.
+rendering chunks...
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) C:/Users/david/Desktop/stuff/iqbattle/v2/node_modules/pixi.js/lib/index.mjs is dynamically imported by C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/mp.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/worlds/backdrops.ts but also statically imported by C:/Users/david/Desktop/stuff/iqbattle/v2/src/main.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/arc.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/game.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/interlude.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/landing.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/lobby.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/shell.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/dronedodge.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/floorfall.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/hunterdodge.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/laserstorm.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/redlight.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/saberclash.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/serpent.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/slimegallery.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/slots.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/tidepool.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/scenes/takeovers/well.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/shadow/large.ts, C:/Users/david/Desktop/stuff/iqbattle/v2/src/shadow/shadow.ts, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                           0.52 kB │ gzip:   0.37 kB
+dist/assets/webworkerAll-37bdHt5g.js      0.08 kB │ gzip:   0.09 kB
+dist/assets/browserAll-DpAtYXS7.js        0.17 kB │ gzip:   0.15 kB
+dist/assets/lobby-BsZJ2sUD.js             1.31 kB │ gzip:   0.83 kB
+dist/assets/index-CxYlv2n6.js         1,064.77 kB │ gzip: 324.33 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 3.83s

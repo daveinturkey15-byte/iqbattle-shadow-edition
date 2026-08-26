@@ -38,7 +38,8 @@ import { mountSlimeGallery } from './scenes/takeovers/slimegallery.ts';
 import { mountWell } from './scenes/takeovers/well.ts';
 
 const app = new Application();
-await app.init({ width: STAGE_W, height: STAGE_H, background: T.bg, antialias: true });
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+await app.init({ width: STAGE_W, height: STAGE_H, background: T.bg, antialias: true, resolution: DPR, autoDensity: true });
 document.getElementById('app')!.appendChild(app.canvas);
 function fit(): void {
   const el = app.canvas as HTMLCanvasElement;
