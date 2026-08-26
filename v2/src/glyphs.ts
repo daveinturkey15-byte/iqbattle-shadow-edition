@@ -59,10 +59,20 @@ export function tileCanvas(prims: Prim[], hue: string, size: number, opts?: { ho
   cv.width = size; cv.height = size;
   const c = cv.getContext('2d')!;
   const r = size * 0.14;
-  c.fillStyle = '#0a0d14';
-  c.strokeStyle = 'rgba(255,255,255,0.06)';
+  // luxe tile: #000 fill, accent hairline, faint accent inner glow
+  c.fillStyle = '#000000';
+  roundRect(c, 0.5, 0.5, size - 1, size - 1, r); c.fill();
+  c.save();
+  roundRect(c, 0.5, 0.5, size - 1, size - 1, r); c.clip();
+  c.shadowColor = 'rgba(64,137,238,0.30)';
+  c.shadowBlur = Math.max(3, size * 0.06);
+  c.strokeStyle = 'rgba(64,137,238,0.18)';
+  c.lineWidth = 2;
+  roundRect(c, 1.5, 1.5, size - 3, size - 3, r * 0.92); c.stroke(); c.stroke();
+  c.restore();
+  c.strokeStyle = 'rgba(64,137,238,0.24)';
   c.lineWidth = 1.5;
-  roundRect(c, 0.5, 0.5, size - 1, size - 1, r); c.fill(); c.stroke();
+  roundRect(c, 0.5, 0.5, size - 1, size - 1, r); c.stroke();
   if (opts?.hole) {
     c.fillStyle = '#f5f8ff';
     c.font = `800 ${Math.round(size * 0.42)}px Oxanium, "Segoe UI", sans-serif`;

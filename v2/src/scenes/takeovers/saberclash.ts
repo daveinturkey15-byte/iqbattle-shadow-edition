@@ -31,9 +31,9 @@ import { Container, Graphics, Sprite, Texture, Ticker } from 'pixi.js';
 import type { Text } from 'pixi.js';
 
 import { T, STAGE_W, STAGE_H } from '../../theme.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
-import { text } from '../game.ts';
+import { text, panel } from '../game.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -159,7 +159,7 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
   const hueNum = parseInt(hue.slice(1), 16);
   const settle = onceResolve(ctx.onDone);
   const plan = buildPlan(ctx.seed, ctx.depth);
-  const capMs = roundCapMs(ctx.timerLen);
+  const capMs = roundCapMs(Math.max(6, ctx.timerLen - GOAL_MS / 1000));
 
   /* ---- static chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -188,6 +188,15 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
   root.addChild(ui.pulse);
   root.addChild(ui.marker);
 
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['saber-clash'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'SABER CLASH', 28, 20, 26, T.gold, true);
+  text(card, 'STRIKE INSIDE THE SWEET ARC. THREE RINGS.', 28, 64, 15, T.ink);
+  text(card, 'SPACE / CLICK TO STRIKE · ESC NEUTRAL', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+
   text(root, 'SPACE / CLICK TO STRIKE · ESC DECLINES', STAGE_W / 2 - 150, 780, 13, T.muted);
 
   /* ---- state machine ---- */
@@ -196,6 +205,7 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
   let roundMs = 0;
   let pulseMs = -10000;
   let dead = false;
+  let introLeft = GOAL_MS;
 
   function refreshProgress(): void {
     ui.progress.text = `ROUND ${round + 1}/${ROUNDS} · STRIKES ${hits}/${ROUNDS}`;
@@ -225,11 +235,12 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
     }
     round++;
     roundMs = 0;
+    drawRing(); // static per round — redrawn on transition, not every frame
     refreshProgress();
   }
 
   function tap(): void {
-    if (dead) return;
+    if (dead || introLeft > 0) return;
     if (judgeTap(plan[round], roundMs)) {
       hits++;
       pulseMs = roundMs;
@@ -267,6 +278,13 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
 
   const onTick = (tk: Ticker): void => {
     if (dead) return;
+    // goal card: clock frozen, input locked (guards above), Esc still works
+    if (introLeft > 0) {
+      introLeft -= tk.deltaMS;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
+      return;
+    }
     roundMs += tk.deltaMS;
     const ring = plan[round];
 
@@ -280,7 +298,6 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
     ui.marker.tint = blinkOff ? T.bad : 0xffffff;
     ui.marker.alpha = blinkOff ? 0.85 : 1;
 
-    drawRing();
     drawPulse(roundMs);
 
     if (roundMs >= capMs) burnRound();
@@ -403,3 +420,10 @@ export function selfTest(): { ok: boolean; failures: string[] } {
 }
 
 export const __selfTest = selfTest;
+
+/* Node smoke entry: node --experimental-strip-types src/scenes/takeovers/saberclash.ts */
+if (typeof process !== 'undefined' && process.argv[1]?.replace(/\\/g, '/').endsWith('/saberclash.ts')) {
+  const r = selfTest();
+  console.log(r.ok ? '[selftest] SABER CLASH OK' : `[selftest] SABER CLASH FAIL\n  ${r.failures.join('\n  ')}`);
+  process.exitCode = r.ok ? 0 : 1;
+}

@@ -27,8 +27,9 @@
  * answers, no Math.random, no Date.now — clock is Pixi's ticker delta.
  *
  * FAIRNESS RAILS: feedback is per-lane only (never fullscreen); crosshair /
- * controls hint always visible; crowns readable at 11 px+; Esc ends the round
- * NEUTRAL with resolved tallies; every text >= 11 px.
+ * controls hint always visible; crowns readable at 11 px+; a goal card serves
+ * win condition/controls before input unlocks; Esc ends the round NEUTRAL with
+ * resolved tallies; every text >= 11 px.
  */
 import { Sprite, Texture, Ticker } from 'pixi.js';
 import type { Text } from 'pixi.js';
@@ -37,7 +38,7 @@ import { T, STAGE_W, STAGE_H } from '../../theme.ts';
 import type { Prim } from '../../glyphs.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 
 /* ------------------------------------------------------------------ */
@@ -268,9 +269,10 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
   const hue = T.boardHues[(ctx.seed >>> 5) % T.boardHues.length];
   const hueNum = parseInt(hue.slice(1), 16);
   const settle = onceResolve(ctx.onDone);
+  /** F6: settle budget honors ctx.timerLen; the goal card (GOAL_MS) is paid
+   * out of it with the same 6 s play floor the shared card convention uses. */
   const schedule = buildSchedule(ctx.seed, ctx.depth);
-  /** F6: settle budget honors ctx.timerLen instead of a hard-coded 30 s round */
-  const budgetMs = roundBudgetMs(ctx.timerLen);
+  const budgetMs = Math.max(6000, roundBudgetMs(ctx.timerLen) - GOAL_MS);
 
   /* ---- static chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -322,8 +324,7 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
   ui.timerBar.y = oy + rows * (cell + gap) + 100;
   ui.timerBar.height = 6;
   root.addChild(ui.timerBar);
-
-  text(root, 'CLICK A PORTHOLE OR PRESS 1-9 TO FIRE', ox, oy + rows * (cell + gap) + 128, 13, T.muted);
+  text(root, 'CLICK A PORTHOLE OR PRESS 1-9 TO FIRE · ESC LEAVES NEUTRAL', ox, oy + rows * (cell + gap) + 128, 13, T.muted);
 
   function refreshProgress(): void {
     const splats = st.tallies.normal + st.tallies.gold;
@@ -331,11 +332,22 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
       `SPLATS ${splats}/${QUOTA_WIN} · GOLD ${st.tallies.gold} · CROWNS SHOT ${st.tallies.decoy}`;
   }
 
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors the shared takeover goal card (redlight.ts / meta/onboard.ts). */
+  const CARD_W = 620;
+  const goalCard = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(goalCard, 'SLIME GALLERY', 28, 20, 26, T.gold, true);
+  text(goalCard, `SPLAT ${QUOTA_WIN} SLIMES · NEVER SHOOT A CROWN`, 28, 64, 15, T.ink);
+  text(goalCard, 'GOLD PAYS TREBLE · CROWNS COST DOUBLE', 28, 94, 13, T.muted);
+  const unlockTxt = text(goalCard, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+
   /* ---- state machine: pure tick core + sprite layer ---- */
   const st = newGalleryState();
   const spritesByLane: Array<Sprite | null> = Array.from({ length: LANES }, () => null);
   let seenEscapes = 0;
   let dead = false;
+  let cardUp = true;
+  let cardLeft = GOAL_MS;
 
   function finish(r: StageResult): void {
     if (dead) return;
@@ -394,7 +406,7 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
   }
 
   function fire(lane: number): void {
-    if (dead) return;
+    if (dead || cardUp) return;
     const hit = fireGalleryLane(schedule, st, lane);
     if (hit === null) return; // cooldown-swallowed or already finished
     if (hit === 'miss') {
@@ -413,6 +425,18 @@ export function mountSlimeGallery(ctx: TakeoverCtx): void {
   const barW = rowW;
   const onTick = (tk: Ticker): void => {
     if (dead) return;
+    if (cardUp) {
+      // goal card: the round clock (and every slime) stays frozen until it clears
+      cardLeft -= tk.deltaMS;
+      if (cardLeft <= 0) {
+        cardUp = false;
+        root.removeChild(goalCard);
+        goalCard.destroy({ children: true });
+      } else {
+        unlockTxt.text = `INPUT UNLOCKS IN ${Math.max(1, Math.ceil(cardLeft / 1000))}…`;
+      }
+      return;
+    }
     stepGallery(schedule, st, tk.deltaMS, budgetMs);
     syncSprites();
     ui.timerBar.width = Math.max(2, barW * Math.max(0, 1 - st.clock / budgetMs));
@@ -567,6 +591,11 @@ export function selfTest(): { ok: boolean; failures: string[] } {
       !== JSON.stringify({ c: a.clock, s: a.spawnIdx, t: a.tallies })) {
       failures.push(`tick sim nondeterministic depth=${depth}`);
     }
+  }
+
+  // goal card must always leave a playable round after it clears
+  for (let tl = 9; tl <= 120; tl++) {
+    if (roundBudgetMs(tl) - GOAL_MS < 6000) failures.push(`budget under card floor at timerLen=${tl}`);
   }
   return { ok: failures.length === 0, failures };
 }

@@ -39,18 +39,23 @@ export function buildLobby(opts: LobbyOpts): Container {
   panel(root, px, py, pw, ph);
   edgeRect(root, px, py, pw, ph, T.radius);
 
-  text(root, 'PLAYERS ' + opts.players.length, px + 32, py + 28, 14, T.muted, true);
+  const countLabel = text(root, opts.players.length === 1 ? 'PLAYER 1 · SOLO' : 'PLAYERS ' + opts.players.length,
+    px + 32, py + 28, 14, T.muted, true);
+  countLabel.style.letterSpacing = 2;
 
   let cardY = py + 64;
   opts.players.forEach((name, i) => {
     const tags = i === 0 ? ['you', 'host'] : [];
-    playerCard(root, px + 32, cardY, pw - 64, name, tags);
+    const h = playerCard(root, px + 32, cardY, pw - 64, name, tags);
+    h.setClock(null); /* lobby: everyone is waiting */
+    h.setRank(i + 1); /* seat-order diamond badge: gold host, silver, bronze */
     cardY += 84;
   });
 
   // Round Timer row: label + [-] value [+]
   const timerY = cardY + 24;
-  text(root, 'ROUND TIMER (S)', px + 32, timerY + 14, 13, T.muted, true);
+  const timerLabel = text(root, 'ROUND TIMER (S)', px + 32, timerY + 14, 13, T.muted, true);
+  timerLabel.style.letterSpacing = 2;
 
   let seconds = TIMER_DEFAULT;
   const valueLabel = text(root, String(seconds), 0, timerY + 8, 18, T.ink, true);

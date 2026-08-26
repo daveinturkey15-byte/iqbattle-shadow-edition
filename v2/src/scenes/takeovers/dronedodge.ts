@@ -32,7 +32,7 @@ import { Container, Graphics, Rectangle, Sprite, Texture, Ticker } from 'pixi.js
 import type { FederatedPointerEvent } from 'pixi.js';
 import type { Chip } from './redlight.ts';
 import { CHIP_KINDS, chipPrims } from './redlight.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
@@ -206,8 +206,8 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   vignette.alpha = 0;
   root.addChild(vignette);
 
-  const status = text(root, '', 40, 868, 16, T.ink, true);
-  text(root, 'CIRCLE TO BEAT THEIR TURN RATE · EVERY 3 DODGES BANKS A GUARD (MAX 2)', STAGE_W / 2 - 250, 838, 12, T.muted);
+  const status = text(root, 'DODGES 0 · GUARDS ◇◇ · HP 0', 40, 872, 16, T.ink, true);
+  text(root, 'CIRCLE TO BEAT THEIR TURN RATE · EVERY 3 DODGES BANKS A GUARD (MAX 2)', STAGE_W / 2 - 250, 846, 12, T.muted);
 
   /* ---- options ---- */
   const rowW = COLS * OPT_SIZE + (COLS - 1) * GAP;
@@ -232,9 +232,19 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   crosshair.circle(0, 0, 12).stroke({ width: 2, color: T.ink });
   droneLayer.addChild(crosshair);
 
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['drone-dodge'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'DRONE SWARM', 28, 20, 26, T.gold, true);
+  text(card, 'DODGE THE SWARM. ANSWER WHEN THE SKY IS CLEAR.', 28, 64, 15, T.ink);
+  text(card, 'MOVE TO EVADE · CLICK OR KEYS 1–8 · ESC NEUTRAL', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+
   /* ---- state ---- */
-  const spawns = buildSpawns(ctx.seed, ctx.depth, ctx.timerLen);
-  const budgetMs = Math.max(5, ctx.timerLen) * 1000 - SETTLE_MS;
+  const playSec = Math.max(6, ctx.timerLen - GOAL_MS / 1000);
+  const spawns = buildSpawns(ctx.seed, ctx.depth, playSec);
+  const budgetMs = playSec * 1000 - SETTLE_MS;
   let clock = 0;
   let spawnIdx = 0;
   let hpDelta = 0;
@@ -245,6 +255,7 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   let invulnUntil = -1;
   let vignetteAt = -1;
   let dead = false;
+  let introLeft = GOAL_MS;
   const drones: Drone[] = [];
   let cursor: { x: number; y: number } | null = null;
   let kbCursor: { x: number; y: number } | null = null;
@@ -273,9 +284,7 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   }
 
   function despawn(drone: Drone): void {
-    const i = drones.indexOf(drone);
-    if (i >= 0) drones.splice(i, 1);
-    drone.spr.destroy();
+    removeDrone(drone);
     dodges++;
     streak++;
     const before = guards;
@@ -285,7 +294,7 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   }
 
   function pick(i: number): void {
-    if (dead) return;
+    if (dead || introLeft > 0) return;
     if (i === board.answerIdx) {
       const leftFrac = Math.max(0, Math.min(1, (budgetMs - clock) / budgetMs));
       const base = Math.round(parFor(ctx.depth) * Math.min(1, 0.45 + 0.55 * leftFrac));
@@ -296,10 +305,11 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
         summary: bankedThisStage >= 2 ? `SWARM OUTFLOWN ×${bankedThisStage} GUARDS` : 'SWARM OUTFLOWN',
       });
     } else if (guards > 0) {
-      // guard absorbs the streak break — play continues
+      // guard absorbs the streak break — play continues (instant sting flash)
       guards--;
       hpDelta -= 10;
       streak = 0;
+      vignetteAt = clock;
       refreshHud();
     } else {
       finish({ correct: false, points: 0, hpDelta, summary: 'THE SWARM WON' });
@@ -325,10 +335,12 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
 
   function onKey(e: KeyboardEvent): void {
     if (dead) return;
+    if (e.key === 'Escape') {
+      finish(escaped(hpDelta, 'DODGED FOREVER, ANSWERED NEVER'));
+      return;
+    }
+    if (introLeft > 0) return; // goal card up — input locked
     switch (e.key) {
-      case 'Escape':
-        finish(escaped(hpDelta - 5, 'DODGED FOREVER, ANSWERED NEVER'));
-        return;
       case 'w': case 'W': case 'ArrowUp': nudge(0, -KB_STEP); return;
       case 's': case 'S': case 'ArrowDown': nudge(0, KB_STEP); return;
       case 'a': case 'A': case 'ArrowLeft': nudge(-KB_STEP, 0); return;
@@ -357,10 +369,18 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
   let motionAcc = 0;
   const onTick = (tk: Ticker): void => {
     if (dead) return;
+    // goal card: clock frozen, input locked (guards above), Esc still works
+    if (introLeft > 0) {
+      introLeft -= tk.deltaMS;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
+      paint();
+      return;
+    }
     const dt = tk.deltaMS;
     clock += dt;
     if (clock >= budgetMs) {
-      finish(escaped(hpDelta - 5, 'DODGED FOREVER, ANSWERED NEVER'));
+      finish(escaped(hpDelta, 'DODGED FOREVER, ANSWERED NEVER'));
       return;
     }
 
@@ -391,7 +411,7 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
           const s = spawnLike(d, turn);
           drones.push(s);
         }
-        removeDrone(d, false); // splits are not dodges
+        removeDrone(d); // splits are not dodges
         continue;
       }
 
@@ -415,7 +435,7 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
       }
       if (fate === 'contact') {
         registerHit();
-        removeDrone(d, false); // F11: a hitting drone despawns — never re-hits
+        removeDrone(d); // F11: a hitting drone despawns — never re-hits
         continue;
       }
     }
@@ -431,7 +451,7 @@ export function mountDroneDodge(ctx: TakeoverCtx): void {
     return s;
   }
 
-  function removeDrone(d: Drone, _countDodge: boolean): void {
+  function removeDrone(d: Drone): void {
     const i = drones.indexOf(d);
     if (i >= 0) drones.splice(i, 1);
     d.spr.destroy();

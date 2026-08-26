@@ -36,18 +36,54 @@ import { mountSaberClash } from './scenes/takeovers/saberclash.ts';
 import { mountSlots } from './scenes/takeovers/slots.ts';
 import { mountSlimeGallery } from './scenes/takeovers/slimegallery.ts';
 import { mountWell } from './scenes/takeovers/well.ts';
+import { whenFontsReady } from './style/panelkit.ts';
 
+/* ---------- render/scaling: viewport-exact canvas, letterboxed world ---------- */
 const app = new Application();
-const DPR = Math.min(2, window.devicePixelRatio || 1);
-await app.init({ width: STAGE_W, height: STAGE_H, background: T.bg, antialias: true, resolution: DPR, autoDensity: true });
+await app.init({
+  width: Math.max(1, Math.round(window.innerWidth)),
+  height: Math.max(1, Math.round(window.innerHeight)),
+  background: T.bg, antialias: true,
+  resolution: Math.min(3, window.devicePixelRatio || 1),
+  autoDensity: true,
+});
 document.getElementById('app')!.appendChild(app.canvas);
+
+/** Screen-space layer carrying world backdrop art on >16:9 aspect (full-bleed sides). */
+const bleedHolder = new Container();
+/** Logical 1600x900 world; every scene mounts here and fit() scales + centers it. */
+const view = new Container();
+app.stage.addChild(bleedHolder, view);
+
+interface LayoutState { s: number; uw: boolean; lw: number; }
+let layout: LayoutState = { s: 1, uw: false, lw: STAGE_W };
+
 function fit(): void {
+  const vw = Math.max(1, Math.round(window.innerWidth));
+  const vh = Math.max(1, Math.round(window.innerHeight));
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  /* Backing store == viewport * DPR exactly: integer device pixels, zero rescale blur. */
+  app.renderer.resize(vw, vh, dpr);
   const el = app.canvas as HTMLCanvasElement;
-  const s = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
-  el.style.width = Math.round(STAGE_W * s) + 'px';
-  el.style.height = Math.round(STAGE_H * s) + 'px';
+  el.style.width = vw + 'px';
+  el.style.height = vh + 'px';
+  /* Gameplay centered at max height (max width when the viewport is narrower than 16:9). */
+  const s = Math.min(vw / STAGE_W, vh / STAGE_H);
+  view.scale.set(s);
+  view.position.set(Math.round((vw - STAGE_W * s) / 2), Math.round((vh - STAGE_H * s) / 2));
+  const uw = vw / vh > STAGE_W / STAGE_H;
+  bleedHolder.visible = uw;
+  if (uw) {
+    /* Ultrawide: backdrop art extends full-bleed; s is height-bound so art fills exactly. */
+    bleedHolder.scale.set(s);
+    bleedHolder.position.set(0, 0);
+    layout = { s, uw, lw: Math.ceil(vw / s) };
+  } else {
+    layout = { s, uw, lw: STAGE_W };
+  }
 }
-window.addEventListener('resize', fit); fit();
+window.addEventListener('resize', fit);
+fit();
 
 const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3];
 const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell];
@@ -70,15 +106,24 @@ function mulberry(seed: number): () => number {
 
 type Screen = Container | null;
 let current: Screen = null;
+/** Cleanups owned by the LIVE scene (backdrop rAF loops, timers). */
+let sceneStops: (() => void)[] = [];
+/** Cleanups registered while the NEXT scene is being built, promoted on show(). */
+let pendingStops: (() => void)[] = [];
+/** Register a cleanup for the scene currently being built (safe before show()). */
+function onSceneStop(stop: () => void): void { pendingStops.push(stop); }
 function show(s: Screen): void {
   clearCurrent();
   current = s;
-  if (s) app.stage.addChild(s);
+  if (s) view.addChild(s);
+  /* Promote only AFTER clearCurrent so a freshly-registered stop survives. */
+  sceneStops = pendingStops;
+  pendingStops = [];
 }
-let backdropStop: (() => void) | null = null;
 function clearCurrent(): void {
-  try { if (backdropStop) { backdropStop(); backdropStop = null; } } catch { /* optional */ }
-  if (current) { app.stage.removeChild(current); current.destroy({ children: true }); current = null; }
+  for (const stop of sceneStops) { try { stop(); } catch { /* optional */ } }
+  sceneStops = [];
+  if (current) { view.removeChild(current); current.destroy({ children: true }); current = null; }
 }
 function toastNow(root: Container, msg: string, color: string): void {
   const bar = panel(root, 40, 820, 920, 40);
@@ -157,8 +202,8 @@ async function toLobbyJoin(code: string, name: string): Promise<void> {
 }
 
 function mountPlan(rp: { kind: string; index: number }, seed: number): void {
-  if (rp.kind === 'takeover') { if (run) run.lastTakeover = run.depth; dealTakeover(app.stage, rp.index, seed); }
-  else dealPuzzle(app.stage, rp.index, seed, run?.depth ?? 1);
+  if (rp.kind === 'takeover') { if (run) run.lastTakeover = run.depth; dealTakeover(view, rp.index, seed); }
+  else dealPuzzle(view, rp.index, seed, run?.depth ?? 1);
 }
 
 function mountRemoteRound(e: MpEvent): void {
@@ -193,8 +238,8 @@ function startRun(name: string, roomName: string, timerLen: number, seed?: numbe
   run = { name, roomName, timerLen, seed, plan: planArc(seed, 2000), depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99, forgiveNext: false, prevSanctuary: false };
   DBG.startRuns++;
   lastLayer = 0;
-  initShadow(app.stage);
-  initLarge(app.stage);
+  initShadow(view);
+  initLarge(view);
   initDirector();
   resetLegendRun();
   deal();
@@ -250,7 +295,8 @@ function deal(): void {
   if (plan.sanctuary) sanctuaryOn(root); else sanctuaryOff(root);
   try {
     const wd = pickWorld(plan.align === 'chaotic' ? 'chaotic' : plan.align === 'good' ? 'good' : plan.align === 'neutral' ? 'neutral' : 'bad', mulberry((r.seed ^ Math.imul(r.depth, 0xBEEF)) >>> 0));
-    backdropStop = applyBackdrop(root, wd.id);
+    if (layout.uw) onSceneStop(applyBackdrop(bleedHolder, wd.id, { w: layout.lw, h: STAGE_H }));
+    else onSceneStop(applyBackdrop(root, wd.id));
   } catch { /* backdrop optional */ }
   try {
     const cm = maybeCurse({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xCA75E)) >>> 0), hp: r.hp, seed: r.seed });
@@ -323,8 +369,15 @@ function dealTakeover(root: Container, idx: number, planSeed: number): void {
     const gc = goalCardFor(['red-light','tide-pool','serpent','floor-fall','hunter-dodge','laser-storm','drone-dodge','saber-clash','slots','slime-gallery','the-well'][idx]);
     if (gc) text(root, gc.title + ' — ' + gc.controls, STAGE_W / 2 - 300, 150, 13, T.muted);
   } catch { /* card optional */ }
+  // Fit the full-stage (1600x900) takeover scene into the area below the
+  // shell header: uniform scale, aspect preserved, centered horizontally.
+  // Scenes lay out for the whole stage; a plain offset used to push their
+  // bottom HUD and second tile rows past the stage edge.
   const box = new Container();
-  box.x = 40; box.y = 164;
+  const fitS = Math.min(1, (STAGE_H - 110) / STAGE_H);
+  box.scale.set(fitS);
+  box.x = Math.round((STAGE_W - STAGE_W * fitS) / 2);
+  box.y = 110;
   root.addChild(box);
   const mount = TAKEOVERS[idx];
   mount({
@@ -373,6 +426,9 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       toastNow(root, 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
     }
     setTimeout(() => { r.depth++; deal(); }, 1400);
+  }, depth, {
+    score: () => r.score,
+    players: () => [{ name: r.name || 'YOU', score: r.score, you: true }],
   });
   root.addChild(scene);
 }
@@ -383,4 +439,10 @@ function fateMidasActive(): boolean {
   return false; // wired via fate modifiers in a later gauntlet pass
 }
 
+/* Bake Text glyphs with the real Oxanium face: wait for the webfont (capped
+ * at 1.5s so a slow CDN never blanks the boot) before the first scene builds. */
+await Promise.race([
+  whenFontsReady(),
+  new Promise<void>((res) => setTimeout(res, 1500)),
+]);
 toLanding();

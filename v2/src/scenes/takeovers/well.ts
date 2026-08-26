@@ -21,7 +21,8 @@
  *
  * FAIRNESS RAILS: the line-clear flash is <=160 ms and localized to cleared
  * rows; lock delay 300 ms; topout requires a blocked SPAWN (one row of grace);
- * controls hint always visible; Esc bails NEUTRAL; every text >= 11 px;
+ * controls hint always visible; a goal card (win condition / controls / Esc
+ * hint) holds before input unlocks; Esc bails NEUTRAL; every text >= 11 px;
  * self-resolves inside ctx.timerLen.
  */
 import { Sprite, Texture, Ticker } from 'pixi.js';
@@ -31,7 +32,7 @@ import { T, STAGE_W, STAGE_H } from '../../theme.ts';
 import type { Prim } from '../../glyphs.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text } from '../game.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 
 /* ------------------------------------------------------------------ */
@@ -252,9 +253,17 @@ export function mountWell(ctx: TakeoverCtx): void {
   };
   text(
     root,
-    'LEFT/RIGHT MOVE · DOWN SOFT · UP/X ROTATE · Z CCW · SPACE DROP',
+    'LEFT/RIGHT MOVE · DOWN SOFT · UP/X ROTATE · Z CCW · SPACE DROP · ESC LEAVES NEUTRAL',
     wx - 24, wy + ROWS * CELL + 112, 13, T.muted,
   );
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors the shared takeover goal card (redlight.ts / meta/onboard.ts). */
+  const CARD_W = 620;
+  const goalCard = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(goalCard, 'THE WELL', 28, 20, 26, T.gold, true);
+  text(goalCard, `CLEAR ${quota} LINES TO CLIMB OUT`, 28, 64, 15, T.ink);
+  text(goalCard, 'ARROWS MOVE · UP/X ROTATE CW · Z CCW · SPACE DROPS', 28, 94, 13, T.muted);
+  const unlockTxt = text(goalCard, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
 
   // next-piece preview
   text(root, 'NEXT', wx + COLS * CELL + 60, wy + 6, 15, T.muted);
@@ -281,11 +290,12 @@ export function mountWell(ctx: TakeoverCtx): void {
   let cur = makePiece(pullNext());
   let nextId = pullNext();
   let lines = 0;
-  let clock = 0;
   let gravAcc = 0;
   let restMs = 0;
   let flashUntil = -1;
   let flashRow = -1;
+  let clock = -GOAL_MS; // goal card holds the clock below zero
+  let cardUp = true;
   let dead = false;
 
   function refreshProgress(): void {
@@ -410,6 +420,7 @@ export function mountWell(ctx: TakeoverCtx): void {
 
   function onKey(e: KeyboardEvent): void {
     if (dead) return;
+    if (cardUp && e.key !== 'Escape') return; // goal card holds input
     switch (e.key) {
       case 'Escape':
         finish(escaped(0, 'CLIMBED OUT OF THE WELL'));
@@ -435,6 +446,17 @@ export function mountWell(ctx: TakeoverCtx): void {
     if (dead) return;
     const dt = tk.deltaMS;
     clock += dt;
+    if (clock < 0) {
+      // goal card still up — hold the piece and count down the unlock
+      unlockTxt.text = `INPUT UNLOCKS IN ${Math.max(1, Math.ceil(-clock / 1000))}…`;
+      return;
+    }
+    if (cardUp) {
+      // goal card served — unlock input and let gravity take over
+      cardUp = false;
+      root.removeChild(goalCard);
+      goalCard.destroy({ children: true });
+    }
 
     if (collides(grid, cur, 0, 1)) {
       restMs += dt;

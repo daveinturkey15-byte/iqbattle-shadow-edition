@@ -1,6 +1,7 @@
 import { Container, Graphics, Sprite, Texture, Text, Ticker } from 'pixi.js';
 import { T, STAGE_W } from '../theme.ts';
 import { panel, text } from './game.ts';
+import { luxeLabel, pillFillTexture, rankDiamond, signatureStrip } from '../style/panelkit.ts';
 
 /** Shared chrome (header bar / status strip / player cards / toasts / widgets),
  * extracted so Landing, Lobby and Game all wear the same DNA skin. */
@@ -11,22 +12,6 @@ export const MONO = 'ui-monospace, "Cascadia Mono", Consolas, monospace';
 /* primitives                                                          */
 /* ------------------------------------------------------------------ */
 
-let gradTex: Texture | null = null;
-/** Horizontal accentA -> accentB gradient (canvas-backed, cached). */
-function gradientTexture(): Texture {
-  if (!gradTex) {
-    const cv = document.createElement('canvas');
-    cv.width = 256; cv.height = 32;
-    const ctx = cv.getContext('2d')!;
-    const g = ctx.createLinearGradient(0, 0, 256, 0);
-    g.addColorStop(0, T.accentA);
-    g.addColorStop(1, T.accentB);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 256, 32);
-    gradTex = Texture.from(cv);
-  }
-  return gradTex;
-}
 
 export function fmtClock(totalSeconds: number): string {
   const s = Math.max(0, Math.ceil(totalSeconds));
@@ -70,6 +55,8 @@ export interface HeaderOpts {
 export function headerBar(parent: Container, opts: HeaderOpts = {}): Container {
   const bar = new Container();
   parent.addChild(bar);
+  rect(bar, 0, 0, STAGE_W, 64, 0, '#0b1120', 0.72, T.panelEdge, 1);
+  signatureStrip(bar, 0, 62, STAGE_W, 2);
 
   if (opts.logo) {
     richLine(bar, 130, 18, [
@@ -77,7 +64,7 @@ export function headerBar(parent: Container, opts: HeaderOpts = {}): Container {
       { str: 'VERSUS', color: T.accentA },
     ], 22);
   } else if (opts.leftLabel) {
-    makeLink(bar, 40, 20, opts.leftLabel, opts.onLeft ?? (() => undefined));
+    makePillLink(bar, 40, 18, opts.leftLabel, opts.onLeft ?? (() => undefined));
   }
 
   if (opts.title) {
@@ -89,23 +76,50 @@ export function headerBar(parent: Container, opts: HeaderOpts = {}): Container {
   const acts = opts.actions ?? [];
   for (let i = acts.length - 1; i >= 0; i--) {
     const a = acts[i];
-    const t = makeLink(bar, 0, 20, a.label, a.onClick);
-    t.x = rx - t.width;
-    if (a.danger) t.style.fill = T.bad;
-    if (a.quiet) t.alpha = 0.4;
-    rx -= t.width + 28;
+    const pill = makePillLink(bar, 0, 18, a.label, a.onClick, a.danger === true);
+    pill.view.x = rx - pill.width;
+    if (a.quiet) pill.view.alpha = 0.55; /* >=0.55 keeps muted ink readable on the near-black bar */
+    rx -= pill.width + 14;
   }
   return bar;
 }
 
-function makeLink(parent: Container, x: number, y: number, label: string, onClick: () => void): Text {
-  const t = text(parent, label, x, y, 13, T.muted);
-  t.eventMode = 'static';
-  t.cursor = 'pointer';
-  t.on('pointerover', () => { t.style.fill = T.ink; });
-  t.on('pointerout', () => { t.style.fill = T.muted; });
-  t.on('pointerdown', onClick);
-  return t;
+/** v1 .btn.pill header link: dark pill, hairline border (red for danger),
+ * letterspaced uppercase label, border brightens on hover. */
+function makePillLink(parent: Container, x: number, y: number, label: string,
+  onClick: () => void, danger = false): { view: Container; width: number } {
+  const h = 28;
+  const padX = 16;
+  const lab = new Text({
+    text: label.toUpperCase(),
+    style: { fontFamily: T.font, fontSize: 10, fill: danger ? '#ff8ba6' : T.ink, fontWeight: '700', letterSpacing: 1.8 },
+  });
+  const w = lab.width + padX * 2;
+  const c = new Container();
+  c.x = x; c.y = y;
+  c.eventMode = 'static';
+  c.cursor = 'pointer';
+  const face = new Graphics();
+  const draw = (hot: boolean): void => {
+    face.clear();
+    face.roundRect(0.5, 0.5, w - 1, h - 1, h / 2)
+      .fill({ color: '#020a16', alpha: 0.6 })
+      .stroke({
+        color: danger ? T.bad : hot ? T.accentA : '#ffffff',
+        width: 1.5, alpha: danger ? (hot ? 0.9 : 0.4) : hot ? 0.7 : 0.25,
+      });
+  };
+  draw(false);
+  c.addChild(face);
+  lab.x = padX;
+  lab.y = (h - lab.height) / 2;
+  lab.eventMode = 'none';
+  c.addChild(lab);
+  c.on('pointerover', () => { draw(true); lab.style.fill = danger ? '#ffb3cd' : T.ink; });
+  c.on('pointerout', () => { draw(false); lab.style.fill = danger ? '#ff8ba6' : T.ink; });
+  c.on('pointerdown', onClick);
+  parent.addChild(c);
+  return { view: c, width: w };
 }
 
 /** Lay out several differently-colored text runs as one visually continuous line. */
@@ -137,11 +151,7 @@ export function statusStrip(parent: Container, x: number, y: number, w: number):
   const trackW = w - 48;
   timeLabel.x = w - 24 - timeLabel.width;
   rect(strip, 24, 50, trackW, 6, 3, '#ffffff', 0.14);
-  const fillSpr = new Sprite(gradientTexture());
-  fillSpr.x = 24; fillSpr.y = 50;
-  fillSpr.height = 6;
-  fillSpr.width = trackW;
-  strip.addChild(fillSpr);
+  const fillSpr = signatureStrip(strip, 24, 50, trackW, 6, true);
   return {
     setTimer(fraction, label) {
       const f = Math.max(0, Math.min(1, fraction));
@@ -175,13 +185,9 @@ export function playerCard(parent: Container, x: number, y: number, w: number,
   card.x = x; card.y = y;
   parent.addChild(card);
 
-  rect(card, 0, 0, w, 72, T.radius, T.panel, 1, T.panelEdge);
+  rect(card, 0, 0, w, 72, T.radiusCard, T.panel, 1, T.panelEdge);
 
-  const diamond = new Graphics();
-  diamond.moveTo(0, -8); diamond.lineTo(8, 0); diamond.lineTo(0, 8); diamond.lineTo(-8, 0);
-  diamond.fill({ color: RANK_COLORS[0] });
-  diamond.x = 26; diamond.y = 36;
-  card.addChild(diamond);
+  const badge = rankDiamond(card, 26, 36, 1, 9);
 
   const avatarBg = new Graphics();
   avatarBg.circle(0, 0, 16).fill({ color: T.accentB, alpha: 0.22 }).stroke({ color: T.panelEdge, width: 1 });
@@ -197,6 +203,7 @@ export function playerCard(parent: Container, x: number, y: number, w: number,
 
   const clock = text(card, 'waiting…', 0, 42, 11, T.muted);
   clock.style.fontFamily = MONO;
+  clock.alpha = 0.75;
   clock.x = w - 24 - clock.width;
   const score = text(card, '0', 0, 18, 16, T.ink, true);
   score.x = w - 24 - score.width;
@@ -206,12 +213,13 @@ export function playerCard(parent: Container, x: number, y: number, w: number,
       if (secs === null) {
         clock.text = 'waiting…';
         clock.style.fill = T.muted;
-        clock.style.fontFamily = T.font;
+        clock.alpha = 0.75;
       } else {
         clock.text = secs.toFixed(3) + 's';
         clock.style.fill = T.ink;
-        clock.style.fontFamily = MONO;
+        clock.alpha = 1;
       }
+      clock.style.fontFamily = MONO;
       clock.x = w - 24 - clock.width;
     },
     setScore(sc) {
@@ -219,10 +227,7 @@ export function playerCard(parent: Container, x: number, y: number, w: number,
       score.x = w - 24 - score.width;
     },
     setRank(rank) {
-      const color = rank <= 3 ? RANK_COLORS[rank - 1] : T.muted;
-      diamond.clear();
-      diamond.moveTo(0, -8); diamond.lineTo(8, 0); diamond.lineTo(0, 8); diamond.lineTo(-8, 0);
-      diamond.fill({ color });
+      badge.setRank(rank);
     },
   };
 }
@@ -284,31 +289,47 @@ export function makeButton(parent: Container, x: number, y: number, w: number, h
   c.eventMode = 'static';
   c.cursor = 'pointer';
 
+  /* luxe pill fill (panelkit); `face` doubles as mask + ghost/danger face */
+  const radius = Math.min(10, h / 2);
+  const face = new Graphics();
+  face.roundRect(0, 0, w, h, radius);
   if (variant === 'primary') {
-    const shape = new Graphics();
-    shape.roundRect(0, 0, w, h, h / 2).fill({ color: 0xffffff });
-    const spr = new Sprite(gradientTexture());
+    const spr = new Sprite(pillFillTexture(w, h, radius, 'primary'));
     spr.width = w; spr.height = h;
-    spr.mask = shape;
-    c.addChild(shape, spr);
+    face.fill({ color: 0xffffff }); /* mask needs real geometry */
+    spr.mask = face;
+    c.addChild(face, spr);
+    const edge = new Graphics();
+    edge.roundRect(0.5, 0.5, w - 1, h - 1, radius);
+    edge.stroke({ color: '#5ea0ff', width: 1, alpha: 0.35 });
+    c.addChild(edge);
   } else {
-    const g = new Graphics();
     const edge = variant === 'danger'
       ? { color: T.bad, alpha: 0.5 }
       : { color: '#ffffff', alpha: 0.16 };
-    g.roundRect(0, 0, w, h, h / 2)
-      .fill({ color: T.panel, alpha: variant === 'danger' ? 0.4 : 0.25 })
+    face.fill({ color: T.panel, alpha: variant === 'danger' ? 0.4 : 0.25 })
       .stroke({ ...edge, width: 1.5 });
-    c.addChild(g);
+    c.addChild(face);
   }
 
-  const lab = text(c, label, 0, 0, Math.max(13, Math.min(17, Math.round(h * 0.34))), T.ink, true);
+  /* hover/press feedback: tinted sheen over the face (instant, <100ms) */
+  const sheen = new Sprite(Texture.WHITE);
+  sheen.width = w; sheen.height = h;
+  sheen.mask = face;
+  sheen.alpha = 0;
+  sheen.eventMode = 'none';
+
+  const lab = luxeLabel(c, label, 0, 0, Math.max(12, Math.min(15, Math.round(h * 0.28))), variant === 'ghost' ? T.ink : '#ffffff', 0.18);
   lab.x = (w - lab.width) / 2;
   lab.y = (h - lab.height) / 2;
   lab.eventMode = 'none';
+  c.addChild(sheen);
 
-  c.on('pointerover', () => { c.alpha = 0.85; });
-  c.on('pointerout', () => { c.alpha = 1; });
+  c.on('pointerover', () => { sheen.tint = 0x9cc2ff; sheen.alpha = 0.12; });
+  c.on('pointerout', () => { sheen.alpha = 0; });
+  c.on('pointerdown', () => { sheen.tint = 0xffffff; sheen.alpha = 0.22; });
+  c.on('pointerup', () => { sheen.tint = 0x9cc2ff; sheen.alpha = 0.12; });
+  c.on('pointerupoutside', () => { sheen.alpha = 0; });
   c.on('pointerdown', onClick);
   parent.addChild(c);
   return c;
@@ -352,17 +373,19 @@ export function makeTextInput(parent: Container, x: number, y: number, w: number
   c.cursor = 'text';
 
   const frame = new Graphics();
-  const drawFrame = (focused: boolean): void => {
+  let focused = false;
+  let hovered = false;
+  const drawFrame = (): void => {
     frame.clear();
     frame.roundRect(0, 0, w, h, h / 2);
-    frame.fill({ color: '#0a1224' });
+    frame.fill({ color: focused ? '#0c1630' : '#0a1224' });
     frame.stroke({
       color: focused ? T.accentA : '#ffffff',
       width: 2,
-      alpha: focused ? 0.9 : 0.1,
+      alpha: focused ? 0.9 : hovered ? 0.24 : 0.1,
     });
   };
-  drawFrame(false);
+  drawFrame();
   c.addChild(frame);
 
   const valueT = text(c, '', 0, 0, 16, T.ink);
@@ -373,7 +396,6 @@ export function makeTextInput(parent: Container, x: number, y: number, w: number
   c.addChild(caret);
 
   let value = '';
-  let focused = false;
   let blinkMs = 0;
 
   const relayout = (): void => {
@@ -404,7 +426,7 @@ export function makeTextInput(parent: Container, x: number, y: number, w: number
       focused = false;
       keyTarget = null;
       caret.visible = false;
-      drawFrame(false);
+      drawFrame();
       relayout();
     },
   };
@@ -413,10 +435,13 @@ export function makeTextInput(parent: Container, x: number, y: number, w: number
     if (keyTarget !== null && keyTarget !== impl) keyTarget.blur();
     keyTarget = impl;
     focused = true;
-    drawFrame(true);
+    drawFrame();
     caret.visible = true;
     relayout();
   };
+
+  c.on('pointerover', () => { hovered = true; if (!focused) drawFrame(); });
+  c.on('pointerout', () => { hovered = false; if (!focused) drawFrame(); });
 
   const tick = (tk: Ticker): void => {
     if (!focused) return;
@@ -494,7 +519,7 @@ export class Shell {
     const handle = playerCard(this.sidebar, 24, this.nextCardY, 528, name, tags);
     this.nextCardY += 84;
     this.cardCount++;
-    this.countLabel.text = 'PLAYERS ' + this.cardCount;
+    this.countLabel.text = this.cardCount === 1 ? 'PLAYER 1 · SOLO' : 'PLAYERS ' + this.cardCount;
     this.cardsByName.set(name, handle);
     return handle;
   }

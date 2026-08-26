@@ -23,7 +23,8 @@
  *
  * FAIRNESS RAILS: payline glow only (no fullscreen flashes); paytable always
  * on screen; copy never taunts and never claims rigging; whole-cabinet tap
- * target; Esc bails NEUTRAL; every text >= 11 px.
+ * target; a goal card (win condition / controls / Esc hint) holds the first
+ * beat before input unlocks; Esc bails NEUTRAL; every text >= 11 px.
  */
 import { Sprite, Texture, Ticker } from 'pixi.js';
 import type { Container, Text } from 'pixi.js';
@@ -32,7 +33,7 @@ import { T, STAGE_W, STAGE_H } from '../../theme.ts';
 import type { Prim } from '../../glyphs.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 
 /* ------------------------------------------------------------------ */
@@ -47,24 +48,24 @@ export const SPINS = 3;
 
 /** Settle margin subtracted from the round timer before budgeting (ms). */
 export const TIMER_MARGIN_MS = 700;
-/** Cabinet warm-up pause and between/after-spin pause at full length. */
-export const FIRST_SETTLE_MS = 600;
+/** Goal card length: shared GOAL_MS (redlight.ts) holds before the first spin. */
+/** Between/after-spin pause at full length. */
 export const INTER_SETTLE_MS = 1100;
-/** Worst-case wall clock at full length (idle player): 24.9 s. */
+/** Worst-case wall clock at full length (idle player): goal card + spins ≈ 26 s. */
 export const WORST_CASE_MS =
-  FIRST_SETTLE_MS + SPINS * (AUTO_STOP_MS + INTER_SETTLE_MS);
+  GOAL_MS + SPINS * (AUTO_STOP_MS + INTER_SETTLE_MS);
 /** Headroom so floor-quantized components never exceed the budget. */
 const TIMING_SAFETY_MS = SPIN_TICK_MS + 8;
 
 export interface SlotsTiming {
   autoStopMs: number;
-  firstSettleMs: number;
+  goalCardMs: number;
   interSettleMs: number;
 }
 
 /**
  * F5 rail: every wall-clock component scales by k so the worst path
- * (first settle + SPINS x (auto-stop + inter-settle)) never exceeds
+ * (goal card + SPINS x (auto-stop + inter-settle)) never exceeds
  * min(WORST_CASE_MS, ctx.timerLen*1000 - TIMER_MARGIN_MS).
  */
 export function timingFor(timerLenSec: number): SlotsTiming {
@@ -72,7 +73,7 @@ export function timingFor(timerLenSec: number): SlotsTiming {
   const k = Math.max(0, (budget - TIMING_SAFETY_MS) / WORST_CASE_MS);
   return {
     autoStopMs: Math.max(SPIN_TICK_MS, Math.floor((k * AUTO_STOP_MS) / SPIN_TICK_MS) * SPIN_TICK_MS),
-    firstSettleMs: Math.max(0, Math.floor(k * FIRST_SETTLE_MS)),
+    goalCardMs: Math.min(GOAL_MS, Math.max(0, Math.floor(k * GOAL_MS))),
     interSettleMs: Math.max(0, Math.floor(k * INTER_SETTLE_MS)),
   };
 }
@@ -226,7 +227,7 @@ export function mountSlots(ctx: TakeoverCtx): void {
   root.addChild(bg);
 
   text(root, 'ONE-ARMED GOD', STAGE_W / 2 - 116, 84, 30, hue, true);
-  text(root, 'SPACE / CLICK STOPS EACH REEL · THREE SPINS', STAGE_W / 2 - 186, 130, 15, T.muted);
+  text(root, 'SPACE / CLICK STOPS EACH REEL · THREE SPINS · ESC LEAVES NEUTRAL', STAGE_W / 2 - 268, 130, 15, T.muted);
 
   // always-visible paytable (fairness rail)
   text(
@@ -266,6 +267,14 @@ export function mountSlots(ctx: TakeoverCtx): void {
     ui.wins.push(win);
   }
 
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors the shared takeover goal card (redlight.ts / meta/onboard.ts). */
+  const CARD_W = 620;
+  const goalCard = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(goalCard, 'ONE-ARMED GOD', 28, 20, 26, T.gold, true);
+  text(goalCard, 'THREE SPINS · STOP THE REELS · ANY PAY WINS', 28, 64, 15, T.ink);
+  text(goalCard, 'SPACE / CLICK STOPS EACH REEL · ESC LEAVES NEUTRAL', 28, 94, 13, T.muted);
+  const unlockTxt = text(goalCard, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
   /* ---- reel state ----
    * Spinning reel r shows strip[-phase[r]] in the middle row (it climbs
    * backwards through the strip). A stopped reel freezes at frozenIdx[r].
@@ -302,7 +311,8 @@ export function mountSlots(ctx: TakeoverCtx): void {
   let stopCount = 0;
   let tickAcc = 0;
   let tickIndex = 0;
-  let settleMs = timing.firstSettleMs; // pause between spins / before verdict
+  let settleMs = timing.goalCardMs; // goal card first, then between-spin pauses
+  let cardUp = true;
   let dead = false;
 
   function finish(r: StageResult): void {
@@ -363,10 +373,17 @@ export function mountSlots(ctx: TakeoverCtx): void {
 
     if (!spinning) {
       settleMs -= dt;
+      if (cardUp) unlockTxt.text = `INPUT UNLOCKS IN ${Math.max(1, Math.ceil(settleMs / 1000))}…`;
       if (settleMs <= 0) {
         if (spin >= SPINS) {
           endGame();
           return;
+        }
+        if (cardUp) {
+          // goal card served — unlock input and open the first spin
+          cardUp = false;
+          root.removeChild(goalCard);
+          goalCard.destroy({ children: true });
         }
         startSpin();
       }
@@ -475,7 +492,6 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     if (pd.pair <= 0 || pd.triple <= 0 || pd.jackpot <= 0) failures.push('nonpositive pay');
     prev = pd;
   }
-
   // verdict bounds: worst-case nine triples must clamp, fail parity negative
   const maxTotal = paytableFor(5).triple * SPINS;
   const vMax = verdictFor(maxTotal, false);
@@ -485,11 +501,11 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const vFail = verdictFor(0, false);
   if (vFail.correct !== false || vFail.points >= 0 || vFail.hpDelta !== -10) failures.push('fail verdict wrong');
 
-  // F5 rail: idle worst path fits every legal MP timer
+  // F5 rail: idle worst path (goal card included) fits every legal MP timer
   let prevAutoStop = 0;
   for (let tl = 1; tl <= 120; tl++) {
     const t = timingFor(tl);
-    const worst = t.firstSettleMs + SPINS * (t.autoStopMs + t.interSettleMs);
+    const worst = t.goalCardMs + SPINS * (t.autoStopMs + t.interSettleMs);
     if (worst > Math.min(WORST_CASE_MS, tl * 1000 - TIMER_MARGIN_MS)) {
       failures.push(`slots worst path overruns timerLen=${tl} worst=${worst}`);
     }

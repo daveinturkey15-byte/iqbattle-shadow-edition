@@ -14,7 +14,9 @@
  *
  * Determinism: schedule derives from ctx.seed via an own mulberry32 in FIXED
  * DRAW ORDER. No Math.random, no Date.now (clock = Pixi shared ticker delta).
- * Self-limits to ctx.timerLen; Esc bails NEUTRAL; StageResult settles exactly
+ * A 2 s goal card freezes the tide clock and locks input (except Esc) before
+ * play; its cost comes out of the play budget so the stage still resolves
+ * inside ctx.timerLen. Esc bails NEUTRAL; StageResult settles exactly
  * once; container emptied on done.
  */
 import { Container, Graphics, Sprite, Text, Texture, Ticker } from 'pixi.js';
@@ -22,7 +24,7 @@ import type { Prim } from '../../glyphs.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
 import { T, STAGE_W, STAGE_H } from '../../theme.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { Chip, StageResult, TakeoverCtx } from './redlight.ts';
 
 /* ------------------------------------------------------------------ */
@@ -204,23 +206,27 @@ export function mountTidePool(ctx: TakeoverCtx): void {
 
   text(root, 'TIDE POOL', STAGE_W / 2 - 62, 48, 30, T.ink, true);
   const status = text(root, 'WAIT FOR YOUR POOL TO RUN DRY', STAGE_W / 2 - 160, 94, 17, T.good, true);
-  const progress = text(root, '', STAGE_W / 2 - 90, 700, 15, T.ink);
-  text(root, 'TAP THE MATCHING POOL WHILE IT IS DRY · WET FEET LOSE THE +15 DRY SHOES BONUS', STAGE_W / 2 - 300, 740, 13, T.muted);
+  const progress = text(root, '', STAGE_W / 2 - 90, 616, 15, T.ink);
+  text(root, 'TAP THE MATCHING POOL WHILE IT IS DRY · WET FEET LOSE THE +15 DRY SHOES BONUS · ESC LEAVES THE SHORE', STAGE_W / 2 - 330, 652, 13, T.muted);
 
   /* ---- question strip ---- */
   const qRow = new Container();
   qRow.x = STAGE_W / 2;
   qRow.y = 150;
   root.addChild(qRow);
-  text(qRow, 'CONTINUE THE PATTERN', -100, -46, 13, T.gold);
   let qx = -(sch.seq.length * 34) / 2;
+  // chips sit centered on the strip line, fully clear of both the status band
+  // above and the board panel below (board top edge = y190)
+  const qLabel = text(qRow, 'CONTINUE THE PATTERN', 0, -8, 13, T.gold);
+  qLabel.x = qx - qLabel.width - 18;
   for (const c of sch.seq) {
     const s = spriteFrom(tileCanvas(chipPrimsTP(c.kind, c.n), hue, 60));
     s.x = qx;
+    s.y = -30;
     qRow.addChild(s);
     qx += 68;
   }
-  text(qRow, '?', qx - 44, -22, 26, T.gold, true);
+  text(qRow, '?', qx + 4, -22, 26, T.gold, true);
 
   /* ---- shore board ---- */
   const boardW = 980;
@@ -274,11 +280,22 @@ export function mountTidePool(ctx: TakeoverCtx): void {
   }
   board.mask = clipMask;
 
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['tide-pool'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'TIDE POOL', 28, 20, 26, T.gold, true);
+  text(card, 'ANSWER ONLY FROM A DRY POOL. THE TIDE DECIDES WHEN.', 28, 64, 15, T.ink);
+  text(card, 'CLICK / TAP A DRY POOL OR PRESS 1–8 · ESC LEAVES THE SHORE', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+
   /* ---- state ---- */
-  let clock = 0; // ms since mount (pausable-free: no pause in v2 takeovers)
+  let clock = 0; // ms of PLAY (starts after the goal card)
   let soggy = false;
   let done = false;
   let lastSub: boolean[] | null = null;
+  let introLeft = GOAL_MS;
+  const playBudgetMs = Math.max(6000, ctx.timerLen * 1000 - GOAL_MS);
 
   function settleNow(r: StageResult): void {
     if (done) return;
@@ -288,7 +305,7 @@ export function mountTidePool(ctx: TakeoverCtx): void {
   }
 
   function press(i: number): void {
-    if (done) return;
+    if (done || introLeft > 0) return;
     if (submergedAt(sch, sch.rows[i], clock)) {
       soggy = true;
       status.text = 'A COLD SPLASH — THAT POOL IS UNDERWATER';
@@ -318,9 +335,10 @@ export function mountTidePool(ctx: TakeoverCtx): void {
   function onKey(e: KeyboardEvent): void {
     if (done) return;
     if (e.key === 'Escape') {
-      settleNow(escaped(0, 'ESCAPED'));
+      settleNow(escaped(0, 'ESCAPED THE SHORE'));
       return;
     }
+    if (introLeft > 0) return; // goal card still up
     const n = parseInt(e.key, 10);
     if (n >= 1 && n <= 8) press(n - 1);
   }
@@ -329,8 +347,16 @@ export function mountTidePool(ctx: TakeoverCtx): void {
   /* ---- tick ---- */
   const onTick = (tk: Ticker): void => {
     if (done) return;
-    clock += tk.deltaMS;
-    if (clock >= ctx.timerLen * 1000) {
+    const dt = tk.deltaMS;
+    if (introLeft > 0) {
+      // goal card: tide frozen, input locked (guards above), Esc still works
+      introLeft -= dt;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
+      return;
+    }
+    clock += dt;
+    if (clock >= playBudgetMs) {
       settleNow(escaped(0, 'TIME — THE TIDE WINS THIS ONE'));
       return;
     }
@@ -358,7 +384,7 @@ export function mountTidePool(ctx: TakeoverCtx): void {
       }
     }
     lastSub = tiles.map((tl) => tl.submerged);
-    progress.text = `DRY SHOES ${soggy ? 'LOST' : 'INTACT'} · WATER ${wUnits.toFixed(1)} / ${sch.max.toFixed(1)} · ${Math.ceil((ctx.timerLen * 1000 - clock) / 1000)}s`;
+    progress.text = `DRY SHOES ${soggy ? 'LOST' : 'INTACT'} · WATER ${wUnits.toFixed(1)} / ${sch.max.toFixed(1)} · ${Math.ceil((playBudgetMs - clock) / 1000)}s`;
   };
   Ticker.shared.add(onTick);
 

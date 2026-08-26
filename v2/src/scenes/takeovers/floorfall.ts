@@ -31,13 +31,15 @@
  * Fairness rails: crack warning 0.8 s→0.4 s by depth BEFORE any drop; damage
  * feedback is a localized vignette (<200 ms, never fullscreen strobe); ambient
  * motion gated behind localStorage IQB_MOTION ('0' = off → static cracks, no
- * shake); overlays escapable; all text >= 11 px.
+ * shake); overlays escapable; all text >= 11 px. A 2 s goal card freezes the
+ * fall clock and locks input (except Esc) before play; its cost comes out of
+ * the play budget so the stage still resolves inside ctx.timerLen.
  */
 import { Container, Graphics, Rectangle, Sprite, Text, Texture, Ticker } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import type { Chip } from './redlight.ts';
 import { CHIP_KINDS, chipPrims } from './redlight.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
@@ -184,8 +186,10 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
   vignette.alpha = 0;
   root.addChild(vignette);
 
-  const status = text(root, '', 40, 836, 16, T.ink, true);
-  text(root, 'CRACKS TELEGRAPH EVERY DROP · KEYS 1–8 PICK WITHOUT STANDING', STAGE_W / 2 - 240, 868, 12, T.muted);
+  // status/rule live between the target panel and the tile grid — inside the
+  // safe band under the engine's shell header (nothing below y=430)
+  const status = text(root, '', 40, 386, 16, T.ink, true);
+  text(root, 'CRACKS TELEGRAPH EVERY DROP · KEYS 1–8 PICK WITHOUT STANDING · ESC EXITS NEUTRAL', 40, 414, 12, T.muted);
 
   /* ---- tiles ---- */
   const tiles: TileUi[] = [];
@@ -210,8 +214,11 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
   });
 
   /* ---- state ---- */
-  const evs = buildFallSchedule(ctx.seed, ctx.depth, ctx.timerLen);
-  const budgetMs = Math.max(5, ctx.timerLen) * 1000 - SETTLE_MS;
+  // goal-card freeze comes out of the schedule budget so the stage still
+  // self-resolves inside ctx.timerLen on the wall clock
+  const playSec = Math.max(6, ctx.timerLen - GOAL_MS / 1000);
+  const evs = buildFallSchedule(ctx.seed, ctx.depth, playSec);
+  const budgetMs = playSec * 1000 - SETTLE_MS;
   let clock = 0;
   let warnIdx = 0;
   let dropIdx = 0;
@@ -223,6 +230,16 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
   let vignetteAt = -1;
   let cursorTile = -1;
   let dead = false;
+
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['floor-fall'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'FLOOR-FALL', 28, 20, 26, T.gold, true);
+  text(card, 'ANSWER BEFORE THE TILE UNDER YOU DROPS.', 28, 64, 15, T.ink);
+  text(card, 'CLICK / TAP A STANDING TILE OR KEYS 1–8 · ESC EXITS NEUTRAL', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+  let introLeft = GOAL_MS;
 
   /** A warned drop only executes when more than 3 tiles would remain. */
   function canDrop(tileIdx: number): boolean {
@@ -265,7 +282,7 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
   }
 
   function pick(i: number, stoodClick: boolean): void {
-    if (dead || clock < stunUntil) return;
+    if (dead || introLeft > 0 || clock < stunUntil) return;
     if (!tiles[i].standing) return;
     if (i === board.answerIdx) {
       const leftFrac = Math.max(0, Math.min(1, (budgetMs - clock) / budgetMs));
@@ -305,6 +322,7 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
       finish(escaped(hpDelta - 5, 'ESCAPED THE COLLAPSE'));
       return;
     }
+    if (introLeft > 0) return; // goal card still up
     const n = parseInt(e.key, 10);
     if (n >= 1 && n <= TILES) pick(n - 1, false);
   }
@@ -313,7 +331,15 @@ export function mountFloorFall(ctx: TakeoverCtx): void {
   /* ---- clock ---- */
   const onTick = (tk: Ticker): void => {
     if (dead) return;
-    clock += tk.deltaMS;
+    const dt = tk.deltaMS;
+    if (introLeft > 0) {
+      // goal card: fall clock frozen, input locked (guards above), Esc works
+      introLeft -= dt;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
+      return;
+    }
+    clock += dt;
     if (clock >= budgetMs) {
       finish(escaped(hpDelta - 5, 'BURIED WITH THE TILES'));
       return;

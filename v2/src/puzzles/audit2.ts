@@ -32,6 +32,7 @@ interface FamilyModules {
   FAMILIES: Family[];
   FAMILIES2: Family[];
   FAMILIES3: Family[];
+  FAMILIES4: Family[];
 }
 
 /**
@@ -51,6 +52,7 @@ function loadFamilies(): FamilyModules {
     ['families.ts', join(here, 'families.ts')],
     ['families2.ts', join(here, 'families2.ts')],
     ['families3.ts', join(here, 'families3.ts')],
+    ['families4.ts', join(here, 'families4.ts')],
   ];
   for (const [name, path] of sources) {
     const src = readFileSync(path, 'utf8');
@@ -69,7 +71,8 @@ function loadFamilies(): FamilyModules {
   const families = req('./families.js');
   const families2 = req('./families2.js');
   const families3 = req('./families3.js');
-  return { FAMILIES: families.FAMILIES, FAMILIES2: families2.FAMILIES2, FAMILIES3: families3.FAMILIES3 };
+  const families4 = req('./families4.js');
+  return { FAMILIES: families.FAMILIES, FAMILIES2: families2.FAMILIES2, FAMILIES3: families3.FAMILIES3, FAMILIES4: families4.FAMILIES4 };
 }
 
 function auditFamily(f: Family, hue: string): string[] {
@@ -124,7 +127,7 @@ function auditFamily(f: Family, hue: string): string[] {
 export function runAudit(): boolean {
   const hue = '#d4a017';
   const mods = loadFamilies();
-  const all = [...mods.FAMILIES, ...mods.FAMILIES2, ...mods.FAMILIES3];
+  const all = [...mods.FAMILIES, ...mods.FAMILIES2, ...mods.FAMILIES3, ...mods.FAMILIES4];
   console.log(`auditing ${all.length} families x 30 seeds x diff 1..5 @ hue ${hue}`);
   const errors = all.flatMap(f => auditFamily(f, hue));
   if (errors.length > 0) {

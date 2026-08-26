@@ -9,14 +9,17 @@
  *
  * Determinism: the ENTIRE apple spawn queue is drawn from ctx.seed via an own
  * mulberry32 once at mount (Fisher-Yates over the grid minus spawn cells), so
- * step clock is Pixi's shared ticker delta. Esc bails NEUTRAL; StageResult
- * settles exactly once; container emptied on done.
+ * step clock is Pixi's shared ticker delta. A 2 s goal card freezes the step
+ * clock and locks input (except Esc) before play; its cost comes out of the
+ * play budget so the stage still resolves inside ctx.timerLen. Esc bails
+ * NEUTRAL with the partial harvest kept; StageResult settles exactly once;
+ * container emptied on done.
  */
-import { Container, Graphics, Sprite, Text, Texture, Ticker } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Text, Texture, Ticker } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { panel, text } from '../game.ts';
 import { T, STAGE_W, STAGE_H } from '../../theme.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 
 /* ------------------------------------------------------------------ */
@@ -128,11 +131,12 @@ export function mountSerpent(ctx: TakeoverCtx): void {
 
   text(root, 'SERPENT', STAGE_W / 2 - 56, 48, 30, T.ink, true);
   const status = text(root, `EAT ${N} APPLES`, STAGE_W / 2 - 80, 94, 17, T.gold, true);
-  text(root, 'ARROWS · WASD · SWIPE — WALLS WRAP, YOUR OWN TAIL DOES NOT', STAGE_W / 2 - 250, 812, 13, T.muted);
+  text(root, 'ARROWS · WASD · SWIPE — WALLS WRAP, YOUR OWN TAIL DOES NOT · ESC SLITHERS OUT', STAGE_W / 2 - 262, 682, 13, T.muted);
 
-  const boardW = GRID_COLS * 38;
-  const boardH = GRID_ROWS * 38;
-  panel(root, (STAGE_W - boardW) / 2 - 16, 130 - 16 + 0, boardW + 32, boardH + 32);
+  /* cell 34 keeps board + rule line inside the safe band under the shell header */
+  const boardW = GRID_COLS * 34;
+  const boardH = GRID_ROWS * 34;
+  panel(root, (STAGE_W - boardW) / 2 - 16, 114, boardW + 32, boardH + 32);
   const gfx = new Graphics();
   gfx.x = (STAGE_W - boardW) / 2;
   gfx.y = 130;
@@ -149,6 +153,17 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   let elapsedMs = 0;
   let stepAccum = 0;
   const interval = stepMs(ctx.depth);
+  const playBudgetMs = Math.max(6000, ctx.timerLen * 1000 - GOAL_MS);
+
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['serpent'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'SERPENT', 28, 20, 26, T.gold, true);
+  text(card, "EAT. GROW. DON'T BITE YOURSELF.", 28, 64, 15, T.ink);
+  text(card, 'ARROWS / WASD / SWIPE · ESC SLITHERS OUT', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+  let introLeft = GOAL_MS;
 
   const bodyKeys = (): Set<string> => new Set(body.map((c) => `${c.x},${c.y}`));
 
@@ -190,6 +205,7 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   }
 
   function turn(name: keyof typeof DIRS): void {
+    if (dead || introLeft > 0) return; // goal card still up
     if (pendingDirs.length >= 2) return;
     pendingDirs.push(DIRS[name]);
   }
@@ -234,15 +250,15 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   function draw(): void {
     gfx.clear();
     gfx.roundRect(0, 0, boardW, boardH, T.radius).fill(T.tile);
-    const cell = 38;
+    const cell = 34;
     for (let i = body.length - 1; i >= 0; i--) {
       const s = body[i];
-      gfx.roundRect(s.x * cell + 3, s.y * cell + 3, cell - 6, cell - 6, 7).fill({ color: hue, alpha: i === 0 ? 1 : 0.72 });
+      gfx.roundRect(s.x * cell + 3, s.y * cell + 3, cell - 6, cell - 6, 6).fill({ color: hue, alpha: i === 0 ? 1 : 0.72 });
     }
     if (apple) {
       const cxp = apple.x * cell + cell / 2;
       const cyp = apple.y * cell + cell / 2;
-      const r = 11;
+      const r = 10;
       gfx.poly([cxp, cyp - r, cxp + r, cyp, cxp, cyp + r, cxp - r, cyp]).fill(T.accentA);
     }
   }
@@ -250,16 +266,21 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   /* ---- input ---- */
   function onKey(e: KeyboardEvent): void {
     if (dead) return;
+    if (e.key === 'Escape') {
+      settleNow({
+        correct: null,
+        points: eaten * APPLE_PTS,
+        hpDelta: 0,
+        summary: `SLITHERED OUT · ${eaten} APPLES KEPT`,
+      });
+      return;
+    }
+    if (introLeft > 0) return; // goal card still up
     const d = keyToDir(e.key);
     if (d) {
       e.preventDefault();
       turn(d);
-      return;
     }
-    if (e.key === 'Escape') timeEscapeNeutral();
-  }
-  function timeEscapeNeutral(): void {
-    timeUp();
   }
 
   let swipeStart: { x: number; y: number } | null = null;
@@ -277,20 +298,29 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   }
   window.addEventListener('keydown', onKey);
   root.eventMode = 'static';
+  root.hitArea = new Rectangle(0, 0, STAGE_W, STAGE_H); // swipes register anywhere
   root.on('pointerdown', onDown);
   root.on('pointerup', onUp);
 
   /* ---- clock ---- */
   const onTick = (tk: Ticker): void => {
     if (dead) return;
-    elapsedMs += tk.deltaMS;
-    stepAccum += tk.deltaMS;
+    const dt = tk.deltaMS;
+    if (introLeft > 0) {
+      // goal card: step clock frozen, input locked (guards above), Esc works
+      introLeft -= dt;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
+      return;
+    }
+    elapsedMs += dt;
+    stepAccum += dt;
     while (stepAccum >= interval) {
       stepAccum -= interval;
       step();
       if (dead) return;
     }
-    if (elapsedMs >= ctx.timerLen * 1000) timeUp();
+    if (elapsedMs >= playBudgetMs) timeUp();
   };
   Ticker.shared.add(onTick);
 

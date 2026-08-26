@@ -1,70 +1,192 @@
-import { Container, Sprite, Texture, Text } from 'pixi.js';
+import { Container, Graphics, Sprite, Texture, Text } from 'pixi.js';
 import { T, STAGE_W, STAGE_H } from '../theme.ts';
 import { tileCanvas } from '../glyphs.ts';
 import type { Puzzle } from '../puzzles/types.ts';
+import { BOARD_PANEL, SIDEBAR, GRID_GAP, puzzleLayout, type PuzzleLayout } from './layouthelper.ts';
+import { luxeBackdrop, luxePanel } from '../style/panelkit.ts';
 
-/** Build the full game layout in the 1600x900 logical space, DNA-faithful:
- * header / status strip with gradient timer / board panel / 4x2 options / sidebar. */
-export function buildGameScene(p: Puzzle, onAnswer: (idx: number, correct: boolean) => void, depth = 1): Container {
+/** Live sidebar data hooks. main.dealPuzzle passes getters bound to run state;
+ *  absent hooks fall back to a solo "YOU" row so the sidebar is never dead. */
+export interface SidebarPlayer {
+  name: string;
+  score: number;
+  you?: boolean;
+  /** seconds since this player's last response; null = waiting */
+  clock?: number | null;
+  rank?: number;
+}
+export interface GameSceneOpts {
+  score?: () => number;
+  players?: () => SidebarPlayer[];
+}
+
+/** Build the play surface in the 1600x900 logical space (Shell owns header /
+ *  status strip chrome): board panel with fitted options grid + live sidebar. */
+export function buildGameScene(
+  p: Puzzle,
+  onAnswer: (idx: number, correct: boolean) => void,
+  depth = 1,
+  opts: GameSceneOpts = {},
+): Container {
   const root = new Container();
-
-  /* Chrome (header, status strip, timer) is owned by Shell.attach in main.ts —
-   * this scene renders ONLY the play surface so Shell chrome stays visible. */
   void depth;
 
-  // board panel (board + options live here, centered in the left region)
-  const boardPanel = panel(root, 40, 164, 920, 640);
-  const cellSize = p.cols === 2 ? 150 : 118;
-  const gap = 14;
-  const boardW = p.cols * cellSize + (p.cols - 1) * gap;
-  const bx = (920 - boardW) / 2;
-  const by = 40;
+  const layout = puzzleLayout(p.cols, p.rows);
+  const boardPanel = panel(root, BOARD_PANEL.x, BOARD_PANEL.y, BOARD_PANEL.w, BOARD_PANEL.h);
+
+  // board block — horizontally centered per col count (DNA: generous padding)
   const totalTiles = Math.max(p.cells.length, p.cols * p.rows, p.holeIndex + 1);
   for (let i = 0; i < totalTiles; i++) {
     const col = i % p.cols, row = Math.floor(i / p.cols);
     const hole = i === p.holeIndex;
     const prims = p.cells[i];
     if (!hole && !prims && i >= p.cells.length) continue;
-    const s = spriteFrom(tileCanvas(prims ?? [], p.hue, cellSize, { hole }));
-    s.x = bx + col * (cellSize + gap); s.y = by + row * (cellSize + gap);
+    const s = spriteFrom(tileCanvas(prims ?? [], p.hue, layout.cellSize, { hole }));
+    s.x = layout.bx + col * (layout.cellSize + GRID_GAP);
+    s.y = layout.by + row * (layout.cellSize + GRID_GAP);
     boardPanel.addChild(s);
   }
 
-  // options 4x2 — sized to fit inside the 640px board panel at every row count
-  const optSize = p.rows >= 3 ? 88 : 108;
-  const optW = 4 * optSize + 3 * 12;
-  const ox = (920 - optW) / 2;
-  const oy = by + p.rows * (cellSize + gap) + 30;
+  // options 4x2 — sized by layouthelper so they ALWAYS fit inside the panel
+  // with >=14px gaps at both 2-row and 3-row boards (layout-audit X3).
+  let answered = false;
   p.options.forEach((prims, idx) => {
-    const s = spriteFrom(tileCanvas(prims, p.hue, optSize));
-    s.x = ox + (idx % 4) * (optSize + 12);
-    s.y = oy + Math.floor(idx / 4) * (optSize + 12);
+    const s = spriteFrom(tileCanvas(prims, p.hue, layout.optSize));
+    s.x = layout.ox + (idx % 4) * (layout.optSize + GRID_GAP);
+    s.y = layout.oy + Math.floor(idx / 4) * (layout.optSize + GRID_GAP);
     s.eventMode = 'static'; s.cursor = 'pointer';
-    s.on('pointerdown', () => onAnswer(idx, idx === p.answer));
+    s.on('pointerdown', () => {
+      if (answered) return; /* single-fire: a second click must not re-deal */
+      answered = true;
+      const correct = idx === p.answer;
+      s.tint = correct ? GOOD_TINT : BAD_TINT; /* instant <100ms feedback */
+      revealRule(boardPanel, p.rule, layout);
+      onAnswer(idx, correct);
+    });
     boardPanel.addChild(s);
-    const label = text(boardPanel, String(idx + 1), s.x + 6, s.y + optSize - 22, 12, T.muted);
+    const label = text(boardPanel, String(idx + 1), s.x + 6, s.y + layout.optSize - 22, 12, T.muted);
     label.label = `optlabel${idx}`;
   });
 
-  // sidebar
-  const side = panel(root, 984, 70, 576, 734);
-  text(side, 'YOU', 24, 20, 16, T.ink, true);
-  text(side, '0', 500, 20, 16, T.ink, true);
-  text(side, 'shadow awaits', 24, 48, 12, T.muted);
-
-  /* rule sentence intentionally NOT shown during play — it is revealed in
-   * the answer toast (DNA: the board teaches the rule, not a caption). */
+  buildLiveSidebar(root, opts);
 
   return root;
 }
 
+const GOOD_TINT = 0x00e68a; /* T.good */
+const BAD_TINT = 0xff2038; /* T.bad */
+
+/** Rule sentence rendered INSIDE the board panel at reveal (layout-audit X4):
+ *  a dark band across the board area, wrapped + centered for contrast. */
+function revealRule(parent: Container, rule: string, l: PuzzleLayout): void {
+  const bandH = 96;
+  const bandY = l.by + Math.max(0, (l.boardH - bandH) / 2);
+  const g = new Graphics();
+  g.roundRect(0, bandY, BOARD_PANEL.w, bandH, T.radius)
+    .fill({ color: T.bg, alpha: 0.92 })
+    .stroke({ color: T.panelEdge, width: 1 });
+  parent.addChild(g);
+
+  const head = text(parent, 'THE RULE', 0, 0, 11, T.muted, true);
+  head.x = Math.round((BOARD_PANEL.w - head.width) / 2);
+  head.y = bandY + 12;
+  const body = new Text({
+    text: rule,
+    style: {
+      fontFamily: T.font, fontSize: 19, fill: T.ink, fontWeight: '700',
+      letterSpacing: 1, wordWrap: true, wordWrapWidth: BOARD_PANEL.w - 80, align: 'center',
+      breakWords: false,
+    },
+  });
+  body.x = Math.round((BOARD_PANEL.w - body.width) / 2);
+  body.y = Math.round(bandY + (bandH - body.height) / 2) + 8;
+  parent.addChild(body);
+}
+
+/* ------------------------------------------------------------------ */
+/* live sidebar (layout-audit X5): PLAYERS n · right-aligned score ·   */
+/* rank/avatar/name/clock/score cards refreshed from opts callbacks    */
+/* ------------------------------------------------------------------ */
+
+const RANK_COLORS = [T.gold, '#c9d3e0', '#b0763b'];
+const CARD_W = SIDEBAR.w - 48;
+const CARD_H = 72;
+const CARD_PITCH = 84;
+
+function buildLiveSidebar(root: Container, opts: GameSceneOpts): void {
+  const side = panel(root, SIDEBAR.x, SIDEBAR.y, SIDEBAR.w, SIDEBAR.h);
+  const countT = text(side, 'PLAYERS 0', 24, 18, 13, T.muted, true);
+  const scoreT = text(side, '0', 0, 10, 22, T.gold, true);
+  const rowsC = new Container();
+  rowsC.y = 52;
+  side.addChild(rowsC);
+
+  const refresh = (): void => {
+    const score = opts.score?.() ?? 0;
+    scoreT.text = String(score);
+    scoreT.x = SIDEBAR.w - 24 - scoreT.width; /* right rail alignment */
+
+    const players = opts.players?.() ?? [{ name: 'YOU', you: true, score }];
+    countT.text = 'PLAYERS ' + players.length;
+
+    rowsC.removeChildren().forEach((c) => c.destroy({ children: true }));
+    players.slice(0, 7).forEach((pl, i) => rowsC.addChild(playerRow(pl, i * CARD_PITCH)));
+  };
+  refresh();
+  const iv = window.setInterval(refresh, 200);
+  const origDestroy = side.destroy.bind(side);
+  side.destroy = ((...a: Parameters<Container['destroy']>) => {
+    window.clearInterval(iv);
+    origDestroy(...a);
+  }) as typeof side.destroy;
+}
+
+function playerRow(pl: SidebarPlayer, y: number): Container {
+  const card = new Container();
+  card.y = y;
+  const g = new Graphics();
+  g.roundRect(0, 0, CARD_W, CARD_H, T.radius)
+    .fill({ color: T.tile })
+    .stroke({ color: T.panelEdge, width: 1 });
+  card.addChild(g);
+
+  const rank = pl.rank ?? (pl.you ? 1 : undefined);
+  const diamond = new Graphics();
+  diamond.moveTo(0, -8); diamond.lineTo(8, 0); diamond.lineTo(0, 8); diamond.lineTo(-8, 0);
+  diamond.fill({ color: rank !== undefined && rank <= 3 ? RANK_COLORS[rank - 1] : T.muted });
+  diamond.x = 26; diamond.y = CARD_H / 2;
+  card.addChild(diamond);
+
+  const avatarBg = new Graphics();
+  avatarBg.circle(0, 0, 16).fill({ color: T.accentB, alpha: 0.22 }).stroke({ color: T.panelEdge, width: 1 });
+  avatarBg.x = 58; avatarBg.y = CARD_H / 2;
+  card.addChild(avatarBg);
+  const initial = text(card, (pl.name[0] ?? '?').toUpperCase(), 0, 27, 14, T.ink, true);
+  initial.x = 58 - initial.width / 2;
+
+  const nameT = text(card, pl.name, 86, 15, 15, T.ink, true);
+  if (pl.you) text(card, 'YOU', nameT.x + nameT.width + 8, 18, 11, T.gold, true);
+
+  const clockStr = typeof pl.clock === 'number' ? pl.clock.toFixed(3) + 's' : 'waiting…';
+  const clock = text(card, clockStr, 0, 44, 11, typeof pl.clock === 'number' ? T.ink : T.muted);
+  clock.style.fontFamily = 'ui-monospace, Consolas, monospace';
+  clock.x = CARD_W - 24 - clock.width;
+
+  const score = text(card, String(pl.score), 0, 14, 15, T.ink, true);
+  score.x = CARD_W - 24 - score.width;
+
+  return card;
+}
+
 export function panel(parent: Container, x: number, y: number, w: number, h: number): Container {
-  const c = new Container(); c.x = x; c.y = y;
-  const g = new Sprite(Texture.WHITE);
-  g.width = w; g.height = h; g.tint = T.panel; g.alpha = 1;
-  c.addChild(g);
-  parent.addChild(c);
-  return c;
+  // full-stage call = page backdrop (luxe body background), not a card
+  if (w >= STAGE_W - 1 && h >= STAGE_H - 1) {
+    const c = new Container(); c.x = x; c.y = y;
+    luxeBackdrop(c);
+    parent.addChild(c);
+    return c;
+  }
+  return luxePanel(parent, x, y, w, h);
 }
 
 export function text(parent: Container, str: string, x: number, y: number, size: number, color: string, bold = false): Text {

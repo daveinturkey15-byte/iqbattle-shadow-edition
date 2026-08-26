@@ -31,7 +31,7 @@
 import { Container, Graphics, Rectangle, Sprite, Texture, Ticker } from 'pixi.js';
 import type { Chip } from './redlight.ts';
 import { CHIP_KINDS, chipPrims } from './redlight.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
@@ -184,7 +184,7 @@ export function mountLaserStorm(ctx: TakeoverCtx): void {
   bg.tint = T.bg;
   root.addChild(bg);
 
-  panel(root, STAGE_W / 2 - 330, 46, 660, 130);
+  panel(root, STAGE_W / 2 - 330, 46, 660, 140);
   text(root, 'LASER-STORM', STAGE_W / 2 - 76, 56, 24, T.gold, true);
 
   const board = makeBoard(rng);
@@ -193,10 +193,10 @@ export function mountLaserStorm(ctx: TakeoverCtx): void {
   tgt.x = STAGE_W / 2 - 48;
   tgt.y = 84;
   root.addChild(tgt);
-  text(root, 'NEVER CLICK A LANE THAT IS FIRING', STAGE_W / 2 - 118, 190, 13, T.muted);
+  text(root, 'NEVER CLICK A LANE THAT IS FIRING', STAGE_W / 2 - 118, 194, 13, T.muted);
 
-  const status = text(root, '', 40, 866, 16, T.ink, true);
-  text(root, 'TELEGRAPH GLOWS PRECEDE EVERY SHOT · KEYS 1–8 ANSWER', STAGE_W / 2 - 200, 838, 12, T.muted);
+  const status = text(root, 'T-0.0S · 0 LANES FIRING', 40, 866, 16, T.ink, true);
+  text(root, 'TELEGRAPH GLOWS PRECEDE EVERY SHOT · KEYS 1–8 ANSWER', STAGE_W / 2 - 200, 836, 12, T.muted);
 
   /* ---- lanes ---- */
   const rowW = LANES * TILE_W + (LANES - 1) * GAP;
@@ -221,11 +221,21 @@ export function mountLaserStorm(ctx: TakeoverCtx): void {
     text(root, String(i + 1), x + 8, ROW_Y + TILE_W - 24, 13, T.muted);
   });
 
-  /* ---- state ---- */
-  const strikes = buildSchedule(ctx.seed, ctx.depth, ctx.timerLen);
-  const budgetMs = Math.max(5, ctx.timerLen) * 1000 - SETTLE_MS;
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['laser-storm'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'LASER STORM', 28, 20, 26, T.gold, true);
+  text(card, 'PICK A LANE THE SKY IS NOT ABOUT TO FRY.', 28, 64, 15, T.ink);
+  text(card, 'CLICK A COLD LANE · KEYS 1–8 · ESC NEUTRAL', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+
+  const playSec = Math.max(6, ctx.timerLen - GOAL_MS / 1000);
+  const strikes = buildSchedule(ctx.seed, ctx.depth, playSec);
+  const budgetMs = playSec * 1000 - SETTLE_MS;
   let clock = 0;
   let hpDelta = 0;
+  let introLeft = GOAL_MS;
   let dead = false;
 
   function finish(r: StageResult): void {
@@ -236,7 +246,7 @@ export function mountLaserStorm(ctx: TakeoverCtx): void {
   }
 
   function pick(i: number): void {
-    if (dead) return;
+    if (dead || introLeft > 0) return;
     if (laneFiringAt(strikes, i, clock)) {
       hpDelta -= 10;
       finish({ correct: false, points: 0, hpDelta, summary: 'VAPORIZED MID-THOUGHT' });
@@ -264,7 +274,7 @@ export function mountLaserStorm(ctx: TakeoverCtx): void {
   function onKey(e: KeyboardEvent): void {
     if (dead) return;
     if (e.key === 'Escape') {
-      finish(escaped(hpDelta - 5, 'THE SKY KEPT FIRING'));
+      finish(escaped(hpDelta, 'THE SKY KEPT FIRING'));
       return;
     }
     const n = parseInt(e.key, 10);
@@ -275,11 +285,24 @@ export function mountLaserStorm(ctx: TakeoverCtx): void {
   /* ---- clock ---- */
   const onTick = (tk: Ticker): void => {
     if (dead) return;
-    clock += tk.deltaMS;
-    if (clock >= budgetMs) {
-      finish(escaped(hpDelta - 5, 'THE SKY KEPT FIRING'));
+    // goal card: clock frozen, input locked (guards above), Esc still works
+    if (introLeft > 0) {
+      introLeft -= tk.deltaMS;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
       return;
     }
+    clock += tk.deltaMS;
+    if (clock >= budgetMs) {
+      finish(escaped(hpDelta, 'THE SKY KEPT FIRING'));
+      return;
+    }
+
+    // live HUD: time left + how many lanes are firing right now
+    let firing = 0;
+    for (const s of strikes) if (clock >= s.fireStart && clock <= s.fireEnd) firing++;
+    status.text = `T-${((budgetMs - clock) / 1000).toFixed(1)}S · ${firing} LANES FIRING`;
+    status.style.fill = firing > 0 ? T.bad : T.ink;
 
     // per-lane telegraph/fire paint
     for (let i = 0; i < LANES; i++) {

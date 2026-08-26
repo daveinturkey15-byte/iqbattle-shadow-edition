@@ -72,9 +72,9 @@ export function buildLanding(cb: LandingCallbacks): Container {
   });
 
   // Create-A-Room card
-  const cw = 480, ch = 330;
+  const cw = 480, ch = 380;
   const cx = (STAGE_W - cw) / 2;
-  const cy = 496;
+  const cy = 486;
   const card = panel(root, cx, cy, cw, ch);
   edgeRect(card, 0, 0, cw, ch, T.radius);
 
@@ -83,20 +83,20 @@ export function buildLanding(cb: LandingCallbacks): Container {
     { str: 'VERSUS', color: T.accentA },
   ], 32);
   const sub = text(card, 'abstract reasoning · corrupted', 0, 72, 10, T.muted);
-  sub.style.letterSpacing = 3;
+  sub.style.letterSpacing = 2;
   sub.x = (cw - sub.width) / 2;
 
   const inW = cw - 80;
-  const nameIn = makeTextInput(card, 40, 106, inW, 50, 'Display name', 16);
-  const roomIn = makeTextInput(card, 40, 170, inW, 50, 'Room name (optional)', 24);
+  const nameIn = makeTextInput(card, 40, 110, inW, 50, 'Display name', 16);
+  const roomIn = makeTextInput(card, 40, 176, inW, 50, 'Room name (optional)', 24);
 
-  makeButton(card, 40, 244, inW, 54, 'CREATE ROOM', () => {
+  makeButton(card, 40, 246, inW, 54, 'CREATE ROOM', () => {
     cb.onCreateRoom(nameIn.value.trim() || 'Player', roomIn.value.trim());
   }, 'primary');
 
   /* join-by-code row (MP) */
-  const codeIn = makeTextInput(card, 40, 306, inW - 160, 46, 'Room code', 24);
-  makeButton(card, inW - 110, 306, 100, 46, 'JOIN', () => {
+  const codeIn = makeTextInput(card, 40, 318, 276, 46, 'Room code', 24);
+  makeButton(card, 332, 318, 108, 46, 'JOIN', () => {
     const code = codeIn.value.trim().toUpperCase();
     if (code.length >= 3) cb.onJoin(code, nameIn.value.trim() || 'Player');
   }, 'ghost');

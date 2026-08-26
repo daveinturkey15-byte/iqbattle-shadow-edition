@@ -31,7 +31,7 @@ import { Container, Graphics, Rectangle, Sprite, Texture, Ticker } from 'pixi.js
 import type { FederatedPointerEvent } from 'pixi.js';
 import type { Chip } from './redlight.ts';
 import { CHIP_KINDS, chipPrims } from './redlight.ts';
-import { mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
@@ -178,16 +178,16 @@ export function mountHunterDodge(ctx: TakeoverCtx): void {
   bg.height = STAGE_H;
   bg.tint = T.bg;
   root.addChild(bg);
-
-  text(root, 'HUNTER-DODGE', STAGE_W / 2 - 84, 34, 24, T.gold, true);
+  panel(root, STAGE_W / 2 - 340, 22, 680, 232);
+  text(root, 'HUNTER-DODGE', STAGE_W / 2 - 84, 30, 24, T.gold, true);
 
   const board = makeBoard(rng);
   const targetChip = board.opts[board.answerIdx];
   const tgt = spriteFrom(tileCanvas(chipPrims(targetChip.kind, targetChip.n), hue, 130));
   tgt.x = STAGE_W / 2 - 65;
-  tgt.y = 78;
+  tgt.y = 88;
   root.addChild(tgt);
-  text(root, 'PICK WHILE DODGING THE SEARCHLIGHT', STAGE_W / 2 - 138, 52, 13, T.muted);
+  text(root, 'PICK WHILE DODGING THE SEARCHLIGHT', STAGE_W / 2 - 138, 64, 13, T.muted);
 
   /* exposure meter */
   const meterBg = new Sprite(Texture.WHITE);
@@ -203,9 +203,8 @@ export function mountHunterDodge(ctx: TakeoverCtx): void {
   meter.y = meterBg.y;
   meter.height = 10;
   root.addChild(meter);
-
-  const status = text(root, '', 40, 868, 16, T.ink, true);
-  text(root, 'THE CONE CHASES YOUR CURSOR · 2 S EXPOSED = −10 HP · KEYS 1–8 ANSWER', STAGE_W / 2 - 260, 838, 12, T.muted);
+  const status = text(root, 'EXPOSED 0.0S · HP 0', 40, 872, 16, T.ink, true);
+  text(root, 'THE CONE CHASES YOUR CURSOR · 2 S EXPOSED = −10 HP · KEYS 1–8 ANSWER', STAGE_W / 2 - 260, 846, 12, T.muted);
 
   /* ---- options ---- */
   const rowW = COLS * OPT_SIZE + (COLS - 1) * GAP;
@@ -233,11 +232,26 @@ export function mountHunterDodge(ctx: TakeoverCtx): void {
   const crosshair = new Graphics();
   fxLayer.addChild(decoyCone, cone, hunterSpr, crosshair);
 
+  const p0 = patrolPos(hp, 0); // visible behind the goal card before the clock runs
+  hunterSpr.x = p0.x;
+  hunterSpr.y = p0.y;
+
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['hunter-dodge'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'HUNTER DODGE', 28, 20, 26, T.gold, true);
+  text(card, 'IT LOCKS ON. STAY OUT OF THE CONE AND BREAK THE LOCK WITH AN ANSWER.', 28, 64, 15, T.ink);
+  text(card, 'MOVE OUT OF THE BEAM · CLICK OR KEYS 1–8 · ESC NEUTRAL', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
+
   /* ---- state ---- */
-  const budgetMs = Math.max(5, ctx.timerLen) * 1000 - SETTLE_MS;
+  const playSec = Math.max(6, ctx.timerLen - GOAL_MS / 1000);
+  const budgetMs = playSec * 1000 - SETTLE_MS;
   let clock = 0;
   let heading = Math.PI / 2;
   let cursor: { x: number; y: number } | null = null;
+  let introLeft = GOAL_MS;
   let exposure: ExposureState = { clock: 0, nextAt: EXPOSE_LIMIT_MS, dmg: 0 };
   let stutterUntil = -1;
   let flashUntil = -1;
@@ -251,7 +265,7 @@ export function mountHunterDodge(ctx: TakeoverCtx): void {
   }
 
   function pick(i: number): void {
-    if (dead || clock < stutterUntil) return;
+    if (dead || introLeft > 0 || clock < stutterUntil) return;
     if (i === board.answerIdx) {
       const leftFrac = Math.max(0, Math.min(1, (budgetMs - clock) / budgetMs));
       const base = Math.round(parFor(ctx.depth) * Math.min(1, 0.45 + 0.55 * leftFrac));
@@ -278,7 +292,7 @@ export function mountHunterDodge(ctx: TakeoverCtx): void {
   function onKey(e: KeyboardEvent): void {
     if (dead) return;
     if (e.key === 'Escape') {
-      finish(escaped(exposure.dmg - 5, 'IT NEVER BLINKS'));
+      finish(escaped(exposure.dmg, 'IT NEVER BLINKS'));
       return;
     }
     const n = parseInt(e.key, 10);
@@ -297,10 +311,17 @@ export function mountHunterDodge(ctx: TakeoverCtx): void {
 
   const onTick = (tk: Ticker): void => {
     if (dead) return;
+    // goal card: clock frozen, input locked (guards above), Esc still works
+    if (introLeft > 0) {
+      introLeft -= tk.deltaMS;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
+      return;
+    }
     const dt = tk.deltaMS;
     clock += dt;
     if (clock >= budgetMs) {
-      finish(escaped(exposure.dmg - 5, 'IT NEVER BLINKS'));
+      finish(escaped(exposure.dmg, 'IT NEVER BLINKS'));
       return;
     }
 

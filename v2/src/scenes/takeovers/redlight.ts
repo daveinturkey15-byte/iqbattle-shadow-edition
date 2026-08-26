@@ -10,7 +10,9 @@
  * Determinism: everything derives from ctx.seed via an own mulberry32 — the
  * light cadence AND every pattern are pure functions of the seed. No
  * Math.random, no Date.now (the clock is Pixi's shared ticker delta).
- * Self-limits to ctx.timerLen; Esc bails with a NEUTRAL result;
+ * A 2 s goal card freezes the clock and locks input (except Esc) before play;
+ * its cost comes out of the play budget so the stage still resolves inside
+ * ctx.timerLen. Esc bails with a NEUTRAL result;
  * StageResult settles exactly once and ctx.container is emptied on done.
  */
 import { Container, Sprite, Text, Texture, Ticker } from 'pixi.js';
@@ -190,6 +192,8 @@ export function makePattern(rng: () => number): RLPattern {
 const QUOTA = 3;
 const BANK_PER_SOLVE = 40;
 const TWITCH_HP = 8;
+/** Goal-card freeze: input locked and clock stopped for this long at mount. */
+export const GOAL_MS = 2000;
 
 interface LiveUi {
   status: Text;
@@ -197,6 +201,8 @@ interface LiveUi {
   wash: Sprite;
   bar: Sprite;
   dynamic: Container;
+  /** instant '+40 BANKED' click-to-feedback flash (never animated motion) */
+  flash: Text;
 }
 
 /* ------------------------------------------------------------------ */
@@ -222,7 +228,9 @@ export function mountRedLight(ctx: TakeoverCtx): void {
     wash: new Sprite(Texture.WHITE),
     bar: new Sprite(Texture.WHITE),
     dynamic: new Container(),
+    flash: text(root, '+40 BANKED', STAGE_W / 2, 612, 22, T.good, true),
   };
+  ui.flash.visible = false;
   ui.wash.width = STAGE_W;
   ui.wash.height = STAGE_H;
   ui.wash.alpha = 0.06;
@@ -235,7 +243,16 @@ export function mountRedLight(ctx: TakeoverCtx): void {
   ui.bar.height = 6;
   root.addChild(ui.bar);
 
-  text(root, 'ANSWER ON GREEN · ANY INPUT ON RED COSTS 8 HP', STAGE_W / 2 - 210, 720, 13, T.muted);
+  text(root, 'ANSWER ON GREEN · ANY INPUT ON RED COSTS 8 HP · ESC BAILS NEUTRAL', STAGE_W / 2 - 230, 720, 13, T.muted);
+
+  /* ---- goal card (first GOAL_MS: input locked, clock frozen) ----
+   * Mirrors meta/onboard.ts CARDS['red-light'] — keep in step if that moves. */
+  const CARD_W = 620;
+  const card = panel(root, (STAGE_W - CARD_W) / 2, 300, CARD_W, 176);
+  text(card, 'RED LIGHT', 28, 20, 26, T.gold, true);
+  text(card, 'SOLVE ON GREEN. FREEZE ON RED.', 28, 64, 15, T.ink);
+  text(card, 'CLICK / TAP OR PRESS 1–4 · ESC BAILS NEUTRAL', 28, 94, 13, T.muted);
+  const unlockTxt = text(card, 'INPUT UNLOCKS IN 2…', 28, 130, 14, T.good, true);
 
   /* ---- dynamic pattern layer ---- */
   const optSize = 138;
@@ -276,7 +293,8 @@ export function mountRedLight(ctx: TakeoverCtx): void {
   }
 
   /* ---- state machine ---- */
-  const phases = buildCadence(ctx.seed, ctx.depth, ctx.timerLen);
+  const playBudgetMs = Math.max(6000, ctx.timerLen * 1000 - GOAL_MS);
+  const phases = buildCadence(ctx.seed, ctx.depth, Math.round(playBudgetMs / 1000));
   let phaseIdx = 0;
   let inGreen = false;
   let phaseElapsed = 0;
@@ -287,6 +305,8 @@ export function mountRedLight(ctx: TakeoverCtx): void {
   let answered = false;
   let pattern = makePattern(rng);
   let dead = false;
+  let introLeft = GOAL_MS;
+  let flashT = -1;
 
   function finish(r: StageResult): void {
     if (dead) return;
@@ -328,12 +348,17 @@ export function mountRedLight(ctx: TakeoverCtx): void {
   }
 
   function press(i: number): void {
-    if (dead || !inGreen || answered) return;
+    if (dead || introLeft > 0 || !inGreen || answered) return;
     answered = true;
     if (i === pattern.answerIdx) {
       banked += BANK_PER_SOLVE;
       solved++;
       refreshProgress();
+      // instant click-to-feedback: the +40 flash lands this frame
+      ui.flash.text = '+40 BANKED';
+      ui.flash.x = STAGE_W / 2 - ui.flash.width / 2;
+      ui.flash.visible = true;
+      flashT = 0;
       if (solved >= QUOTA) {
         win();
         return;
@@ -352,6 +377,8 @@ export function mountRedLight(ctx: TakeoverCtx): void {
     hpDelta -= TWITCH_HP;
     answered = false;
     refreshProgress();
+    ui.flash.visible = false;
+    flashT = -1;
     setLight(false, 'THE DOLL SAW YOU MOVE · -8 HP');
     pattern = makePattern(rng); // pattern resets
     renderPattern(pattern);
@@ -393,13 +420,27 @@ export function mountRedLight(ctx: TakeoverCtx): void {
   const onTick = (tk: Ticker): void => {
     if (dead) return;
     const dt = tk.deltaMS;
+    if (introLeft > 0) {
+      // goal card: clock frozen, input locked (guards above), Esc still works
+      introLeft -= dt;
+      if (introLeft <= 0) card.visible = false;
+      else unlockTxt.text = `INPUT UNLOCKS IN ${Math.ceil(introLeft / 1000)}…`;
+      return;
+    }
+    if (flashT >= 0) {
+      flashT += dt;
+      if (flashT >= 650) {
+        ui.flash.visible = false;
+        flashT = -1;
+      }
+    }
     totalMs += dt;
     phaseElapsed += dt;
     const cur = phases[Math.min(phaseIdx, phases.length - 1)];
     const limit = inGreen ? cur.greenMs : cur.redMs;
     ui.bar.width = Math.max(2, barW * Math.max(0, 1 - phaseElapsed / limit));
     ui.bar.tint = inGreen ? T.good : T.bad;
-    if (totalMs >= ctx.timerLen * 1000) {
+    if (totalMs >= playBudgetMs) {
       timeUp();
       return;
     }
