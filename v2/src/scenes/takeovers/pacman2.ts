@@ -392,6 +392,7 @@ export function mountPacman2(ctx: TakeoverCtx): void {
   const root = ctx.container;
   const hue = T.boardHues[(ctx.seed >>> 3) % T.boardHues.length];
   const settle = onceResolve(ctx.onDone);
+  const MOTION = typeof localStorage === 'undefined' || localStorage.getItem('IQB_MOTION') !== '0';
 
   /* ---- chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -477,7 +478,10 @@ export function mountPacman2(ctx: TakeoverCtx): void {
       set.chase.visible = g.mode === 'chase';
       set.fright.visible = g.mode === 'fright';
       set.fright.alpha = sim.frightMs > 0 && sim.frightMs < 1500
-        ? 0.45 + 0.55 * Math.abs(Math.sin(sim.t / 90))
+        ? // end-of-fright warning: full sine, 2π·210 ≈ 1319 ms period (≈0.76 Hz,
+          // <=3 Hz rail — the old |sin| form doubled the rate to 3.5 Hz).
+          // IQB_MOTION=0 holds a static mid alpha instead.
+          (MOTION ? 0.5 + 0.5 * Math.sin(sim.t / 210) : 0.7)
         : 1;
       set.eyes.visible = g.mode === 'eyes';
       const cur = g.mode === 'chase' ? set.chase : g.mode === 'fright' ? set.fright : set.eyes;

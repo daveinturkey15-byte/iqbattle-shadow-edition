@@ -16,6 +16,8 @@
  *   quota(depth) = clamp(4 + floor(depth/2), 4, 8)
  *   density(depth) = min(48, 26 + 2*depth); wobble amplitude fixed but the
  *   answer-kind share of the field stays quota+3 so it is always winnable.
+ *   per-confirm = ceil(par(diff)/(quota*1.1)) — quota-exact win ≈ 91% of par;
+ *   timeout pays half per-confirm (never beats a win at the same progress)
  *
  * DETERMINISM: field layout + kinds drawn ONCE from mulberry32(seed ^ SALT)
  * in FIXED order (Fisher-Yates over a composed grid bag). No Math.random, no
@@ -37,6 +39,7 @@ import type { Prim } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
 import { mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { parFor } from './floorfall.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -57,6 +60,16 @@ export function quota(depth: number): number {
 
 export function density(depth: number): number {
   return Math.min(48, 26 + Math.max(1, depth) * 2);
+}
+
+/** Shared difficulty ladder: min(5, max(1, 1 + floor(depth/6))). */
+export function diffFor(depth: number): number {
+  return Math.min(5, Math.max(1, 1 + Math.floor(Math.max(0, depth) / 6)));
+}
+
+/** Per-confirm pay derived from ladder par so a quota-exact run ≈ 91% of par. */
+export function perConfirm(diff: number, quotaN: number): number {
+  return Math.ceil(parFor(Math.min(5, Math.max(1, Math.floor(diff)))) / (quotaN * 1.1));
 }
 
 export interface Figure {
@@ -143,6 +156,7 @@ export function mountSniper2(ctx: TakeoverCtx): void {
 
   const need = quota(ctx.depth);
   const { figures, answerDots } = makeField(rng, ctx.depth);
+  const per = perConfirm(ctx.depth, need);
 
   /* ---- chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -218,7 +232,7 @@ export function mountSniper2(ctx: TakeoverCtx): void {
   function win(): void {
     settleNow({
       correct: true,
-      points: confirmed * 18 + ctx.depth * 5 - wrongPings * 5,
+      points: confirmed * per - wrongPings * 5,
       hpDelta: 0,
       summary: `QUOTA MET · ${confirmed} CONFIRMED`,
     });
@@ -323,7 +337,7 @@ export function mountSniper2(ctx: TakeoverCtx): void {
     if (elapsedMs >= ctx.timerLen * 1000) {
       settleNow({
         correct: null,
-        points: confirmed * 9,
+        points: confirmed * Math.floor(per / 2),
         hpDelta: 0,
         summary: `TIME — ${confirmed}/${need} CONFIRMED`,
       });
@@ -389,6 +403,17 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   for (let d = 3; d <= 7; d++) {
     const n = figurePrims(d).filter((p) => p.k === 'dot').length;
     if (n !== d) failures.push(`figurePrims(${d}) dot-count mismatch`);
+  }
+  // payout band: quota-exact win stays in 60-135% of ladder par at every window
+  for (let d = 1; d <= 5; d++) {
+    const depth = 6 * d - 5;
+    if (diffFor(depth) !== d) failures.push(`diffFor ladder broken at window ${d}`);
+    const q = quota(depth);
+    const per = perConfirm(d, q);
+    const frac = (q * per) / parFor(d);
+    if (frac < 0.6 || frac > 1.35) failures.push(`quota-exact win out of band at diff ${d}: ${(frac * 100).toFixed(0)}%`);
+    // timeout best case (quota-1 confirms at half pay) must stay under the win
+    if ((q - 1) * Math.floor(per / 2) >= q * per - 4 * 5) failures.push(`timeout can meet win at diff ${d}`);
   }
   return { ok: failures.length === 0, failures };
 }

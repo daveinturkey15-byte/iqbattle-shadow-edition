@@ -81,12 +81,12 @@ export const accretion: Family = {
     // decoys: single-attribute mutations of step3
     const decoys: Prim[][] = [
       [diamond, diag2, ...dots4, { k: 'dot', x: 50, y: 14, r: 3.4 }, { k: 'dot', x: 50, y: 86, r: 3.4 }], // one diagonal missing
-      [...step3.slice(0, 4), { k: 'dot', x: 50, y: 14, r: 4.4 }, { k: 'dot', x: 50, y: 86, r: 4.4 }, { k: 'dot', x: 14, y: 50, r: 4.4 }, { k: 'dot', x: 86, y: 50, r: 4.4 }], // dot size mutated
+      [...step3.slice(0, 4), { k: 'dot', x: 50, y: 14, r: 5.2 }, { k: 'dot', x: 50, y: 86, r: 5.2 }, { k: 'dot', x: 14, y: 50, r: 5.2 }, { k: 'dot', x: 86, y: 50, r: 5.2 }], // dot size mutated (+53 %, was +29 %)
       [...step3.slice(0, 6)], // two edge dots missing
       [diamond, diag1, diag2, { k: 'dot', x: 26, y: 26, r: 3.4 }, { k: 'dot', x: 74, y: 74, r: 3.4 }, { k: 'dot', x: 74, y: 26, r: 3.4 }, { k: 'dot', x: 26, y: 74, r: 3.4 }], // corner dots misplaced
       [...step3, { k: 'dot', x: 26, y: 26, r: 3.4 }], // extra corner dot added
-      [...step3.slice(0, 6), { k: 'dot', x: 86, y: 50, r: 2.4 }], // one edge dot shrunk
-      [{ k: 'diamond', x: 50, y: 50, s: 10 }, ...step3.slice(1)], // diamond shrunk
+      [...step3.slice(0, 6), { k: 'dot', x: 86, y: 50, r: 2.0 }], // one edge dot shrunk (−41 %, was −29 %)
+      [{ k: 'diamond', x: 50, y: 50, s: 8 }, ...step3.slice(1)], // diamond shrunk (−43 %, was −29 %)
     ];
     const opts: Prim[][] = [step3, ...decoys];
     const rr = rngFrom(seed ^ 0xa11ce);

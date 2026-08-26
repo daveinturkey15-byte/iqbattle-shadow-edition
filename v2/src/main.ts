@@ -33,6 +33,20 @@ import { mountHunterDodge } from './scenes/takeovers/hunterdodge.ts';
 import { mountLaserStorm } from './scenes/takeovers/laserstorm.ts';
 import { mountDroneDodge } from './scenes/takeovers/dronedodge.ts';
 import { mountSaberClash } from './scenes/takeovers/saberclash.ts';
+import { mountPacman2 } from './scenes/takeovers/pacman2.ts';
+import { mountTetris2 } from './scenes/takeovers/tetris2.ts';
+import { mountBattleship2 } from './scenes/takeovers/battleship2.ts';
+import { mountDoom2 } from './scenes/takeovers/doom2.ts';
+import { mountPhoenix2 } from './scenes/takeovers/phoenix2.ts';
+import { mountGauntlet2 } from './scenes/takeovers/gauntlet2.ts';
+import { mountFractal2 } from './scenes/takeovers/fractal2.ts';
+import { mountHypercube2 } from './scenes/takeovers/hypercube2.ts';
+import { mountSniper2 } from './scenes/takeovers/sniper2.ts';
+import { mountPopGlitter } from './scenes/takeovers/popglitter2.ts';
+import { mountMetal } from './scenes/takeovers/metal2.ts';
+import { mountTerminator2 } from './scenes/takeovers/terminator2.ts';
+import { mountFury2 } from './scenes/takeovers/fury2.ts';
+import { mountSkyFire2 } from './scenes/takeovers/skyfire2.ts';
 import { mountSlots } from './scenes/takeovers/slots.ts';
 import { mountSlimeGallery } from './scenes/takeovers/slimegallery.ts';
 import { mountWell } from './scenes/takeovers/well.ts';
@@ -86,7 +100,7 @@ window.addEventListener('resize', fit);
 fit();
 
 const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3];
-const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell];
+const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell, mountPacman2, mountTetris2, mountBattleship2, mountDoom2, mountPhoenix2, mountGauntlet2, mountFractal2, mountHypercube2, mountSniper2, mountPopGlitter, mountMetal, mountTerminator2, mountFury2, mountSkyFire2];
 
 function code5(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -416,7 +430,7 @@ function dealTakeover(root: Container, idx: number, planSeed: number): void {
     },
   });
 }
-const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL'];
+const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL', 'GLUTTON 2', 'THE WELL 2', 'SALVOS 2', 'CORRIDOR 2', 'SEED RITUAL', 'FOUR RIDERS', 'DEEP ZOOM', '606D', 'OVERWATCH', 'CHART TOPPER', 'FORGE SET', 'THE HUNT', 'FURY ROADRUN', 'SKY FIRE'];
 
 function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: number): void {
   const r = run!;

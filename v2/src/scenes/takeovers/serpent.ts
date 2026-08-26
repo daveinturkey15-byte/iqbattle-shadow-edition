@@ -2,10 +2,10 @@
  * SERPENT — takeover scene (v2 port of modes/snake.js, mechanic not code).
  *
  * Grid snake on Pixi. Arrows / WASD / swipe steer; walls WRAP (only
- * self-collision kills). Eat the apple quota (12 + depth) before the round
- * timer: correct = true, points = apples*15 + survive bonus. Self-bite ends
+ * timer: correct = true, points = apples*applePtsFor(depth) + survive bonus
+ * (≈87–116 % of par 100*diff+40). Self-bite ends
  * the run early as a fail (-40 / -12 hp). Timeout resolves NEUTRAL with the
- * partial harvest (apples*15).
+ * partial harvest (apples*applePtsFor — never more than the win).
  *
  * Determinism: the ENTIRE apple spawn queue is drawn from ctx.seed via an own
  * mulberry32 once at mount (Fisher-Yates over the grid minus spawn cells), so
@@ -19,8 +19,9 @@ import { Container, Graphics, Rectangle, Sprite, Text, Texture, Ticker } from 'p
 import type { FederatedPointerEvent } from 'pixi.js';
 import { panel, text } from '../game.ts';
 import { T, STAGE_W, STAGE_H } from '../../theme.ts';
-import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped, diffFor } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { parFor } from './floorfall.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -46,7 +47,13 @@ export function stepMs(depth: number): number {
 }
 
 export function surviveBonus(depth: number): number {
-  return Math.min(40 + depth * 20, 200);
+  return Math.min(60, 20 * diffFor(depth));
+}
+
+/** Apple value derives from the diff window's par split over the quota, so the
+ *  full-clear win tracks par(100*diff+40) instead of scaling with raw depth. */
+export function applePtsFor(depth: number): number {
+  return Math.max(4, Math.round(parFor(diffFor(depth)) / quota(depth)));
 }
 
 export interface Cell {
@@ -75,7 +82,6 @@ export function appleQueue(seed: number): Cell[] {
   return cells;
 }
 
-const APPLE_PTS = 15;
 
 interface Dir {
   dx: number;
@@ -121,6 +127,7 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   const hue = T.boardHues[ctx.seed % T.boardHues.length];
   const settle = onceResolve(ctx.onDone);
   const N = quota(ctx.depth);
+  const applePts = applePtsFor(ctx.depth);
 
   /* ---- chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -187,7 +194,7 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   function win(): void {
     settleNow({
       correct: true,
-      points: eaten * APPLE_PTS + surviveBonus(ctx.depth),
+      points: eaten * applePts + surviveBonus(ctx.depth),
       hpDelta: 0,
       summary: `APEX SERPENT · ${eaten} APPLES`,
     });
@@ -198,7 +205,7 @@ export function mountSerpent(ctx: TakeoverCtx): void {
   function timeUp(): void {
     settleNow({
       correct: null,
-      points: eaten * APPLE_PTS,
+      points: eaten * applePts,
       hpDelta: 0,
       summary: `TIME — ${eaten} APPLES HARVESTED`,
     });
@@ -269,7 +276,7 @@ export function mountSerpent(ctx: TakeoverCtx): void {
     if (e.key === 'Escape') {
       settleNow({
         correct: null,
-        points: eaten * APPLE_PTS,
+        points: eaten * applePts,
         hpDelta: 0,
         summary: `SLITHERED OUT · ${eaten} APPLES KEPT`,
       });
@@ -385,6 +392,18 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   };
   for (const [key, want] of Object.entries(KEY_TO_EXPECTED)) {
     if (keyToDir(key) !== want) failures.push(`keyToDir(${key}) != ${String(want)}`);
+  }
+  // Points band: full-clear win pays 60–135 % of par(100*diff+40) in every
+  // diff window; a timeout/Esc harvest with the same progress pays less.
+  for (let d = 1; d <= 5; d++) {
+    const depth = d * 6 - 5; // diffFor(depth) === d exactly
+    const par = 100 * d + 40;
+    const win = quota(depth) * applePtsFor(depth) + surviveBonus(depth);
+    if (win < 0.6 * par || win > 1.35 * par) failures.push(`win ${win} off-band vs par ${par} at diff=${d}`);
+    if (quota(depth) * applePtsFor(depth) >= win) failures.push(`timeout harvest not below win at diff=${d}`);
+  }
+  if (surviveBonus(1) !== 20 || surviveBonus(6) !== 40 || surviveBonus(12) !== 60 || surviveBonus(99) !== 60) {
+    failures.push('surviveBonus curve wrong');
   }
   return { ok: failures.length === 0, failures };
 }

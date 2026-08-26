@@ -13,7 +13,9 @@
  *                        resets the vigil. The dead do not chase input.
  * Each trial gets timerLen/4 (minus settle margins) so the stage always
  * completes inside ctx.timerLen. Verdict aggregates over pass counts.
- *   passes >= 3 -> correct true · points = passes*30 - fails*10
+ *   passes >= 3 -> correct true · points = round(passes*par(diff)/4) - fails*10
+ *     (par(diff) = 100*diff+40, the shared ladder par from floorfall.ts;
+ *      all-pass pays exactly par(diff), a 3-pass lands ~68-75% — in band)
  *   hpDelta = -fails*3 · summary lists per-rider marks (C/W/F/D).
  *
  * DETERMINISM: one mulberry32(seed ^ SALT) draws crown counts/positions and
@@ -34,6 +36,7 @@ import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
 import { mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { parFor } from './floorfall.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -57,6 +60,11 @@ export interface Crowns {
   counts: number[]; // exactly three DISTINCT counts
   demanded: number; // == counts[answer]
   answer: number;
+}
+
+/** Shared difficulty ladder: min(5, max(1, 1 + floor(depth/6))). */
+export function diffFor(depth: number): number {
+  return Math.min(5, Math.max(1, 1 + Math.floor(Math.max(0, depth) / 6)));
 }
 
 export function makeCrowns(rng: () => number, depth: number): Crowns {
@@ -93,15 +101,16 @@ export interface GauntletVerdict {
   summary: string;
 }
 
-export function aggregate(passes: boolean[]): GauntletVerdict {
+export function aggregate(passes: boolean[], diff: number): GauntletVerdict {
   const passCount = passes.filter(Boolean).length;
   const fails = passes.length - passCount;
+  const d = Math.min(5, Math.max(1, Math.floor(diff)));
   const marks = ['C', 'W', 'F', 'D']
     .map((m, i) => `${m}${passes[i] ? '✓' : '✗'}`)
     .join(' ');
   return {
     correct: passCount >= 3,
-    points: passCount * 30 - fails * 10,
+    points: Math.round((passCount * parFor(d)) / 4) - fails * 10,
     hpDelta: -fails * 3,
     summary: passCount === 4 ? `ALL FOUR RIDE · ${marks}` : `THE RIDERS JUDGE · ${marks}`,
   };
@@ -203,14 +212,13 @@ export function mountGauntlet2(ctx: TakeoverCtx): void {
   }
 
   function finish(): void {
-    const v = aggregate(passes);
+    const v = aggregate(passes, diffFor(ctx.depth));
     settleNow({ ...v });
   }
 
   function startTrial(i: number): void {
     trialIdx = i;
     phase = 'trial';
-    phaseMs = 0;
     answeredThisTrial = false;
     mashCount = 0;
     flinchReset = false;
@@ -401,14 +409,27 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     if (trialBudgetSec(tl) * 4 > Math.max(6, tl) - 2) failures.push(`trial budgets overrun timerLen=${tl}`);
     if (trialBudgetSec(tl) < 2) failures.push(`trial budget below floor at timerLen=${tl}`);
   }
-  // aggregation contract
-  const all = aggregate([true, true, true, true]);
-  if (!all.correct || all.points !== 120 || all.hpDelta !== 0) failures.push('aggregate all-pass wrong');
-  const three = aggregate([true, false, true, true]);
-  if (!three.correct || three.points !== 80 || three.hpDelta !== -3) failures.push('aggregate 3-pass wrong');
-  const two = aggregate([true, false, true, false]);
-  if (two.correct || two.points !== 40 || two.hpDelta !== -6) failures.push('aggregate 2-pass must fail');
-  const none = aggregate([false, false, false, false]);
+  // aggregation contract — all-pass pays exactly par(diff), wins stay in band
+  for (let d = 1; d <= 5; d++) {
+    if (diffFor(6 * d - 5) !== d) failures.push(`diffFor ladder broken at window ${d}`);
+    const par = parFor(d);
+    const allD = aggregate([true, true, true, true], d);
+    if (!allD.correct || allD.points !== par || allD.hpDelta !== 0) {
+      failures.push(`aggregate all-pass must pay par(${d}) = ${par}, got ${allD.points}`);
+    }
+    const threeD = aggregate([true, false, true, true], d);
+    const frac = threeD.points / par;
+    if (!threeD.correct || frac < 0.6 || frac > 1.35) {
+      failures.push(`aggregate 3-pass out of band at diff ${d}: ${(frac * 100).toFixed(0)}%`);
+    }
+  }
+  const all = aggregate([true, true, true, true], 3);
+  if (!all.correct || all.points !== 340 || all.hpDelta !== 0) failures.push('aggregate all-pass wrong');
+  const three = aggregate([true, false, true, true], 3);
+  if (!three.correct || three.points !== 245 || three.hpDelta !== -3) failures.push('aggregate 3-pass wrong');
+  const two = aggregate([true, false, true, false], 3);
+  if (two.correct || two.points !== 150 || two.hpDelta !== -6) failures.push('aggregate 2-pass must fail');
+  const none = aggregate([false, false, false, false], 3);
   if (none.correct || none.points !== -40 || none.summary.indexOf('D✗') < 0) failures.push('aggregate zero-pass wrong');
   // glyph counts visible: crowns differ structurally by triangle count
   const c3 = crownPrims(3).filter((p) => p.k === 'tri').length;

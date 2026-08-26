@@ -22,6 +22,9 @@
  * once via onceResolve; container emptied on done; self-limits to
  * ctx.timerLen.
  *
+ * POINTS CURVE vs par(diff) = 100*diff + 40 (parFor imported from floorfall.ts):
+ *   single solve = round(par(diff)) — exactly on par · wrong answer = -40
+ *
  * FAIRNESS RAILS: IQB_MOTION=0 -> static net layout, no rotation, goggles
  * inert but unnecessary (identical vocabulary); tiles stay clickable at every
  * projected position; wire-frame only behind tiles (nothing occludes an
@@ -36,6 +39,7 @@ import type { Prim } from '../../glyphs.ts';
 import { text, spriteFrom } from '../game.ts';
 import { mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { parFor } from './floorfall.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -152,6 +156,14 @@ export function makeQuestion(rng: () => number): CubeQ {
   }
   return { count: n, options, correctIdx: options.indexOf(n) };
 }
+
+/** Shared difficulty ladder: min(5, max(1, 1 + floor(depth/6))). */
+export function diffFor(depth: number): number {
+  return Math.min(5, Math.max(1, 1 + Math.floor(Math.max(0, depth) / 6)));
+}
+
+/** Wrong-answer penalty, matching the puzzle engine's -40. */
+export const WRONG_PTS = -40;
 
 /* ------------------------------------------------------------------ */
 /* Scene                                                               */
@@ -289,7 +301,7 @@ export function mountHypercube2(ctx: TakeoverCtx): void {
     const right = idx === q.correctIdx;
     settleNow({
       correct: right,
-      points: right ? 65 + ctx.depth * 5 : -30,
+      points: right ? Math.round(parFor(diffFor(ctx.depth))) : WRONG_PTS,
       hpDelta: right ? 0 : -8,
       summary: right ? 'SEEN THROUGH ALL FOUR DIMENSIONS' : 'THE HYPERCUBE KEPT IT FOLDED',
     });
@@ -430,6 +442,14 @@ export function selfTest(): { ok: boolean; failures: string[] } {
       const dy = slots[i].y - slots[j].y;
       if (Math.hypot(dx, dy) < 180) failures.push('net slots overlap');
     }
+  }
+  // payout band: single solve pays exactly ladder par at every depth window
+  for (let d = 1; d <= 5; d++) {
+    const depth = 6 * d - 5;
+    if (diffFor(depth) !== d) failures.push(`diffFor ladder broken at window ${d}`);
+    const pts = Math.round(parFor(diffFor(depth)));
+    if (pts !== parFor(d)) failures.push(`hypercube solve must pay par(${d}) = ${parFor(d)}, got ${pts}`);
+    if (pts <= WRONG_PTS) failures.push('a correct solve must out-pay the wrong-answer penalty');
   }
   return { ok: failures.length === 0, failures };
 }

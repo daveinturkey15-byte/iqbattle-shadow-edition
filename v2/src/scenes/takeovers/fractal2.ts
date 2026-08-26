@@ -10,11 +10,15 @@
  *   click the one matching the stable island.
  *   HOLD SPACE to STABILIZE: the zoom freezes while held, draining a 1.2 s
  *   pool per use, at most TWO uses. Answering with ZERO stabilizes earns the
- *   +30 DEEP READER bonus (motion-on only — with motion gated off there is
- *   nothing to brave).
+ *   DEEP READER max-play payout (motion-on only — with motion gated off there
+ *   is nothing to brave).
  *
  * DEPTH CURVES (pure, self-tested):
  *   distractor spread widens with depth; zoom rate rises slightly.
+ *
+ * POINTS CURVE vs par(diff) = 100*diff + 40 (parFor imported from floorfall.ts):
+ *   single solve = round(par*0.95) · Deep Reader = round(par*1.1)
+ *   wrong answer = -40 (engine parity)
  *
  * DETERMINISM: c-point, island glyph and option counts drawn once from
  * mulberry32(seed ^ SALT) in FIXED order; zoom phase is a pure function of
@@ -34,6 +38,7 @@ import type { Prim } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
 import { mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { parFor } from './floorfall.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -45,7 +50,18 @@ export const BUF_H = 99;
 export const ITER = 22;
 export const STABILIZE_MS = 1200;
 export const MAX_STABILIZES = 2;
-export const DEEP_BONUS = 30;
+
+/** Shared difficulty ladder: min(5, max(1, 1 + floor(depth/6))). */
+export function diffFor(depth: number): number {
+  return Math.min(5, Math.max(1, 1 + Math.floor(Math.max(0, depth) / 6)));
+}
+
+/** Single-solve payout: 95% of ladder par; Deep Reader max-play 110%. */
+export function solvePoints(depth: number, deepReader: boolean): number {
+  return Math.round(parFor(diffFor(depth)) * (deepReader ? 1.1 : 0.95));
+}
+/** Wrong-answer penalty, matching the puzzle engine's -40. */
+export const WRONG_PTS = -40;
 
 /** Seeded c-point kept clear of the main cardioid so detail survives zoom. */
 export function cPointFor(seed: number): { cx: number; cy: number } {
@@ -243,7 +259,7 @@ export function mountFractal2(ctx: TakeoverCtx): void {
     answered = true;
     const right = idx === q.correctIdx;
     const deepReader = MOTION && stabsUsed === 0;
-    const points = right ? 60 + ctx.depth * 5 + (deepReader ? DEEP_BONUS : 0) : -30;
+    const points = right ? solvePoints(ctx.depth, deepReader) : WRONG_PTS;
     settleNow({
       correct: right,
       points,
@@ -371,6 +387,19 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const t3 = islandPrims(3).filter((p) => p.k === 'tri').length;
   const t7 = islandPrims(7).filter((p) => p.k === 'tri').length;
   if (t3 !== 3 || t7 !== 7) failures.push('island tri-count does not encode answer');
+  // payout band: single solve lands in 60-135% of ladder par at every window
+  for (let d = 1; d <= 5; d++) {
+    const depth = 6 * d - 5;
+    if (diffFor(depth) !== d) failures.push(`diffFor ladder broken at window ${d}`);
+    const par = parFor(d);
+    const base = solvePoints(depth, false) / par;
+    const deepPts = solvePoints(depth, true) / par;
+    if (base < 0.6 || base > 1.35 || deepPts > 1.35) {
+      failures.push(`solve payout out of band at diff ${d}: ${(base * 100).toFixed(0)}%/${(deepPts * 100).toFixed(0)}%`);
+    }
+    if (deepPts <= base) failures.push(`Deep Reader must out-pay motion-on solve at diff ${d}`);
+  }
+  if (solvePoints(1, false) <= WRONG_PTS) failures.push('a correct solve must out-pay the wrong-answer penalty');
   return { ok: failures.length === 0, failures };
 }
 

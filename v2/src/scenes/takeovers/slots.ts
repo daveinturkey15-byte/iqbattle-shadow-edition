@@ -15,6 +15,7 @@
  *   VOID skulls per reel = floor((diff-1)*1.25)  (0 -> 25% of the strip)
  *   paytables scale UP with depth: pair 10*diff · triple 45*diff ·
  *   jackpot 250 + 350*diff (= 600 at diff 1, parity with the frozen build)
+ *   verdict caps total paid at takeoverBandCap(diff) (= 135 % of par 100*diff+40)
  *
  * DETERMINISM: three strips of 20 are composed ONCE from mulberry32(seed^TAG)
  * in FIXED draw order (stars -> voids -> filler per reel). The landing offset
@@ -35,6 +36,7 @@ import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
 import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { takeoverBandCap } from './popglitter2.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -149,18 +151,17 @@ export function evalLine(line: number[], pay: Paytable): { kind: LineKind; amoun
   return { kind: 'none', amount: 0 };
 }
 
-export const POINTS_CAP = 500;
-
 export interface SlotsVerdict {
   correct: boolean | null;
   points: number;
   hpDelta: number;
 }
 
-/** Verdict: anything paid = win (jackpot adds hp) · nothing paid = fail. */
-export function verdictFor(total: number, jackpot: boolean): SlotsVerdict {
+/** Verdict: anything paid = win (jackpot adds hp), capped at the diff window's
+ *  earnings-band top · nothing paid = fail. */
+export function verdictFor(total: number, jackpot: boolean, diff: number): SlotsVerdict {
   if (total > 0) {
-    return { correct: true, points: Math.min(total, POINTS_CAP), hpDelta: jackpot ? 10 : 0 };
+    return { correct: true, points: Math.min(total, takeoverBandCap(diff)), hpDelta: jackpot ? 10 : 0 };
   }
   return { correct: false, points: -40, hpDelta: -10 };
 }
@@ -359,7 +360,7 @@ export function mountSlots(ctx: TakeoverCtx): void {
   }
 
   function endGame(): void {
-    const v = verdictFor(total, jackpotHit);
+    const v = verdictFor(total, jackpotHit, diffFor(ctx.depth));
     const label =
       jackpotHit ? `JACKPOT — THE GOD PAYS ${v.points}`
       : v.correct ? `THE GOD PAYS ${v.points}`
@@ -494,12 +495,23 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   }
   // verdict bounds: worst-case nine triples must clamp, fail parity negative
   const maxTotal = paytableFor(5).triple * SPINS;
-  const vMax = verdictFor(maxTotal, false);
-  if (vMax.correct !== true || vMax.points > POINTS_CAP) failures.push('win points cap broken');
-  const vJack = verdictFor(paytableFor(3).jackpot, true);
+  const vMax = verdictFor(maxTotal, false, 5);
+  if (vMax.correct !== true || vMax.points > takeoverBandCap(5)) failures.push('win points cap broken');
+  const vJack = verdictFor(paytableFor(3).jackpot, true, 3);
   if (vJack.hpDelta !== 10) failures.push('jackpot hp bonus missing');
-  const vFail = verdictFor(0, false);
+  const vFail = verdictFor(0, false, 1);
   if (vFail.correct !== false || vFail.points >= 0 || vFail.hpDelta !== -10) failures.push('fail verdict wrong');
+  // Points band: a jackpot (canonical win) pays exactly the diff window's
+  // earnings-band top — boundary-inclusive 135 % of par(100*diff+40) — and
+  // any total above it clamps; totals under it pass through unchanged.
+  for (let d = 1; d <= 5; d++) {
+    const par = 100 * d + 40;
+    const jack = verdictFor(paytableFor(d).jackpot, true, d).points;
+    if (jack !== takeoverBandCap(d)) failures.push(`jackpot ${jack} != band cap at diff=${d}`);
+    if (jack < 0.6 * par || jack > 1.35 * par) failures.push(`jackpot ${jack} off-band vs par ${par} at diff=${d}`);
+    const mid = verdictFor(Math.round(par * 0.8), false, d).points;
+    if (mid !== Math.round(par * 0.8)) failures.push(`sub-cap total altered at diff=${d}`);
+  }
 
   // F5 rail: idle worst path (goal card included) fits every legal MP timer
   let prevAutoStop = 0;

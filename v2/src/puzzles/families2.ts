@@ -81,8 +81,7 @@ export const rotationComposite: Family = {
       [dia, ...ringAt(age => (RC_SLOTS - slots3[age]) % RC_SLOTS)],
       // newest dot misplaced one slot back along the ring
       [dia, ...ringAt(age => slots3[age]).slice(0, 3), { k: 'dot', ...rcSlotPos(slots3[3] - 1), r: 4.6 }],
-      // newest dot at the wrong orbit radius
-      [dia, ...ringAt(age => slots3[age]).slice(0, 3), { k: 'dot', ...rcSlotPos(slots3[3], 24), r: 4.6 }],
+      [dia, ...ringAt(age => slots3[age]).slice(0, 3), { k: 'dot', ...rcSlotPos(slots3[3], 20), r: 4.6 }], // newest dot at the wrong orbit radius (Δ13 units, was Δ9)
     ];
     const opts = shuffled([answer, ...decoys], seed ^ 0x0be5);
     return {
@@ -185,8 +184,8 @@ export const positionOrbit: Family = {
       poGlyph(angle(2, 2) - da, radii[2]),
       poGlyph(angle(2, 2) - 2 * da, radii[2]),
       poGlyph(angle(2, 2) - 3 * da, radii[2]),
-      poGlyph(angle(2, 2), radii[2] + 10),
-      poGlyph(angle(2, 2), radii[2] - 10),
+      poGlyph(angle(2, 2), radii[2] + 13),
+      poGlyph(angle(2, 2), radii[2] - 13),
     ];
     const opts = shuffled([answer, ...decoys], seed ^ 0x06b17);
     return {
@@ -272,7 +271,7 @@ function msLayout(kind: MsKind, n: number): Prim[] {
     const x = r2(50 + (col - (inRow - 1) / 2) * gapX);
     const y = r2(50 + (row - (rows - 1) / 2) * gapY);
     if (kind === 'tri') out.push({ k: 'tri', x, y, s: 8 });
-    else if (kind === 'dot') out.push({ k: 'dot', x, y, r: 3.6 });
+    else if (kind === 'dot') out.push({ k: 'dot', x, y, r: 4.2 });
     else out.push({ k: 'diamond', x, y, s: 7 });
   }
   return out;

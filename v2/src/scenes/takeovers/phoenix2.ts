@@ -18,6 +18,12 @@
  *   bandWidth ms  = max(110, 260 - 18*(depth-1))
  *   hold cap      = bandHi + 450 ms auto-release (round always advances)
  *
+ * POINTS CURVE vs par(diff) = 100*diff + 40 (parFor imported from floorfall.ts):
+ *   tier III  = round(par*1.05) — flawless win
+ *   tier II   = round(par*0.80) — majority-clean win
+ *   tier I    = round(par*0.35) — mercy (NOT a win, no heal)
+ *   tier 0    = 0 pts ("the seed refuses")
+ *
  * DETERMINISM: one mulberry32(seed ^ SALT) draws the spurt bands in FIXED
  * order at mount. No Math.random, no Date.now — clock is Pixi shared ticker
  * delta. StageResult settles exactly once via onceResolve; container emptied
@@ -34,6 +40,7 @@ import { T, STAGE_W, STAGE_H } from '../../theme.ts';
 import { panel, text } from '../game.ts';
 import { mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { parFor } from './floorfall.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -89,14 +96,20 @@ export interface Payout {
   hpDelta: number;
 }
 
-const TIER_POINTS = [0, 20, 55, 90];
+/** Tier payout fractions of the ladder par; II/III are wins, I is mercy. */
+const TIER_FRACS = [0, 0.35, 0.8, 1.05];
 const TIER_HP = [0, 0, 4, 10];
 
-/** Tier payout plus a small depth rider; engine clamps apply downstream. */
+/** Shared difficulty ladder: min(5, max(1, 1 + floor(depth/6))). */
+export function diffFor(depth: number): number {
+  return Math.min(5, Math.max(1, 1 + Math.floor(Math.max(0, depth) / 6)));
+}
+
+/** Fraction-of-par tier payout; engine clamps apply downstream. */
 export function payoutFor(tier: Tier, depth: number): Payout {
   return {
     correct: tier >= 2,
-    points: TIER_POINTS[tier] + (tier > 0 ? depth * 5 : 0),
+    points: Math.round(parFor(diffFor(depth)) * TIER_FRACS[tier]),
     hpDelta: TIER_HP[tier],
   };
 }
@@ -366,6 +379,22 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   if (!p3.correct || p3.hpDelta <= 0 || p3.points <= 0) failures.push('tier III must win, heal and pay');
   const p0 = payoutFor(0, 5);
   if (p0.correct || p0.points !== 0 || p0.hpDelta !== 0) failures.push('tier 0 must not win or pay');
+  // payout band: wins pay 60-135% of ladder par at every depth window
+  for (let d = 1; d <= 5; d++) {
+    const depth = 6 * d - 5;
+    if (diffFor(depth) !== d) failures.push(`diffFor ladder broken at window ${d}`);
+    const par = parFor(d);
+    for (const tier of [2, 3] as const) {
+      const pay = payoutFor(tier, depth);
+      if (!pay.correct) failures.push(`tier ${tier} must win at diff ${d}`);
+      const frac = pay.points / par;
+      if (frac < 0.6 || frac > 1.35) failures.push(`tier ${tier} payout out of band at diff ${d}: ${(frac * 100).toFixed(0)}%`);
+    }
+    // mercy tier I stays strictly below any winning line
+    if (payoutFor(1, depth).points >= payoutFor(2, depth).points) {
+      failures.push(`tier I mercy must pay less than tier II win at diff ${d}`);
+    }
+  }
   // inBand boundaries
   const sp: Spurt = { center: 1000, width: 200 };
   if (!inBand(sp, 900) || !inBand(sp, 1000) || !inBand(sp, 1100)) failures.push('inBand misses in-range values');

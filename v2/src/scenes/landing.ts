@@ -82,7 +82,7 @@ export function buildLanding(cb: LandingCallbacks): Container {
     { str: 'IQ ', color: T.accentB },
     { str: 'VERSUS', color: T.accentA },
   ], 32);
-  const sub = text(card, 'abstract reasoning · corrupted', 0, 72, 10, T.muted);
+  const sub = text(card, 'abstract reasoning · corrupted', 0, 72, 11, T.muted);
   sub.style.letterSpacing = 2;
   sub.x = (cw - sub.width) / 2;
 

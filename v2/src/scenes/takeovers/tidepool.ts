@@ -24,7 +24,7 @@ import type { Prim } from '../../glyphs.ts';
 import { tileCanvas } from '../../glyphs.ts';
 import { panel, text, spriteFrom } from '../game.ts';
 import { T, STAGE_W, STAGE_H } from '../../theme.ts';
-import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
+import { GOAL_MS, mulberry32, onceResolve, escaped, diffFor } from './redlight.ts';
 import type { Chip, StageResult, TakeoverCtx } from './redlight.ts';
 
 /* ------------------------------------------------------------------ */
@@ -129,9 +129,11 @@ export function drawSchedule(seed: number, depth: number): TideSchedule {
   for (let i = 1; i < 8; i++) sch.rows.push(Math.floor(rng() * ROWS));
   return sch;
 }
-/** win payout by depth tier, index clamped into [0, TP_PAY.length-1] */
-export function payFor(depth: number): number {
-  return TP_PAY[Math.max(0, Math.min(TP_PAY.length - 1, depth - 1))];
+/** win payout by DIFF TIER (1..5), index clamped into [0, TP_PAY.length-1].
+ *  TP_PAY is tuned against par(100*diff+40): 93/83/78/84/85 % per tier — the
+ *  raw depth must never index it (a d1 depth-5 mount would pay 329 % of par). */
+export function payFor(tier: number): number {
+  return TP_PAY[Math.max(0, Math.min(TP_PAY.length - 1, tier - 1))];
 }
 
 
@@ -195,7 +197,7 @@ export function mountTidePool(ctx: TakeoverCtx): void {
   const hue = T.boardHues[ctx.seed % T.boardHues.length];
   const settle = onceResolve(ctx.onDone);
   const sch = drawSchedule(ctx.seed, ctx.depth);
-  const pay = payFor(ctx.depth);
+  const pay = payFor(diffFor(ctx.depth));
 
   /* ---- chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -444,6 +446,13 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   if (payFor(99) !== TP_PAY[TP_PAY.length - 1]) failures.push('payFor does not cap high depths');
   for (let d = 1; d <= TP_PAY.length; d++)
     if (payFor(d) !== TP_PAY[d - 1]) failures.push(`payFor(${d}) != TP_PAY[${d - 1}]`);
+  // Points band: win (+ worst case DRY bonus) pays 60–135 % of par at every
+  // diff window — TP_PAY must be indexed by diffFor(depth), not raw depth.
+  for (let d = 1; d <= 5; d++) {
+    const par = 100 * d + 40;
+    const win = payFor(d) + BONUS_DRY;
+    if (win < 0.6 * par || win > 1.35 * par) failures.push(`tide win ${win} off-band vs par ${par} at diff=${d}`);
+  }
   // coverage sanity: distinct seeds must draw materially different schedules
   // (phase/max/period/rows are all seeded draws — collisions should be ~zero)
   const shapes = new Set<string>();

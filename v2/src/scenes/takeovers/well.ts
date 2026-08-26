@@ -13,7 +13,8 @@
  * DEPTH CURVES (pure, self-tested):
  *   quota      = min(9, 4 + floor(depth/3))
  *   gravity    = clamp(900 - (depth-1)*55, 220, 900) ms per row
- *   line value = 22 + 2*min(depth, 8) points; wins add BASE 30 + WIN BONUS 50
+ *   line value = 22 + 2*min(depth, 8) points; wins add BASE 30 + WIN BONUS 50;
+ *   win total capped at takeoverBandCap(diff) (= 135 % of par 100*diff+40)
  *
  * DETERMINISM: the piece queue is pure ctx-seeded 7-bag shuffles from an own
  * mulberry32 (FIXED draw order: one bag at a time). No Math.random, no
@@ -34,6 +35,7 @@ import { tileCanvas } from '../../glyphs.ts';
 import { panel, text } from '../game.ts';
 import { GOAL_MS, mulberry32, onceResolve, escaped } from './redlight.ts';
 import type { StageResult, TakeoverCtx } from './redlight.ts';
+import { depthDiff, takeoverBandCap } from './popglitter2.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure logic (self-tested)                                            */
@@ -187,7 +189,7 @@ export function verdictFor(lines: number, depth: number, buried: boolean): WellV
   const quota = quotaFor(depth);
   const lp = linePtsFor(depth);
   if (lines >= quota) {
-    return { correct: true, points: BASE_PTS + lines * lp + WIN_BONUS, hpDelta: 0 };
+    return { correct: true, points: Math.min(BASE_PTS + lines * lp + WIN_BONUS, takeoverBandCap(depthDiff(depth))), hpDelta: 0 };
   }
   if (buried || lines === 0) {
     return { correct: false, points: -40, hpDelta: -15 };
@@ -604,6 +606,15 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const d1 = verdictFor(quotaFor(1), 1, false).points;
   const d10 = verdictFor(quotaFor(10), 10, false).points;
   if (d10 <= d1) failures.push('win pay should scale with depth');
+
+  // Points band: a quota-met win stays within 60–135 % of par(100*diff+40)
+  // in every diff window — the band cap absorbs raw-depth line-value spikes.
+  for (let d = 1; d <= 5; d++) {
+    const depth = d * 6 - 5; // diff === d exactly
+    const par = 100 * d + 40;
+    const win = verdictFor(quotaFor(depth), depth, false).points;
+    if (win < 0.6 * par || win > 1.35 * par) failures.push(`win ${win} off-band vs par ${par} at diff=${d}`);
+  }
 
   return { ok: failures.length === 0, failures };
 }

@@ -470,7 +470,7 @@ export const sizeLadder: Family = {
     const r = rngFrom(seed);
     const deg0 = Math.floor(r() * 24) * 15;
     const s0 = 12 + 2 * Math.floor(r() * 3);   // 12 / 14 / 16
-    const cStep = diff >= 4 ? 6 : 5;
+    const cStep = diff >= 4 ? 8 : 7;           // clarity: rung width ≥ 7 units so adjacent options read apart
     const sizeAt = (_row: number, col: number) => s0 + col * cStep;
     const degAt = (row: number, _col: number) => deg0 + row * 90;
     const cells: Prim[][] = [];
@@ -489,9 +489,9 @@ export const sizeLadder: Family = {
         slTri(sAns, aAns + 30),
         slTri(sAns, aAns + 60),
         slTri(sAns, aAns + 90),
-        slTri(sAns, aAns + 15),              // half-step twist
+        slTri(sAns, aAns + 24),              // half-step twist (24°, was 15°)
       ],
-      [slTri(sAns, aAns + 45), slTri(sAns, aAns - 15)],
+      [slTri(sAns, aAns + 45), slTri(sAns, aAns - 24)],
       seed ^ 0x1add,
     );
     return {

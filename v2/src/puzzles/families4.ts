@@ -72,7 +72,7 @@ function acGlyph(dir: number, n: number, ahead = false): Prim[] {
   const px = -dy, py = dx;                        // perpendicular to dir
   for (let i = 0; i < n; i++) {
     const t = ahead ? 1 : -1;
-    const dist = 6 + i * (38 / Math.max(n - 1, 1));
+    const dist = 12 + i * (32 / Math.max(n - 1, 1)); // start behind the wing tips (axial 10.6) so the tail reads as separate ticks
     const cx = 50 + t * dx * dist, cy = 50 + t * dy * dist;
     out.push({ k: 'line', x1: r2(cx - px * 4), y1: r2(cy - py * 4), x2: r2(cx + px * 4), y2: r2(cy + py * 4) });
   }
@@ -210,7 +210,7 @@ type DbLine = Extract<Prim, { k: 'line' }>;
 function dbGlyph(left: number, right: number): Prim[] {
   const d = right - left;
   const out: Prim[] = [{ k: 'line', x1: 28, y1: 50 - 3 * d, x2: 72, y2: 50 + 3 * d }];
-  const sp = Math.min(10, 72 / Math.max(left, right, 1));
+  const sp = Math.min(10, 88 / Math.max(left, right, 1)); // pitch floor keeps r=4 dots separated at max stack density
   for (let i = 0; i < left; i++) out.push({ k: 'dot', x: 13, y: r2(50 + (i - (left - 1) / 2) * sp), r: 4 });
   for (let i = 0; i < right; i++) out.push({ k: 'dot', x: 87, y: r2(50 + (i - (right - 1) / 2) * sp), r: 4 });
   return out;

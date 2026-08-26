@@ -2,8 +2,8 @@
  * RED LIGHT — takeover scene (v2 port of modes/mode-redlight.js, mechanic not code).
  *
  * GREEN phase: a micro-pattern question is live — match the highlighted shape
- *   among 4 option tiles. Correct pick banks +40 and advances; wrong pick ends
- *   the run (-40 / -12 hp).
+ *   among 4 option tiles. Correct pick banks parFor(diff)/5 (diff-scaled) and
+ *   advances; wrong pick ends the run (-40 / -12 hp).
  * RED phase: total freeze. ANY input (big pointer move, click, key) costs
  *   -8 hp and RESETS the current pattern. The run itself continues.
  *
@@ -67,6 +67,12 @@ export function onceResolve(onDone: (r: StageResult) => void): (r: StageResult) 
 /** Neutral escape result (Esc key / timeout). */
 export function escaped(hpDelta: number, summary: string): StageResult {
   return { correct: null, points: 0, hpDelta, summary };
+}
+
+/** Puzzle difficulty ladder from round depth (mirrors main.ts dealPuzzle):
+ *  d1 = depths 1-5, d2 = 6-11 … clamped to 5. */
+export function diffFor(depth: number): number {
+  return Math.min(5, Math.max(1, 1 + Math.floor(Math.max(0, depth) / 6)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -190,7 +196,17 @@ export function makePattern(rng: () => number): RLPattern {
 }
 
 const QUOTA = 3;
-const BANK_PER_SOLVE = 40;
+
+/**
+ * POINTS CURVE vs par(d) = 100*d + 40 (floorfall.parFor; diff = diffFor(depth)):
+ *   win   = QUOTA * bankPerSolve(diff) + 40 + 20*diff  — ≈103–86 % of par
+ *   wrong pick = -40 · timeout/Esc = banked only (< any full win: never stall-optimal)
+ * bankPerSolve = par/5 — an exact integer for every diff 1..5.
+ */
+export function bankPerSolve(diff: number): number {
+  return 20 * diff + 8;
+}
+
 const TWITCH_HP = 8;
 /** Goal-card freeze: input locked and clock stopped for this long at mount. */
 export const GOAL_MS = 2000;
@@ -208,12 +224,13 @@ interface LiveUi {
 /* ------------------------------------------------------------------ */
 /* Scene                                                               */
 /* ------------------------------------------------------------------ */
-
 export function mountRedLight(ctx: TakeoverCtx): void {
   const root = ctx.container;
   const rng = mulberry32((ctx.seed ^ 0x1234567) >>> 0);
   const hue = T.boardHues[ctx.seed % T.boardHues.length];
   const settle = onceResolve(ctx.onDone);
+  const diff = diffFor(ctx.depth);
+  const bankPer = bankPerSolve(diff);
 
   /* ---- static chrome ---- */
   const bg = new Sprite(Texture.WHITE);
@@ -226,9 +243,9 @@ export function mountRedLight(ctx: TakeoverCtx): void {
     status: text(root, 'GREEN LIGHT — SOLVE', STAGE_W / 2 - 150, 108, 24, T.good, true),
     progress: text(root, '', STAGE_W / 2 - 130, 668, 17, T.ink),
     wash: new Sprite(Texture.WHITE),
+    flash: text(root, `+${bankPer} BANKED`, STAGE_W / 2, 612, 22, T.good, true),
     bar: new Sprite(Texture.WHITE),
     dynamic: new Container(),
-    flash: text(root, '+40 BANKED', STAGE_W / 2, 612, 22, T.good, true),
   };
   ui.flash.visible = false;
   ui.wash.width = STAGE_W;
@@ -318,7 +335,7 @@ export function mountRedLight(ctx: TakeoverCtx): void {
   function win(): void {
     finish({
       correct: true,
-      points: banked + 50 + ctx.depth * 20,
+      points: banked + 40 + diff * 20,
       hpDelta,
       summary: `CROSSED THE FIELD · ${solved} PATTERNS`,
     });
@@ -351,11 +368,11 @@ export function mountRedLight(ctx: TakeoverCtx): void {
     if (dead || introLeft > 0 || !inGreen || answered) return;
     answered = true;
     if (i === pattern.answerIdx) {
-      banked += BANK_PER_SOLVE;
+      banked += bankPer;
       solved++;
+      // instant click-to-feedback: the bank flash lands this frame
+      ui.flash.text = `+${bankPer} BANKED`;
       refreshProgress();
-      // instant click-to-feedback: the +40 flash lands this frame
-      ui.flash.text = '+40 BANKED';
       ui.flash.x = STAGE_W / 2 - ui.flash.width / 2;
       ui.flash.visible = true;
       flashT = 0;
@@ -500,6 +517,19 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     if (JSON.stringify(pa) !== JSON.stringify(pb)) failures.push(`pattern nondeterministic seed=${seed}`);
     if (pa.answerIdx < 0) failures.push(`answer missing seed=${seed}`);
     if (pa.options.some((o) => o.n < 1 || o.kind < 0 || o.kind >= CHIP_KINDS)) failures.push(`bad chip seed=${seed}`);
+  }
+  // Points band: canonical win (QUOTA solves) pays 60–135 % of par(100*diff+40)
+  // at every diff window, and a timeout with the same progress pays strictly less.
+  for (let d = 1; d <= 5; d++) {
+    const par = 100 * d + 40;
+    const win = QUOTA * bankPerSolve(d) + 40 + 20 * d;
+    if (win < 0.6 * par || win > 1.35 * par) failures.push(`win ${win} off-band vs par ${par} at diff=${d}`);
+    const partial = (QUOTA - 1) * bankPerSolve(d);
+    if (partial >= win) failures.push(`timeout banked ${partial} not below win ${win} at diff=${d}`);
+  }
+  // diffFor ladder mirrors main.ts dealPuzzle windows
+  if (diffFor(1) !== 1 || diffFor(5) !== 1 || diffFor(6) !== 2 || diffFor(30) !== 5 || diffFor(0) !== 1 || diffFor(-4) !== 1) {
+    failures.push('diffFor ladder wrong');
   }
   return { ok: failures.length === 0, failures };
 }

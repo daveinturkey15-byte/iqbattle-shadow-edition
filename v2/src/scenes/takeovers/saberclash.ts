@@ -23,7 +23,8 @@
  * (seed, buckets). No Math.random, no Date.now — clock is Pixi's ticker delta.
  *
  * FAIRNESS RAILS: feedback is a <=160 ms localized arc pulse (never fullscreen);
- * feint telegraph is a small marker blink; Esc bails NEUTRAL at any time; every
+ * feint telegraph is a small marker blink at 500/170 ≈ 2.94 Hz (<=3 Hz rail;
+ * IQB_MOTION=0 holds a static bad tint for the window); Esc bails NEUTRAL at any time; every
  * text >= 11 px; self-resolves inside ctx.timerLen (per-ring cap scales down
  * from 4 s to fit).
  */
@@ -158,6 +159,7 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
   const hue = T.boardHues[ctx.seed % T.boardHues.length];
   const hueNum = parseInt(hue.slice(1), 16);
   const settle = onceResolve(ctx.onDone);
+  const MOTION = typeof localStorage === 'undefined' || localStorage.getItem('IQB_MOTION') !== '0';
   const plan = buildPlan(ctx.seed, ctx.depth);
   const capMs = roundCapMs(Math.max(6, ctx.timerLen - GOAL_MS / 1000));
 
@@ -288,10 +290,12 @@ export function mountSaberClash(ctx: TakeoverCtx): void {
     roundMs += tk.deltaMS;
     const ring = plan[round];
 
-    // feint telegraph: blink the marker during the window before reversal
     const telegraph =
       ring.feintMs !== null && roundMs >= ring.feintMs - FEINT_TELEGRAPH_MS && roundMs < ring.feintMs;
-    const blinkOff = telegraph && Math.floor(roundMs / 90) % 2 === 0;
+    // feint telegraph: marker warns before the reversal. Blink is a square wave
+    // with a 340 ms period (500/170 ≈ 2.94 Hz, <=3 Hz rail); IQB_MOTION=0 gets
+    // a static bad-tint swap held for the whole telegraph window instead.
+    const blinkOff = telegraph && (!MOTION || Math.floor(roundMs / 170) % 2 === 0);
     const ang = posAt(ring, roundMs) * Math.PI * 2 - Math.PI / 2;
     ui.marker.x = cx + Math.cos(ang) * R - 13;
     ui.marker.y = cy + Math.sin(ang) * R - 13;
