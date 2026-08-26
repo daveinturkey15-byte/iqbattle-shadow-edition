@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite, Texture, Text } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Text, Texture } from 'pixi.js';
 import type { TextStyleFontWeight } from 'pixi.js';
 import { T, STAGE_W, STAGE_H } from '../theme.ts';
 
@@ -227,6 +227,7 @@ export function luxePill(parent: Container, x: number, y: number, w: number, h: 
   c.x = x; c.y = y;
   c.eventMode = 'static';
   c.cursor = 'pointer';
+  c.hitArea = new Rectangle(0, 0, w, h); /* never infer a button's hit area from art */
   const radius = opts.radius ?? Math.min(10, h / 2);
 
   const fillTex = pillFillTexture(w, h, radius, variant);

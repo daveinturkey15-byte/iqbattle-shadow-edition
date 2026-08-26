@@ -14,10 +14,20 @@ export interface SidebarPlayer {
   /** seconds since this player's last response; null = waiting */
   clock?: number | null;
   rank?: number;
+  /** LMS rank swing since the last reveal ('▲2' / '▼1' / ''). */
+  glyph?: string;
+  /** LMS hp 0..100 — drives the card's health rail. Absent in solo. */
+  hp?: number;
+  /** Eliminated seats grey out; 'left' seats also carry the LEFT tag. */
+  phase?: 'alive' | 'spectator' | 'left';
+  /** Set by the LMS layer when this row is a legal attack target. */
+  onAttack?: () => void;
 }
 export interface GameSceneOpts {
   score?: () => number;
   players?: () => SidebarPlayer[];
+  /** LMS: block the option grid (spectators watch, they do not answer). */
+  locked?: () => boolean;
 }
 
 /** Build the play surface in the 1600x900 logical space (Shell owns header /
@@ -52,11 +62,13 @@ export function buildGameScene(
   let answered = false;
   p.options.forEach((prims, idx) => {
     const s = spriteFrom(tileCanvas(prims, p.hue, layout.optSize));
+    s.label = 'opt' + idx; /* stable handle for the browser gate (qa.ts) */
     s.x = layout.ox + (idx % 4) * (layout.optSize + GRID_GAP);
     s.y = layout.oy + Math.floor(idx / 4) * (layout.optSize + GRID_GAP);
     s.eventMode = 'static'; s.cursor = 'pointer';
     s.on('pointerdown', () => {
       if (answered) return; /* single-fire: a second click must not re-deal */
+      if (opts.locked?.()) return; /* LMS: the eliminated may look, not touch */
       answered = true;
       const correct = idx === p.answer;
       s.tint = correct ? GOOD_TINT : BAD_TINT; /* instant <100ms feedback */
@@ -131,6 +143,12 @@ function buildLiveSidebar(root: Container, opts: GameSceneOpts): void {
 
     rowsC.removeChildren().forEach((c) => c.destroy({ children: true }));
     players.slice(0, 7).forEach((pl, i) => rowsC.addChild(playerRow(pl, i * CARD_PITCH)));
+    /* Score rail mirrors YOUR row once the LMS table is authoritative. */
+    const mine = players.find((pl) => pl.you);
+    if (mine) {
+      scoreT.text = String(mine.score);
+      scoreT.x = SIDEBAR.w - 24 - scoreT.width;
+    }
   };
   refresh();
   const iv = window.setInterval(refresh, 200);
@@ -144,11 +162,19 @@ function buildLiveSidebar(root: Container, opts: GameSceneOpts): void {
 function playerRow(pl: SidebarPlayer, y: number): Container {
   const card = new Container();
   card.y = y;
+  const out = pl.phase === 'spectator' || pl.phase === 'left';
   const g = new Graphics();
   g.roundRect(0, 0, CARD_W, CARD_H, T.radius)
-    .fill({ color: T.tile })
-    .stroke({ color: T.panelEdge, width: 1 });
+    .fill({ color: T.tile, alpha: out ? 0.5 : 1 })
+    .stroke({ color: pl.onAttack ? T.bad : T.panelEdge, width: pl.onAttack ? 2 : 1 });
   card.addChild(g);
+  if (out) card.alpha = 0.55;
+  if (pl.onAttack) {
+    /* Targetable rival: the whole card is the throw button. */
+    card.eventMode = 'static';
+    card.cursor = 'pointer';
+    card.on('pointerdown', () => pl.onAttack?.());
+  }
 
   const rank = pl.rank ?? (pl.you ? 1 : undefined);
   const diamond = new Graphics();
@@ -164,11 +190,32 @@ function playerRow(pl: SidebarPlayer, y: number): Container {
   const initial = text(card, (pl.name[0] ?? '?').toUpperCase(), 0, 27, 14, T.ink, true);
   initial.x = 58 - initial.width / 2;
 
-  const nameT = text(card, pl.name, 86, 15, 15, T.ink, true);
-  if (pl.you) text(card, 'YOU', nameT.x + nameT.width + 8, 18, 11, T.gold, true);
+  const nameT = text(card, pl.name, 86, 11, 15, T.ink, true);
+  let tagX = nameT.x + nameT.width + 8;
+  if (pl.you) { const t0 = text(card, 'YOU', tagX, 14, 11, T.gold, true); tagX = t0.x + t0.width + 6; }
+  if (pl.phase === 'spectator') { const t1 = text(card, 'OUT', tagX, 14, 11, T.bad, true); tagX = t1.x + t1.width + 6; }
+  else if (pl.phase === 'left') { const t2 = text(card, 'LEFT', tagX, 14, 11, T.muted, true); tagX = t2.x + t2.width + 6; }
+  if (pl.glyph) text(card, pl.glyph, tagX, 14, 11, pl.glyph.startsWith('▲') ? T.good : T.bad, true);
+
+  /* LMS health rail. HP is the life bar — elimination is HP death — so this
+   * is the single most important number on the card: it must be readable at
+   * a glance AND exact, hence rail + numeral. */
+  if (typeof pl.hp === 'number') {
+    const railW = CARD_W - 86 - 130;
+    const hp = Math.max(0, Math.round(pl.hp));
+    const frac = Math.max(0, Math.min(1, hp / 100));
+    const col = frac > 0.5 ? 0x22d3a5 : frac > 0.25 ? 0xd4a017 : 0xff2e88;
+    const rail = new Graphics();
+    rail.roundRect(86, 31, railW, 6, 3).fill({ color: 0xffffff, alpha: 0.08 });
+    if (frac > 0) rail.roundRect(86, 31, Math.max(3, railW * frac), 6, 3).fill({ color: col });
+    card.addChild(rail);
+    const hpT = text(card, String(hp), 86 + railW + 8, 26, 12,
+      frac > 0.5 ? T.muted : frac > 0.25 ? T.gold : T.bad, frac <= 0.25);
+    hpT.style.fontFamily = 'ui-monospace, Consolas, monospace';
+  }
 
   const clockStr = typeof pl.clock === 'number' ? pl.clock.toFixed(3) + 's' : 'waiting…';
-  const clock = text(card, clockStr, 0, 44, 11, typeof pl.clock === 'number' ? T.ink : T.muted);
+  const clock = text(card, clockStr, 0, 46, 11, typeof pl.clock === 'number' ? T.ink : T.muted);
   clock.style.fontFamily = 'ui-monospace, Consolas, monospace';
   clock.x = CARD_W - 24 - clock.width;
 

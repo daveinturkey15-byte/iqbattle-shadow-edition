@@ -46,7 +46,12 @@ Each depth deals either a **puzzle round** (the iqversus core) or a **takeover r
 stage). Rules of the deal (`main.ts`):
 
 - **Puzzles**: difficulty ramps `min(5, 1 + floor(depth/6))`; correct answer pays
-  `100·diff + 40 + 20·(streak−1)`; wrong costs 40 pts + 12 hp; timeout costs 12 hp.
+  `pointsFor(diff, streak, mul)` = `(100·diff + 40 + 20·(streak−1)) × mul`; wrong costs 40 pts
+  + 12 hp; timeout costs 12 hp. `mul` is 1 unless a fate roll says otherwise (midas 1.5×, a
+  curse can halve it; clamped to 0.25–3). **Multipliers apply solo only** — `maybeCurse` rolls
+  partly off your own hp, so a personal event must never move a shared ladder.
+- First sight of a puzzle family at depths 1–3 shows its legend line above the board
+  (`meta/onboard.ts`); the answer-reveal juice is `fx/reveal.ts`.
 - **Takeovers** fire only on hostile rounds, from depth 4, never closer than 3 depths apart,
   ~42 % of eligible depths. A goal card (title + controls) shows at stage entry; every takeover
   is escapable — **Esc bails with a neutral result**.
@@ -192,10 +197,55 @@ frame; ambience only — never touches glyphs or scoring.
    never cross the wire (answers can't leak by construction). Clients return integer verdicts
    `{sr{correct,points,hpDelta}}`; the host clamps them (points [−200,500], hp [−60,60],
    anti-spoof ceiling `100·diff+40`) before folding into the authoritative reveal.
-5. LMS + attacks (`scenes/mpfeat.ts`): score-floor/hp-death elimination ('and' mode; 'or'
-   hardcore), eliminated players spectate, last player standing ends the match. Attack menu
-   (rotten / curse, depth-scaled costs) — host validates then adopts the fresh table; rage quit
-   slams the door without ending the match.
+5. LMS + attacks — **live and wired** (`scenes/mpfeat.ts` rules → `scenes/lms.ts` reducer →
+   `scenes/lmsdirector.ts` sequencing → `main.ts` effects). See the section below.
+
+### Last Man Standing (the MP match layer)
+
+Every multiplayer room is an LMS match. The three modules split by testability:
+
+| Module | Owns | Runs in node |
+|---|---|---|
+| `scenes/mpfeat.ts` | Pure rules: weapon curves, elimination verdict, rank deltas | yes |
+| `scenes/lms.ts` | The match state reducer (every call returns a NEW state) | yes |
+| `scenes/lmsdirector.ts` | Sequencing: who folds what, when a depth closes | yes |
+| `main.ts` | Effects only: Pixi scenes, toasts, timers, advance | no |
+
+- **Host authority.** A client's `sr` frame carries a CLAIM, not a score. On puzzle depths the
+  host recomputes the points itself from (difficulty, the streak it tracks for that seat, midas)
+  using the same `pointsFor()` the solo path uses, so a tampered client can at most lie about
+  whether it was right. Only takeover depths adopt a reported delta, under `clampSr` plus a
+  takeover ceiling. Duplicate `sr` frames for one depth are dropped host-side — the answer lock
+  is enforced on the wire, not just in the scene.
+- **Depth close.** A depth ends when every ALIVE seat has answered, or when the host's clock
+  expires (the silent seats eat the wrong-answer bite). The host then broadcasts
+  `reveal{n,answer,scores,hp}` — the only frame that advances a client — runs the elimination
+  sweep, and broadcasts `elim{uids}` / `end{scores}` as needed.
+- **Attacks.** Click a rival's sidebar card to open the weapon menu (`scenes/attackmenu.ts`).
+  Depth-scaled off the v1 balance curves: rotten `cost 60+15d / dmg 60+20d`, curse
+  `cost 100+25d / dmg 100+30d / −10 hp`. One attack per seat per depth. Depths 1–2 are
+  parity-guarded — no card is even clickable. A landed attack rides its own `scores{n,scores,hp}`
+  frame, never a reveal, so a tomato can never make everyone skip a round.
+- **Elimination: HP is the life bar, score is ammunition.** A seat is out when its HP hits 0 —
+  score never kills. (v1 shipped "score floor AND hp death", which existed only because every
+  seat *starts* on 0 points; the side effect was that elimination was practically unreachable —
+  measured at 6 eliminations and **zero completed matches** across 60 simulated matches. Naive
+  `'or'` is worse: it wipes the table on the first sweep. So the score floor is out of the death
+  test entirely — see `ELIMINATION_RULE` in `lms.ts`.) The dead spectate: greyed card, no
+  answering, no attacking, no targets. Rage quit marks the seat `left`; the door slams and the
+  match continues. The match ends when one seat remains, and a one-seat room is never "won" —
+  solo hosts keep descending under the solo HP rule.
+- **The bite deepens.** A wrong answer or a timeout costs `12 + 4·(diff−1)` HP: −12 through
+  depth 5 (unchanged from v1), then −16, −20, −24, −28 as the difficulty ramp climbs. The
+  sanctuary heal stays +20, so a reprieve is worth relatively less the deeper you are. Simulated
+  pacing under adversarial play: matches end between depth **10 and 24, median 15**.
+- **The ladder** is the sidebar: rank order with ▲/▼ swing glyphs since the last reveal, a health
+  rail *and exact HP numeral* per seat (it is the life bar, so it has to be both glanceable and
+  exact), response clocks, and OUT/LEFT tags. The attack menu shows the target's HP too, and
+  flags `ONE PUSH FROM THE DARK` at 25 or below. The end screen replaces the solo summary
+  with the full finishing order and each seat's fate.
+- **Known gap:** chaos rounds show no ladder and take no attacks — the takeover scene owns the
+  whole stage. Attacks resume on the next puzzle depth.
 
 ## End screen
 
@@ -221,8 +271,11 @@ scenes/
   arc.ts                Applies arc plans / sanctuary chrome, layer whisper banners
   interlude.ts          EMERALD relic picks every 4th depth (frozen relic table)
   end.ts                End screen: review strip, scoreboard, accolade chips
-  mp.ts                 MP orchestration over net2 (lobby/begin/round/sr/reveal/LMS/meta)
+  mp.ts                 MP wire: session, frame sanitizers, lobby/begin/round/sr/reveal/scores/elim
   mpfeat.ts             Pure LMS/attack game rules + UI specs (standings, attack menu, rage quit)
+  lms.ts                LMS match-state reducer (pure; every call returns a new state)
+  lmsdirector.ts        LMS sequencing behind injected effects (host authority, depth close)
+  attackmenu.ts         Weapon-pick overlay (escapable, priced per depth)
   takeovers/            One file per chaos stage; redlight.ts owns the shared TakeoverCtx contract
 fx/reveal.ts            Answer-reveal juice (wash/shake/combo/embers), motion-gated
 audio/                  audio.ts core · beds.ts alignment music · director.ts act bus · sfx2.ts
@@ -233,6 +286,7 @@ meta/                   onboard.ts goal cards + family legends · accolades.ts e
 net/net2.ts             Dual-transport MP core (PeerJS + BroadcastChannel/localStorage fallback)
 puzzles/                types.ts Family/Puzzle contracts · families{,2,3}.ts generators+solvers ·
                         audit2.ts gauntlet gate
+qa.ts                   Dev-build-only browser-driver hooks (window.__QA) — stripped by vite build
 ```
 
 Scene flow: Boot → Landing → Lobby → Game (puzzle | takeover, with Interlude every 4th depth)
@@ -271,7 +325,34 @@ node --experimental-strip-types src/audio/selftest-director.ts              # ac
 node --experimental-strip-types src/shadow/large.ts                         # LARGE channel
 node src/worlds/selftest.ts                                                 # 12 backdrops
 node src/net/selftest.ts                                                    # MP transports end-to-end
+node --experimental-strip-types src/scenes/lms.ts                           # LMS reducer
+node --experimental-strip-types src/scenes/mpfeat.ts                        # LMS pure rules
+node --experimental-strip-types src/scenes/selftest-lms.ts                  # FULL 3-seat match, real MpSession + director
 ```
+
+`selftest-lms.ts` is the one that matters for multiplayer: it plays a whole LMS match through the
+real `MpSession` over a loopback wire and asserts, after every depth, that all three screens'
+tables are byte-identical to the host's. Desync is the bug class that made v1 matches
+unarguable, so it is checked as a property, not by eye.
+
+### Driving the browser (gate G4)
+
+`vite dev` installs `window.__QA` (see `src/qa.ts`; absent from `vite build` output):
+
+```js
+__QA.texts()            // every string currently on the stage
+__QA.sees('PLAYERS 2')  // substring probe
+__QA.click(800, 621)    // click a LOGICAL 1600x900 coordinate (letterbox maths included)
+__QA.clickLabel('opt3') // click a labelled node (option tiles are opt0..opt7)
+__QA.type('DAVE')       // keystrokes into the focused text input
+__QA.state()            // depth / score / hp / role / LMS table / phases / winner
+__QA.hit(x, y)          // what Pixi believes is under a logical point
+```
+
+Two tabs on the same origin share the BroadcastChannel bus, so a full host+join match can be
+driven end to end from the console. If a tab is not compositing (hidden pane, headless), call
+`app.render()` once before hit-testing — Pixi's world transforms and event root are only
+established by a render.
 
 Individual scenes also carry their own smoke entries
 (`node --experimental-strip-types src/scenes/takeovers/<scene>.ts`). Self-tests probe hundreds of

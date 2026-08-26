@@ -1,6 +1,17 @@
 # IQ Versus: SHADOW
 
-A faithful-looking clone of [iqversus.com](https://www.iqversus.com/) head-to-head abstract-reasoning puzzles that starts identical to the original… and slowly rots into an evil Shadow-themed meta game. Built as a static site — no backend, no build step.
+A faithful-looking clone of [iqversus.com](https://www.iqversus.com/) head-to-head abstract-reasoning puzzles that starts identical to the original… and slowly rots into an evil Shadow-themed meta game.
+
+> **v2 is the game.** Active development lives in [`v2/`](v2/) — Vite + TypeScript + PixiJS v8,
+> fixed 1600×900 logical stage, 12 solver-audited puzzle families, 25 chaos stages and
+> host-authoritative Last-Man-Standing multiplayer. Start at
+> [`v2/README-V2.md`](v2/README-V2.md); the puzzle ground truth is [`v2/DNA.md`](v2/DNA.md).
+> Everything described below this box is the **frozen v1 build** kept at the repo root for
+> reference and served at `/v1/`. It has no build step; v2 does.
+
+```sh
+cd v2 && npm i && npm run dev     # http://localhost:8792
+```
 
 ## Play
 
@@ -15,7 +26,7 @@ A faithful-looking clone of [iqversus.com](https://www.iqversus.com/) head-to-he
 
 Cross-device multiplayer uses the free PeerJS cloud broker (`unpkg.com/peerjs@1.4.7` + `0.peerjs.com`) — no keys, no server of your own. If the broker is busy, same-browser play still works via the storage bus, and solo is always fully playable.
 
-## Files
+## Files (v1, frozen)
 
 | File | Role |
 |---|---|

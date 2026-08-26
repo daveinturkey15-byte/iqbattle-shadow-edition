@@ -106,7 +106,8 @@ export type MpEvent =
   | { t: 'round'; n: number; stg: StageRef; timerLen: number }
   | { t: 'pick'; uid: string; n: number; idx: number }
   | { t: 'sr'; uid: string; n: number; sr: SrVerdict }
-  | { t: 'reveal'; n: number; scores: ScoreRec[] }
+  | { t: 'reveal'; n: number; scores: ScoreRec[]; hp?: Record<string, number> }
+  | { t: 'scores'; n: number; scores: ScoreRec[]; hp?: Record<string, number>; reason?: string }
   | { t: 'end'; scores: ScoreRec[]; reason?: string }
   | { t: 'elim'; uids: string[] }
   | { t: 'attack'; uid: string; targetUid?: string; weapon?: string; n?: number }
@@ -161,6 +162,17 @@ function asPlayerList(v: unknown): PlayerRec[] {
       name: asStr(r.name, 'PLAYER').slice(0, 16),
       isHost: r.isHost === true,
     });
+  }
+  return out;
+}
+
+/** uid -> hp, sanitized to 0..100 integers (host-authoritative broadcast). */
+function asHpMap(v: unknown): Record<string, number> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!k) continue;
+    out[k.slice(0, 40)] = Math.max(0, Math.min(100, Math.round(asNum(raw, 100))));
   }
   return out;
 }
@@ -393,6 +405,15 @@ export class MpSession {
       t: 'reveal',
       n: Math.round(asNum(f.n, -1)),
       scores: asScoreList(f.scores),
+      hp: asHpMap(f.hp),
+    }));
+
+    listen('scores', (f) => ({
+      t: 'scores',
+      n: Math.round(asNum(f.n, -1)),
+      scores: asScoreList(f.scores),
+      hp: asHpMap(f.hp),
+      reason: typeof f.reason === 'string' ? f.reason.slice(0, 32) : undefined,
     }));
 
     listen('end', (f) => ({
@@ -521,13 +542,31 @@ export class MpSession {
   }
 
   /** reveal{n,answer,scores} — the ONLY frame allowed to carry an answer. */
-  reveal(n: number, answerIdx: number, scores: ScoreRec[]): void {
+  reveal(n: number, answerIdx: number, scores: ScoreRec[], hp?: Record<string, number>): void {
     if (this.role !== 'host') return;
     this.net.broadcast({
       t: 'reveal',
       n: Math.round(n),
       answer: Math.round(answerIdx),
       scores: scores.map((s) => ({ uid: s.uid, name: String(s.name).slice(0, 16), pts: Math.round(s.pts) })),
+      ...(hp ? { hp: { ...hp } } : {}),
+    });
+  }
+
+  /**
+   * scores{n,scores,reason} — an out-of-band table push (attack landed, seat
+   * left). Deliberately NOT a reveal: reveal is the advance signal, so score
+   * corrections mid-depth must ride their own frame or every client skips a
+   * round the moment someone throws a rotten tomato.
+   */
+  pushScores(n: number, scores: ScoreRec[], hp?: Record<string, number>, reason?: string): void {
+    if (this.role !== 'host') return;
+    this.net.broadcast({
+      t: 'scores',
+      n: Math.round(n),
+      scores: scores.map((s) => ({ uid: s.uid, name: String(s.name).slice(0, 16), pts: Math.round(s.pts) })),
+      ...(hp ? { hp: { ...hp } } : {}),
+      ...(reason ? { reason: reason.slice(0, 32) } : {}),
     });
   }
 
@@ -710,6 +749,7 @@ export interface WireHandlers {
   onPick?(e: Extract<MpEvent, { t: 'pick' }>): void;
   onSr?(e: Extract<MpEvent, { t: 'sr' }>): void;
   onReveal?(e: Extract<MpEvent, { t: 'reveal' }>): void;
+  onScores?(e: Extract<MpEvent, { t: 'scores' }>): void;
   onEnd?(e: Extract<MpEvent, { t: 'end' }>): void;
   onElim?(e: Extract<MpEvent, { t: 'elim' }>): void;
   onAttack?(e: Extract<MpEvent, { t: 'attack' }>): void;
@@ -740,6 +780,9 @@ export function wireMain(h: WireHandlers): () => void {
         break;
       case 'reveal':
         h.onReveal?.(e);
+        break;
+      case 'scores':
+        h.onScores?.(e);
         break;
       case 'end':
         h.onEnd?.(e);

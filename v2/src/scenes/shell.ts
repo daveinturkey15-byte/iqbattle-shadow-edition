@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite, Texture, Text, Ticker } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Texture, Text, Ticker } from 'pixi.js';
 import { T, STAGE_W } from '../theme.ts';
 import { panel, text } from './game.ts';
 import { luxeLabel, pillFillTexture, rankDiamond, signatureStrip } from '../style/panelkit.ts';
@@ -99,6 +99,7 @@ function makePillLink(parent: Container, x: number, y: number, label: string,
   c.x = x; c.y = y;
   c.eventMode = 'static';
   c.cursor = 'pointer';
+  c.hitArea = new Rectangle(0, 0, w, h);
   const face = new Graphics();
   const draw = (hot: boolean): void => {
     face.clear();
@@ -288,6 +289,12 @@ export function makeButton(parent: Container, x: number, y: number, w: number, h
   c.x = x; c.y = y;
   c.eventMode = 'static';
   c.cursor = 'pointer';
+  /* Explicit hit area — do NOT rely on child geometry. `face` below doubles
+   * as the sheen mask, and Pixi excludes masks from hit-testing, which left
+   * ghost/danger buttons (landing JOIN, every LEAVE) visible but unclickable:
+   * the whole join-by-code entry path was dead. Bounds still measured fine,
+   * so nothing caught it until a hit-test gate went looking. */
+  c.hitArea = new Rectangle(0, 0, w, h);
 
   /* luxe pill fill (panelkit); `face` doubles as mask + ghost/danger face */
   const radius = Math.min(10, h / 2);
@@ -472,6 +479,13 @@ export interface ShellOpts {
   roomTitle?: string;
   onLobby?: () => void;
   onLeave?: () => void;
+  /**
+   * Draw the chrome's own player sidebar. Default OFF: the puzzle scene
+   * builds a LIVE sidebar over the identical rect (layouthelper.SIDEBAR),
+   * so leaving this on stacked two luxe panels and left a frozen
+   * "PLAYERS 0" header showing through beneath the real one.
+   */
+  sidebar?: boolean;
 }
 
 /** Full-frame chrome per DNA: header (LOBBY · room title · LEAVE), status strip
@@ -496,8 +510,13 @@ export class Shell {
 
     this.strip = statusStrip(root, 40, 70, 920);
 
-    this.sidebar = panel(root, 984, 70, 576, 734);
-    edgeRect(this.sidebar, 0, 0, 576, 734, T.radius);
+    if (opts.sidebar) {
+      this.sidebar = panel(root, 984, 70, 576, 734);
+      edgeRect(this.sidebar, 0, 0, 576, 734, T.radius);
+    } else {
+      /* Detached: card handles keep working for callers, nothing paints. */
+      this.sidebar = new Container();
+    }
     this.countLabel = text(this.sidebar, 'PLAYERS 0', 24, 20, 14, T.muted, true);
     this.nextCardY = 56;
   }
@@ -537,7 +556,7 @@ export class Shell {
 export function __preview(): Container {
   const root = new Container();
   panel(root, 0, 0, STAGE_W, 900);
-  const shell = Shell.attach(root, { roomTitle: 'PREVIEW ROOM · DEMO' });
+  const shell = Shell.attach(root, { roomTitle: 'PREVIEW ROOM · DEMO', sidebar: true });
   shell.setDepth(2);
   shell.setTimer(0.62, fmtClock(37));
   const me = shell.addPlayerCard('OxAlpha', ['you', 'host']);
