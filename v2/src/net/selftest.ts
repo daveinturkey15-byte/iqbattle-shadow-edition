@@ -20,7 +20,9 @@ import { createNet, type BusHandle, type DataConnLike, type Frame, type PeerCtor
 import {
   clampSr,
   evaluateElimination,
+  familyForDepth,
   foldScore,
+  hueIndexForDepth,
   parseStg,
   roundPlan,
   srCeiling,
@@ -275,6 +277,58 @@ async function waitFor(label: string, cond: () => boolean, ms = 10000): Promise<
 function pureChecks(): void {
   console.log('[pure] clampSr / srCeiling / foldScore / elimination / roundPlan');
 
+  /* ---- seeded puzzle pool ------------------------------------------
+   * The pick was `(depth-1) % families`, i.e. the same scripted opening
+   * in every run anyone ever played. These assertions are the regression
+   * guard on "should be from a random pool" (owner, 2026-08-26). */
+  {
+    const N = 12;
+    let sameSeedStable = true;
+    let differentSeedsDiffer = false;
+    let everyBagComplete = true;
+    let noImmediateRepeat = true;
+    let coversEveryFamily = true;
+
+    for (const seed of [1, 2, 12345, 0xbeef, 0x7fffffff]) {
+      const seen = new Set<number>();
+      let prev = -1;
+      for (let bag = 0; bag < 6; bag++) {
+        const inBag = new Set<number>();
+        for (let slot = 0; slot < N; slot++) {
+          const depth = bag * N + slot + 1;
+          const fam = familyForDepth(seed, depth, N);
+          if (fam < 0 || fam >= N) everyBagComplete = false;
+          if (fam === prev) noImmediateRepeat = false;
+          prev = fam;
+          inBag.add(fam);
+          seen.add(fam);
+          if (familyForDepth(seed, depth, N) !== fam) sameSeedStable = false;
+        }
+        /* A bag may lose ONE slot to the seam swap; never more. */
+        if (inBag.size < N - 1) everyBagComplete = false;
+      }
+      if (seen.size !== N) coversEveryFamily = false;
+    }
+
+    const openA = [1, 2, 3, 4].map((d) => familyForDepth(101, d, N)).join(',');
+    const openB = [1, 2, 3, 4].map((d) => familyForDepth(202, d, N)).join(',');
+    const openC = [1, 2, 3, 4].map((d) => familyForDepth(303, d, N)).join(',');
+    differentSeedsDiffer = !(openA === openB && openB === openC);
+
+    check('pool: same seed always deals the same board order', sameSeedStable);
+    check('pool: different runs open with different families', differentSeedsDiffer,
+      openA + ' | ' + openB + ' | ' + openC);
+    check('pool: every family appears before any repeats', everyBagComplete);
+    check('pool: a family never follows itself', noImmediateRepeat);
+    check('pool: the whole family set gets used', coversEveryFamily);
+    check('pool: a single-family list still works', familyForDepth(7, 5, 1) === 0);
+
+    /* Hue wheel had the same fixed-script problem. */
+    const hueA = [1, 2, 3].map((d) => hueIndexForDepth(11, d, 6)).join(',');
+    const hueB = [1, 2, 3].map((d) => hueIndexForDepth(4000, d, 6)).join(',');
+    check('pool: board hue is seeded too', hueA !== hueB, hueA + ' vs ' + hueB);
+  }
+
   check('clampSr rejects garbage', clampSr(null) === null && clampSr('x') === null && clampSr(42) === null);
   const v = clampSr({ correct: 1, points: 9999, hpDelta: -999 });
   check(
@@ -340,7 +394,11 @@ function pureChecks(): void {
   check(
     'parseStg round-trips pz/tk ids and rejects junk',
     parsed?.kind === 'puzzle' &&
-      parsed.index === 6 &&
+      /* Round-trip is the property under test. This used to assert the
+       * literal 6, which was only ever true because the family pick was the
+       * scripted (depth-1)%families; it is a seeded bag now. */
+      parsed.index === planPz.index &&
+      planPz.stg === 'pz:' + planPz.index &&
       parseStg('tk:2')?.kind === 'takeover' &&
       parseStg('evil:9') === null &&
       parseStg('') === null,

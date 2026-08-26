@@ -249,6 +249,74 @@ export function evaluateElimination(
   return dead;
 }
 
+/**
+ * Seeded shuffle-bag over the family list.
+ *
+ * The pick used to be `(depth - 1) % families`, which is not a rotation so
+ * much as a fixed script: depth 1 was ALWAYS family 0, depth 2 always family
+ * 1, in every run anyone ever played. Owner, 2026-08-26: "the first few
+ * puzzles are always the same again? annoying, should be from a random pool,
+ * like the actual iqversus game".
+ *
+ * A bag beats plain random: you see every family once before any repeats, so
+ * the run stays varied instead of clumping. The bag index is folded into the
+ * hash, so bag 2 is a different order from bag 1, and the whole thing is a
+ * pure function of the RUN SEED — which is what keeps every screen in a
+ * multiplayer match dealing the identical board.
+ *
+ * Seam rule: if a reshuffle would repeat the family that just played, the new
+ * bag's first two entries swap. Back-to-back repeats are the one thing a
+ * shuffle-bag can still get wrong, and they are exactly what reads as "the
+ * same puzzle again".
+ */
+export function familyForDepth(runSeed: number, depth: number, families: number): number {
+  const n = Math.max(1, Math.floor(families));
+  if (n === 1) return 0;
+  const d = Math.max(1, Math.floor(depth)) - 1;
+  const bag = Math.floor(d / n);
+  const slot = d % n;
+  const order = bagOrder(runSeed, bag, n);
+  if (slot === 0 && bag > 0) {
+    const prevLast = bagOrder(runSeed, bag - 1, n)[n - 1];
+    if (order[0] === prevLast) return order[1];
+  }
+  if (slot === 1 && bag > 0) {
+    const prevLast = bagOrder(runSeed, bag - 1, n)[n - 1];
+    if (order[0] === prevLast) return order[0];
+  }
+  return order[slot];
+}
+
+/** One deterministic Fisher-Yates pass over 0..n-1 for (runSeed, bag). */
+function bagOrder(runSeed: number, bag: number, n: number): number[] {
+  let h = (runSeed ^ Math.imul(bag + 1, 0x9e3779b1)) >>> 0;
+  const rnd = (): number => {
+    h = (h + 0x6d2b79f5) | 0;
+    let t = Math.imul(h ^ (h >>> 15), 1 | h);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const a: number[] = [];
+  for (let i = 0; i < n; i++) a.push(i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+
+/**
+ * Board hue for a depth. Also seeded: the hue wheel used to advance straight
+ * off the depth, so every run opened gold, orange, crimson in that order.
+ */
+export function hueIndexForDepth(runSeed: number, depth: number, hues: number): number {
+  const n = Math.max(1, Math.floor(hues));
+  const off = (runSeed >>> 3) % n;
+  return (Math.max(1, Math.floor(depth)) - 1 + off) % n;
+}
+
 export interface RoundPlan {
   kind: 'puzzle' | 'takeover';
   index: number;
@@ -258,7 +326,7 @@ export interface RoundPlan {
 
 /**
  * Deterministic host stage pick — mirrors main.ts dealPuzzle/dealTakeover
- * EXACTLY (famIdx=(depth-1)%families, seed^imul(depth,7919) for puzzles;
+ * EXACTLY (famIdx=familyForDepth(seed,depth,n), seed^imul(depth,7919) for puzzles;
  * seed^imul(depth,97)%takeovers, seed^imul(depth,0x9E37) for takeovers) so a
  * client mounting plan.stg/plan.seed sees the identical challenge.
  */
@@ -278,7 +346,7 @@ export function roundPlan(
       seed: (runSeed ^ Math.imul(depth, 0x9e37)) >>> 0,
     };
   }
-  const index = (depth - 1) % Math.max(1, families);
+  const index = familyForDepth(runSeed, depth, families);
   return {
     kind: 'puzzle',
     index,

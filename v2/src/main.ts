@@ -1,4 +1,4 @@
-import { Application, Container } from 'pixi.js';
+import { Application, Container, Text } from 'pixi.js';
 import { T, STAGE_W, STAGE_H } from './theme.ts';
 import { buildGameScene, panel, text } from './scenes/game.ts';
 import { FAMILIES } from './puzzles/families.ts';
@@ -23,8 +23,8 @@ import { applyBackdrop } from './worlds/backdrops.ts';
 import { pick as pickWorld } from './worlds/registry.ts';
 import { maybeCurse } from './fate/cursepack.ts';
 import { playReveal } from './fx/reveal.ts';
-import { goalCardFor, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
-import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
+import { goalCardForIndex, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
+import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
 import { hpFor, pointsFor } from './scenes/lms.ts';
 import { createDirector, type LmsDirector } from './scenes/lmsdirector.ts';
 import { buildAttackMenu } from './scenes/attackmenu.ts';
@@ -300,6 +300,26 @@ function detachPersonas(): void {
   try { detachLarge(); } catch { /* optional */ }
 }
 
+/** Horizontal midpoint of the board column (the sidebar owns x >= 984). */
+const BOARD_MID = 500;
+/**
+ * Top of the takeover stage box.
+ *
+ * Was 110, which put the scene straight over the chaos-round header: the
+ * goal card was painted first and the stage covered it, so the one line
+ * telling you what the round wants was hidden behind the round. The band
+ * 110..178 is now reserved for title / win condition / controls, and the
+ * scene starts below it (scaled to fit, aspect preserved).
+ */
+const TAKEOVER_TOP = 178;
+
+/** Centred single line, measured after layout so it is never off-centre. */
+function centreText(parent: Container, str: string, y: number, size: number, color: string): Text {
+  const t = text(parent, str, 0, y, size, color, true);
+  t.x = Math.round((STAGE_W - t.width) / 2);
+  return t;
+}
+
 /** Toast onto whatever scene is live (LMS events fire outside deal()). */
 function toastCurrent(msg: string, color: string): void {
   if (current) toastNow(current, msg, color);
@@ -507,6 +527,12 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   const plan = r.plan[r.depth - 1];
   r.fateScoreMul = 1; /* curses last exactly one depth */
   const root = new Container();
+  /* Banners, curse lines and toasts are emitted BEFORE the board is built,
+   * so they used to be painted under it — the sidebar panel sliced the layer
+   * banner in half mid-sentence (owner, 2026-08-26: "issues with text having
+   * other things over it or in front"). They now go into an overlay that is
+   * parented LAST, so nothing can ever cover them again. */
+  const overlay = new Container();
 
   shell = Shell.attach(root, {
     onLobby: () => { run = null; toLanding(); },
@@ -530,14 +556,27 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     if (cm) {
       if (typeof cm.hpDelta === 'number') r.hp = Math.max(0, Math.min(100, r.hp + cm.hpDelta));
       r.fateScoreMul = typeof cm.scoreMul === 'number' && cm.scoreMul > 0 ? cm.scoreMul : 1;
-      if (cm.bannerText) toastNow(root, cm.bannerText, T.gold);
+      if (cm.bannerText) toastNow(overlay, cm.bannerText, T.gold);
     }
   } catch { /* fate optional */ }
 
+  /* Resolve the round shape FIRST: the atmosphere layer needs to know
+   * whether a chaos header is about to claim the banner row. */
+  const rp = roundPlan(r.seed, r.depth, ALL_FAMILIES.length, TAKEOVERS.length, (d) =>
+    plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
+  const chaosRound = (remote ? remote.rp.kind : rp.kind) === 'takeover';
+
   onAct(Math.min(3, Math.floor(plan.layer / 2)));
   if (plan.align !== 'good' && plan.layer > lastLayer && plan.layer >= 2) {
-    const spec = layerBanner(root, plan.layer);
-    text(root, spec.text, STAGE_W / 2 - Math.min(560, spec.text.length * 9) / 2, 120, 26, T.bad, true);
+    const spec = layerBanner(overlay, plan.layer);
+    /* Centre on the BOARD column, not the stage: the sidebar owns x >= 984,
+     * so a stage-centred banner ran straight underneath it. On a chaos round
+     * the goal card owns this row entirely — telling someone what to do beats
+     * atmosphere, so the whisper stands down rather than crowding it. */
+    if (!chaosRound) {
+      const bt = text(overlay, spec.text, 0, 118, 26, T.bad, true);
+      bt.x = Math.round(BOARD_MID - bt.width / 2);
+    }
     say('whisper', {});
     announceLarge('layer', spec.text);
   }
@@ -545,9 +584,9 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   r.prevSanctuary = !!plan.sanctuary;
   try {
     const fa = maybeFlavorA({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA1A7 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
-    if (fa && fa.bannerText) toastNow(root, fa.bannerText, T.gold);
+    if (fa && fa.bannerText) toastNow(overlay, fa.bannerText, T.gold);
     const fb = maybeFlavorB({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFB2B3 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
-    if (fb && fb.bannerText) toastNow(root, fb.bannerText, T.muted);
+    if (fb && fb.bannerText) toastNow(overlay, fb.bannerText, T.muted);
   } catch { /* flavor optional */ }
   setDreadLayer(plan.align === 'good' ? 0 : plan.layer);
   if (plan.align !== r.prevAlign && r.prevAlign !== null) sting(plan.align === 'good' ? 'heal' : 'pain');
@@ -572,6 +611,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
         scheduleAdvance(r, r.depth, 900);
       });
       root.addChild(pickRoot);
+      root.addChild(overlay);
       show(root);
       return;
     }
@@ -580,21 +620,20 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   // fate roll (hostile/neutral flavor events)
   const fate = maybeFate({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA7E)) >>> 0), hp: r.hp, seed: r.seed });
   if (fate) {
-    if (fate.bannerText) toastNow(root, fate.bannerText, T.gold);
+    if (fate.bannerText) toastNow(overlay, fate.bannerText, T.gold);
     if (typeof fate.timerDelta === 'number' && fate.timerDelta < 0) r.hp -= 0; // timer handled per-scene
   }
 
-  const rp = roundPlan(r.seed, r.depth, ALL_FAMILIES.length, TAKEOVERS.length, (d) =>
-    plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
   if (!remote && mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen);
   /* A client with no round frame yet shows the chrome and waits. */
-  if (mpRole === 'client' && !remote) { r.curKind = 'puzzle'; r.curAnswer = -1; startTick(root); show(root); return; }
+  if (mpRole === 'client' && !remote) { r.curKind = 'puzzle'; r.curAnswer = -1; root.addChild(overlay); startTick(root); show(root); return; }
   const useRp = remote ? remote.rp : rp;
   const useSeed = remote ? remote.seed : rp.seed;
   r.curKind = useRp.kind;
   r.curAnswer = -1;
-  if (useRp.kind === 'takeover') { r.lastTakeover = r.depth; setPresence('hidden'); dealTakeover(root, useRp.index, useSeed); }
+  if (useRp.kind === 'takeover') { r.lastTakeover = r.depth; setPresence('hidden'); dealTakeover(root, useRp.index, useSeed, overlay); }
   else dealPuzzle(root, useRp.index, useSeed, r.depth);
+  root.addChild(overlay); /* banners on top of the board, always */
   startTick(root);
   show(root);
 }
@@ -636,23 +675,29 @@ function scheduleAdvance(r: Run, fromDepth: number, delayMs: number): void {
   }, delayMs);
 }
 
-function dealTakeover(root: Container, idx: number, planSeed: number): void {
+function dealTakeover(root: Container, idx: number, planSeed: number, overlay: Container): void {
   const r = run!;
   announce('CHAOS ROUND — ' + TAKEOVER_NAMES[idx]);
-  text(root, 'CHAOS ROUND · ' + TAKEOVER_NAMES[idx], STAGE_W / 2 - 220, 148, 15, T.gold, true);
-  try {
-    const gc = goalCardFor(['red-light','tide-pool','serpent','floor-fall','hunter-dodge','laser-storm','drone-dodge','saber-clash','slots','slime-gallery','the-well'][idx]);
-    if (gc) text(root, gc.title + ' — ' + gc.controls, STAGE_W / 2 - 300, 150, 13, T.muted);
-  } catch { /* card optional */ }
+  /* Title, WIN CONDITION and controls, each on its own line and centred on
+   * the stage. All three used to collide at y=148-150 when a card existed at
+   * all — and for 14 of the 25 takeovers no card existed, because main
+   * indexed a hardcoded 11-entry id list. onboard.TAKEOVER_STAGE_IDS is now
+   * the ordering contract and its selftest fails if any stage lacks a card. */
+  const gc = goalCardForIndex(idx);
+  const head = centreText(overlay, 'CHAOS ROUND · ' + (gc?.title ?? TAKEOVER_NAMES[idx]), 110, 16, T.gold);
+  head.style.letterSpacing = 3;
+  centreText(overlay, gc ? gc.goal : 'SURVIVE THE ROUND', 134, 15, T.ink);
+  if (gc) centreText(overlay, gc.controls, 157, 12, T.muted);
   // Fit the full-stage (1600x900) takeover scene into the area below the
-  // shell header: uniform scale, aspect preserved, centered horizontally.
-  // Scenes lay out for the whole stage; a plain offset used to push their
-  // bottom HUD and second tile rows past the stage edge.
+  // shell header AND the reserved goal-card band: uniform scale, aspect
+  // preserved, centered horizontally. Scenes lay out for the whole stage; a
+  // plain offset used to push their bottom HUD and second tile rows past the
+  // stage edge.
   const box = new Container();
-  const fitS = Math.min(1, (STAGE_H - 110) / STAGE_H);
+  const fitS = Math.min(1, (STAGE_H - TAKEOVER_TOP) / STAGE_H);
   box.scale.set(fitS);
   box.x = Math.round((STAGE_W - STAGE_W * fitS) / 2);
-  box.y = 110;
+  box.y = TAKEOVER_TOP;
   root.addChild(box);
   const mount = TAKEOVERS[idx];
   mount({
@@ -674,7 +719,7 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
   const r = run!;
   const plan = r.plan[depth - 1];
   const fam = ALL_FAMILIES[famIdx % ALL_FAMILIES.length];
-  const hue = T.boardHues[(depth - 1) % T.boardHues.length];
+  const hue = T.boardHues[hueIndexForDepth(r.seed, depth, T.boardHues.length)];
   const diff = Math.min(5, 1 + Math.floor(depth / 6));
   const p = fam.generate((planSeed ^ Math.imul(depth, 7919)) >>> 0, diff, hue);
   if (plan.sanctuary) sanctuaryOn(root);

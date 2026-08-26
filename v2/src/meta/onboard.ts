@@ -158,58 +158,110 @@ const CARDS: Readonly<Record<string, GoalCard>> = Object.freeze({
   pacman2: {
     stageId: 'pacman2',
     title: 'GLUTTON',
-    goal: 'EAT EVERY PELLET. BIG DOTS TURN THE TABLES.',
+    goal: 'EAT EVERY PELLET WITH TWO GHOSTS ON YOU. BIG DOTS FLIP THE HUNT FOR SIX SECONDS.',
     controls: 'ARROWS / WASD / SWIPE',
   },
   tetris2: {
     stageId: 'tetris2',
     title: 'THE WELL II',
-    goal: 'SAME WELL. DEEPER WATER. STACK AND CLEAR.',
-    controls: '\u2190\u2192 move \u00B7 \u2191/X cw \u00B7 Z ccw \u00B7 \u2193 soft \u00B7 SPACE drop \u00B7 P pause',
+    goal: 'CLEAR THE POSTED LINE QUOTA BEFORE THE STACK TOPS OUT.',
+    controls: '\u2190\u2192 MOVE \u00B7 \u2191/X ROTATE \u00B7 Z ROTATE BACK \u00B7 \u2193 SOFT \u00B7 SPACE HARD DROP',
   },
   battleship2: {
     stageId: 'battleship2',
     title: 'SALVOS',
-    goal: 'SINK THE FLEET. EVERY SALVO MUST CALL ITS SHOT.',
-    controls: 'CLICK / TAP A GRID CELL',
+    goal: 'SINK THE SHADOW FLEET BEFORE YOUR SHELLS RUN OUT. EVERY THIRD SHELL DRAWS RETURN FIRE.',
+    controls: 'CLICK / TAP ENEMY WATER',
   },
   doom2: {
     stageId: 'doom2',
     title: 'THE CORRIDOR',
-    goal: 'WALK THE CORRIDOR. ANSWER BEFORE IT ANSWERS YOU.',
-    controls: 'WASD MOVE \u00B7 CLICK / TAP OR KEYS 1\u20138',
+    goal: 'REACH THE EXIT GATE. SHOOT WHAT SHAMBLES AT YOU. GRAB MEDKITS AND SHELLS.',
+    controls: 'W / \u2191 ADVANCE \u00B7 S / \u2193 BACK \u00B7 SPACE FIRE',
   },
   phoenix2: {
     stageId: 'phoenix2',
-    title: 'PHOENIX RITUAL',
-    goal: 'KEEP THE FLAME ALIVE THROUGH EVERY STEP OF THE RITUAL.',
-    controls: 'CLICK / TAP THE RITUAL STEPS',
+    title: 'SEED RITUAL',
+    goal: 'HOLD TO GROW THE SEEDLING. RELEASE INSIDE THE GLOWING BAND. BURN, THEN BE REBORN.',
+    controls: 'HOLD SPACE / MOUSE \u00B7 RELEASE IN THE BAND',
   },
   gauntlet2: {
     stageId: 'gauntlet2',
-    title: 'HORSEMEN GAUNTLET',
-    goal: 'OUTRUN THE FOUR HORSEMEN. SOLVE TO GAIN GROUND.',
-    controls: 'ARROWS / WASD \u00B7 CLICK / TAP OR KEYS 1\u20138',
+    title: 'FOUR RIDERS',
+    goal: 'FOUR TRIALS IN ORDER: CLAIM THE RIGHT CROWN, MASH THE WAR DRUM, TAKE THE SMALLEST SHARE, THEN BE STILL.',
+    controls: 'CLICK / TAP TO PICK \u00B7 SPACE TO MASH \u00B7 TOUCH NOTHING FOR DEATH',
   },
   fractal2: {
     stageId: 'fractal2',
-    title: 'FRACTAL SOLVE',
-    goal: 'THE PATTERN HIDES INSIDE ITSELF. FIND THE MISSING BRANCH.',
-    controls: 'CLICK / TAP OR KEYS 1\u20138',
+    title: 'DEEP ZOOM',
+    goal: 'ONE ISLAND HOLDS STILL WHILE THE FRACTAL STREAMS PAST. COUNT ITS MARKS, PICK THE TILE THAT MATCHES.',
+    controls: 'HOLD SPACE TO STABILIZE \u00B7 CLICK / TAP A TILE',
   },
   hypercube2: {
     stageId: 'hypercube2',
-    title: 'HYPERCUBE 606D',
-    goal: 'READ THE SPINNING CUBE. PICK THE FACE THAT COMES NEXT.',
-    controls: 'CLICK / TAP OR KEYS 1\u20138',
+    title: '606D',
+    goal: 'THE HEADER NAMES A MARK COUNT. THE TILES RIDE THE TESSERACT. CLICK THE ONE WEARING THAT COUNT.',
+    controls: 'DRAG TO STEER THE SPIN \u00B7 CLICK / TAP A TILE',
+  },
+  popglitter2: {
+    stageId: 'popglitter2',
+    title: 'CHART TOPPER',
+    goal: 'FOUR LANES OF FALLING NOTES. TAP EACH AS IT CROSSES THE LINE. COMBOS PAY; A MISS ONLY BREAKS THE CHAIN.',
+    controls: 'D F J K / KEYS 1\u20134 / TAP THE PADS',
+  },
+  metal2: {
+    stageId: 'metal2',
+    title: 'FORGE SET',
+    goal: 'THE HEAVIER SET. SAME FOUR LANES, SLOWER. GOLD ACCENT NOTES PAY DOUBLE.',
+    controls: 'D F J K / KEYS 1\u20134 / TAP THE PADS',
+  },
+  terminator2: {
+    stageId: 'terminator2',
+    title: 'THE HUNT',
+    goal: 'IT WALKS THE LANES AND RE-AIMS AT YOU. REACH THE SAFE STRIP, AND READ THE GLYPH PATTERN WHILE YOU RUN.',
+    controls: 'MOVE TO EVADE \u00B7 CLICK / TAP THE NEXT GLYPH',
+  },
+  fury2: {
+    stageId: 'fury2',
+    title: 'FURY ROADRUN',
+    goal: 'THREE LANES OF HIGHWAY. HIT THE SIGNS IN THE POSTED ORDER AND DODGE THE SPIKE TRAPS.',
+    controls: 'W / S \u00B7 \u2191 \u2193 \u00B7 TAP TOP OR BOTTOM \u00B7 \u25B2\u25BC PADS',
+  },
+  skyfire2: {
+    stageId: 'skyfire2',
+    title: 'SKY FIRE',
+    goal: 'MARK THE HOSTILE DRONES HIDING IN THE CROWD. HE BURNS THE LANES YOU MARK. CIVILIANS COST YOU. NOBODY FAILS THIS ONE.',
+    controls: 'CLICK / TAP TO MARK \u00B7 KEYS 1\u20138',
   },
   sniper2: {
     stageId: 'sniper2',
-    title: 'LONG QUIET',
-    goal: 'ONE BREATH, ONE SHOT. PUT THE ANSWER IN THE CROSSHAIRS.',
-    controls: 'AIM WITH MOUSE \u00B7 CLICK / TAP OR KEYS 1\u20138',
+    title: 'OVERWATCH',
+    goal: 'THE SCOPE IS THE ONLY LIGHT. CONFIRM ONLY FIGURES WEARING THE POSTED HEAD-COUNT.',
+    controls: 'MOUSE AIMS \u00B7 HOLD SPACE TO STEADY \u00B7 CLICK TO CONFIRM',
   },
 });
+
+/**
+ * Stage ids in EXACTLY the order main.ts mounts them (`TAKEOVERS`).
+ *
+ * This is the ordering contract. main indexes THIS list, so a takeover can no
+ * longer mount without a goal card, and a card cannot drift onto the wrong
+ * scene. Adding a takeover means adding its id here AND its card above --
+ * selfTest() fails if either is missing.
+ */
+export const TAKEOVER_STAGE_IDS = [
+  'red-light', 'tide-pool', 'serpent', 'floor-fall', 'hunter-dodge',
+  'laser-storm', 'drone-dodge', 'saber-clash', 'slots', 'slime-gallery',
+  'the-well', 'pacman2', 'tetris2', 'battleship2', 'doom2',
+  'phoenix2', 'gauntlet2', 'fractal2', 'hypercube2', 'sniper2',
+  'popglitter2', 'metal2', 'terminator2', 'fury2', 'skyfire2',
+] as const;
+
+/** Goal card for the takeover main.ts mounts at TAKEOVERS[idx]. */
+export function goalCardForIndex(idx: number): GoalCard | null {
+  const id = TAKEOVER_STAGE_IDS[idx];
+  return id ? goalCardFor(id) : null;
+}
 
 /** v1 normalize() caps: goal 140, controls 90. Title kept <= 40. */
 export const GOAL_MAX = 140;
@@ -295,6 +347,35 @@ export interface SelfTestResult {
 
 export function selfTest(): SelfTestResult {
   const failures: string[] = [];
+
+  /* --- coverage: EVERY takeover main mounts has a card ---------------
+   * This is the gate that matters. 25 takeovers were wired into the
+   * rotation while only 20 cards existed and main indexed a hardcoded
+   * 11-entry list, so 14 chaos rounds mounted with no instructions at
+   * all: "not even clear what you're supposed to do" (owner, 2026-08-26).
+   * Coverage is now asserted against the ordering contract itself. */
+  for (const id of TAKEOVER_STAGE_IDS) {
+    const card = goalCardFor(id);
+    if (!card) {
+      failures.push(`no goal card for mounted takeover ${id}`);
+      continue;
+    }
+    if (card.stageId !== id) failures.push(`${id}: stageId mismatch`);
+  }
+  if (TAKEOVER_STAGE_IDS.length !== 25) {
+    failures.push(`takeover id count ${TAKEOVER_STAGE_IDS.length} != 25 (main.ts TAKEOVERS)`);
+  }
+  if (new Set(TAKEOVER_STAGE_IDS).size !== TAKEOVER_STAGE_IDS.length) {
+    failures.push('duplicate id in TAKEOVER_STAGE_IDS');
+  }
+  for (let i = 0; i < TAKEOVER_STAGE_IDS.length; i++) {
+    if (goalCardForIndex(i)?.stageId !== TAKEOVER_STAGE_IDS[i]) {
+      failures.push(`goalCardForIndex(${i}) does not match the ordering contract`);
+    }
+  }
+  if (goalCardForIndex(-1) !== null || goalCardForIndex(999) !== null) {
+    failures.push('out-of-range takeover index should be null');
+  }
 
   /* --- coverage: all 11 mounted stage ids --- */
   for (const id of MOUNTED_STAGE_IDS) {
