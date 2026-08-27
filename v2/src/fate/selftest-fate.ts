@@ -11,7 +11,7 @@
  *   node --experimental-strip-types src/fate/selftest-fate.ts
  * ==========================================================================*/
 
-import { FATES, maybeFate, type FateCtx, type FateMod } from './fate.ts';
+import { FATES, FATE_INLINE_EVENTS, maybeFate, type FateCtx, type FateMod } from './fate.ts';
 import { FA_EVENTS, maybeFlavorA, type FlavorMod } from './flavor-a.ts';
 import { COUNTRIES, maybeFlavorB, type CountryMod } from './flavor-b.ts';
 import { CURSES, BLESSINGS, maybeCurse, type CurseMod } from './cursepack.ts';
@@ -45,14 +45,9 @@ function collectEvents(): AnyMod[] {
   for (const f of BLESSINGS) out.push(f());
   // flavor-a events: imported straight from the shipped roster (no copies).
   for (const e of FA_EVENTS) out.push(e);
-  // Inline events produced by the roll functions (not in factory tables).
-  // Cues mirror the inline objects in fate.ts maybeFate().
-  out.push({ id: 'lollipop', kind: 'blessing', bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS',
-    cue: { flash: { color: 0xff9ecf, ms: 150 } } });
-  out.push({ id: 'sticker', kind: 'blessing', bannerText: '🌟 STICKER — WEAR IT PROUDLY',
-    cue: { flash: { color: 0xfff2a8, ms: 150 }, embers: 12 } });
-  out.push({ id: 'nuke', kind: 'nuke', bannerText: '☢ NUKE — EVERYONE LEFT AT 1 HP · NEXT ROUND FORCED GOOD',
-    cue: { flash: { color: 0xff3030, ms: 200 }, shake: { intensity: 1, ms: 600 } } });
+  // Inline events produced by maybeFate() (blessings + nuke): imported
+  // straight from the shipped data roster in fate.ts (no copies).
+  for (const e of FATE_INLINE_EVENTS) out.push(e);
   return out;
 }
 
@@ -149,7 +144,7 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     for (const f of COUNTRIES) roster.add(f().id);
     for (const f of CURSES) roster.add(f().id);
     for (const f of BLESSINGS) roster.add(f().id);
-    roster.add('lollipop'); roster.add('sticker'); roster.add('nuke');
+    for (const e of FATE_INLINE_EVENTS) roster.add(e.id);
     const missing: string[] = [];
     for (let seed = 0; seed < 300; seed++) {
       for (const depth of [3, 7, 13, 21]) {

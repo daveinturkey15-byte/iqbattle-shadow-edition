@@ -166,6 +166,44 @@ export const FATES: readonly FateFactory[] = [
 ];
 
 /* ------------------------------------------------------------------ */
+/* Inline roll outcomes, exported as data (gate-visible)               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Events produced by maybeFate() outside the FATES table: the two blessing
+ * chips and the nuke. Shipped as pure data so selftest-fate.ts validates the
+ * SAME objects the game serves — no hand-copied cues. maybeFate() selects
+ * from this roster; dynamic fields (hpDelta) are added at roll time.
+ * Selection behaviour (rng draws, windows) is unchanged.
+ */
+export const FATE_INLINE_EVENTS: readonly FateMod[] = [
+  {
+    id: 'lollipop', kind: 'blessing',
+    bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS',
+    chip: 'lollipop',
+    cue: { flash: { color: 0xff9ecf, ms: 150 } },
+  },
+  {
+    id: 'sticker', kind: 'blessing',
+    bannerText: '🌟 STICKER — WEAR IT PROUDLY',
+    chip: 'sticker',
+    cue: { flash: { color: 0xfff2a8, ms: 150 }, embers: 12 },
+  },
+  {
+    id: 'nuke', kind: 'nuke',
+    bannerText: '☢ NUKE — EVERYONE LEFT AT 1 HP · NEXT ROUND FORCED GOOD',
+    flag: { nuke: true, forcedAlign: 'good' },
+    cue: { flash: { color: 0xff3030, ms: 200 }, shake: { intensity: 1, ms: 600 } },
+  },
+];
+
+function inlineEvent(id: string): FateMod {
+  const e = FATE_INLINE_EVENTS.find((x) => x.id === id);
+  if (!e) throw new Error(`fate: unknown inline event ${id}`);
+  return e;
+}
+
+/* ------------------------------------------------------------------ */
 /* Roll                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -187,22 +225,12 @@ export function maybeFate(ctx: FateCtx): FateMod | null {
     // second draw picks the chip; deterministic per seed+depth
     const chip = rng() < 0.5 ? 'lollipop' : 'sticker';
     grantChip(chip);
-    return chip === 'lollipop'
-      ? { id: 'lollipop', kind: 'blessing', bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS', chip,
-          cue: { flash: { color: 0xff9ecf, ms: 150 } } }
-      : { id: 'sticker', kind: 'blessing', bannerText: '🌟 STICKER — WEAR IT PROUDLY', chip,
-          cue: { flash: { color: 0xfff2a8, ms: 150 }, embers: 12 } };
+    return { ...inlineEvent(chip), chip };
   }
 
   if (hostile && ctx.depth >= 8 && r < W_NUKE) {
     const hp = typeof ctx.hp === 'number' ? Math.max(1, Math.floor(ctx.hp)) : null;
-    return {
-      id: 'nuke', kind: 'nuke',
-      bannerText: '☢ NUKE — EVERYONE LEFT AT 1 HP · NEXT ROUND FORCED GOOD',
-      ...(hp !== null ? { hpDelta: 1 - hp } : {}),
-      flag: { nuke: true, forcedAlign: 'good' },
-      cue: { flash: { color: 0xff3030, ms: 200 }, shake: { intensity: 1, ms: 600 } },
-    };
+    return { ...inlineEvent('nuke'), ...(hp !== null ? { hpDelta: 1 - hp } : {}) };
   }
 
   if (r >= W_NUKE && r < W_NUKE + W_FATE) {
