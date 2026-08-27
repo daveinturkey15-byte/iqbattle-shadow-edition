@@ -25,6 +25,8 @@ import { maybeCurse } from './fate/cursepack.ts';
 import { playReveal, revealMotionEnabled } from './fx/reveal.ts';
 import { pickModifiers, type ModCtx } from './rounds/modifiers.ts';
 import { createChaos, type ChaosBus } from './fx/chaos.ts';
+import { pickCameos, ROSTER } from './fx/cameos.ts';
+import { BOARD_PANEL, puzzleLayout } from './scenes/layouthelper.ts';
 import { goalCardForIndex, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
 import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
 import { hpFor, pointsFor } from './scenes/lms.ts';
@@ -646,7 +648,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   r.curKind = useRp.kind;
   r.curAnswer = -1;
   if (useRp.kind === 'takeover') { r.lastTakeover = r.depth; setPresence('hidden'); dealTakeover(root, useRp.index, useSeed, overlay); }
-  else dealPuzzle(root, useRp.index, useSeed, r.depth);
+  else dealPuzzle(root, useRp.index, useSeed, r.depth, overlay);
   root.addChild(overlay); /* banners on top of the board, always */
   startTick(root);
   show(root);
@@ -761,7 +763,7 @@ function dealTakeover(root: Container, idx: number, planSeed: number, overlay: C
 }
 const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL', 'GLUTTON 2', 'THE WELL 2', 'SALVOS 2', 'CORRIDOR 2', 'SEED RITUAL', 'FOUR RIDERS', 'DEEP ZOOM', '606D', 'OVERWATCH', 'CHART TOPPER', 'FORGE SET', 'THE HUNT', 'FURY ROADRUN', 'SKY FIRE'];
 
-function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: number): void {
+function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: number, overlay: Container): void {
   const r = run!;
   const plan = r.plan[depth - 1];
   const fam = ALL_FAMILIES[famIdx % ALL_FAMILIES.length];
@@ -825,6 +827,42 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
     const stop = mod.apply(mctx, scene);
     onSceneStop(stop);
   }
+
+  /* P3: cameo silhouettes — pure function of (runSeed, depth), budgeted per
+   * round, drawn into the overlay so they sit above the board. Every teardown
+   * is registered with the scene, exactly like the modifiers above. */
+  const cl = puzzleLayout(p.cols, p.rows);
+  const answerArea = { x: BOARD_PANEL.x + cl.ox, y: BOARD_PANEL.y + cl.oy, w: cl.optW, h: cl.optH };
+  const cameoHost = new Container();
+  overlay.addChild(cameoHost);
+  for (const c of pickCameos(r.seed, depth, answerArea)) {
+    const sil = ROSTER.find((s) => s.id === c.id);
+    if (!sil) continue;
+    const node = new Container();
+    node.x = c.x; node.y = c.y;
+    const ink = sil.alignment === 'good' ? T.good : sil.alignment === 'bad' ? T.bad : T.muted;
+    const g = new Graphics();
+    for (const m of sil.marks) {
+      const mx = m.x * c.size, my = m.y * c.size, ms = m.size * c.size;
+      if (m.kind === 'line') {
+        g.moveTo(mx, my).lineTo((m.x2 ?? m.x) * c.size, (m.y2 ?? m.y) * c.size).stroke({ width: Math.max(2, ms * 0.5), color: ink, alpha: 0.9 });
+      } else if (m.kind === 'dot') {
+        g.circle(mx, my, ms).fill(ink);
+      } else if (m.kind === 'diamond') {
+        g.poly([mx, my - ms, mx + ms, my, mx, my + ms, mx - ms, my]).fill(ink);
+      } else {
+        const pts: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const a = m.rot + (i * 2 * Math.PI) / 3;
+          pts.push(mx + Math.cos(a) * ms, my + Math.sin(a) * ms);
+        }
+        g.poly(pts).fill(ink);
+      }
+    }
+    node.addChild(g);
+    cameoHost.addChild(node);
+  }
+  onSceneStop(() => { cameoHost.destroy({ children: true }); });
 }
 
 /**
