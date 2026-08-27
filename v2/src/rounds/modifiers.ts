@@ -355,6 +355,95 @@ const invertedControlsModifier: RoundModifier = {
   },
 };
 
+/**
+ * Option-shuffle: permutes the 8 option slots with a seeded Fisher-Yates.
+ * Pure data on the target; identical under motion and static. The banner MUST
+ * announce that the options moved. Teardown restores the exact previous
+ * optionOrder (deletes it if absent).
+ */
+const optionShuffleModifier: RoundModifier = {
+  id: 'option-shuffle',
+  banner: 'OPTIONS HAVE MOVED',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origOrder: number[] | undefined =
+      Array.isArray(target.optionOrder) ? [...target.optionOrder] : undefined;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x1266e2c5)) >>> 0);
+    const order = [0, 1, 2, 3, 4, 5, 6, 7];
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const tmp = order[i]!;
+      order[i] = order[j]!;
+      order[j] = tmp;
+    }
+    target.optionOrder = order;
+
+    return () => {
+      if (origOrder === undefined) delete target.optionOrder;
+      else target.optionOrder = origOrder;
+    };
+  },
+};
+
+/**
+ * Fog-bank: a drifting partial occlusion. Alpha is capped at 0.4 so the board
+ * is always ≥ 60% visible. Time arrives only via the exposed pure step(tMs);
+ * the scene frame-loop drives the drift. Static mode pins the fog at its
+ * seeded center (identical rules, no motion). Teardown removes the fog (or
+ * restores the exact previous fog state).
+ */
+const fogBankModifier: RoundModifier = {
+  id: 'fog-bank',
+  banner: 'A FOG BANK ROLLS IN',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origFog: { alpha: number; x: number; y: number; r: number } | undefined =
+      target.fog ? { ...target.fog } : undefined;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x9e2a15ab)) >>> 0);
+    const alpha = 0.2 + rng() * 0.2; // 0.2–0.4 → board always ≥ 60% visible
+    const r = 90 + rng() * 60; // fog radius
+    const cx = (rng() - 0.5) * 160; // drift center, board-relative
+    const cy = (rng() - 0.5) * 100;
+    const driftR = 30 + rng() * 30;
+    const periodMs = 5000 + rng() * 3000;
+    const phase = rng() * Math.PI * 2;
+
+    const setAt = (tMs: number): void => {
+      const a = (2 * Math.PI * tMs) / periodMs + phase;
+      target.fog = {
+        alpha,
+        x: cx + driftR * Math.cos(a),
+        y: cy + driftR * Math.sin(a),
+        r,
+      };
+    };
+
+    if (ctx.motion) {
+      setAt(0);
+    } else {
+      // Static variant: fog pinned at its seeded center, identical rules.
+      target.fog = { alpha, x: cx, y: cy, r };
+    }
+
+    const stop: ModifierStop = () => {
+      if (origFog === undefined) delete target.fog;
+      else target.fog = { ...origFog };
+    };
+    stop.step = (tMs: number): void => {
+      setAt(tMs);
+    };
+    return stop;
+  },
+};
+
 /** The active registry of round modifiers. */
 export const MODIFIERS: RoundModifier[] = [
   mirrorFlipModifier,
@@ -363,6 +452,8 @@ export const MODIFIERS: RoundModifier[] = [
   breathingModifier,
   lurchModifier,
   invertedControlsModifier,
+  optionShuffleModifier,
+  fogBankModifier,
 ];
 
 /**
