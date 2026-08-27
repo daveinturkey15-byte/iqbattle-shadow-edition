@@ -314,6 +314,80 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  // --- Scanlines: flag + scrolling phase, motion-gated -------------------------
+  check(`scanlines flag and phase over ${SEED_COUNT} seeds`, () => {
+    for (let s = 0; s < SEED_COUNT; s++) {
+      const bus = createChaos(s, true);
+      bus.scanlines(true);
+      bus.tick(TICK_MS);
+      const st = bus.state();
+      assert(
+        st.scanlines === true && st.scanPhase > 0,
+        `seed ${s}: scanlines not scrolling under motion`
+      );
+      assert(
+        st.scanPhase < 1,
+        `seed ${s}: scanPhase out of 0..1 range`
+      );
+      bus.scanlines(false);
+      assert(
+        bus.state().scanlines === false,
+        `seed ${s}: scanlines flag not cleared`
+      );
+      // motion=false: phase must stay 0
+      const still = createChaos(s, false);
+      still.scanlines(true);
+      still.tick(TICK_MS);
+      assert(
+        still.state().scanPhase === 0,
+        `seed ${s}: motion=false reported scanline movement`
+      );
+    }
+  });
+
+  // --- Intensity dial: clamped 0..1, scales effects, stop() resets to 1 ---------
+  check(`intensity dial clamp and scaling over ${SEED_COUNT} seeds`, () => {
+    for (let s = 0; s < SEED_COUNT; s++) {
+      const bus = createChaos(s, true);
+      bus.intensity(999);
+      assert(
+        bus.state().intensity === 1,
+        `seed ${s}: intensity not clamped to 1`
+      );
+      bus.intensity(-1);
+      assert(
+        bus.state().intensity === 0,
+        `seed ${s}: intensity not clamped to 0`
+      );
+      bus.intensity(0.5);
+      bus.shake(1, 500);
+      bus.tick(TICK_MS);
+      assert(
+        bus.state().shakeAmp <= 0.5 + 1e-9,
+        `seed ${s}: shake not scaled by intensity dial`
+      );
+      bus.stop();
+      assert(
+        bus.state().intensity === 1,
+        `seed ${s}: stop() did not reset intensity dial to 1`
+      );
+    }
+  });
+
+  // --- tick: time advances, negative/NaN dt ignored -----------------------------
+  check(`tick time accounting over ${SEED_COUNT} seeds`, () => {
+    for (let s = 0; s < SEED_COUNT; s++) {
+      const bus = createChaos(s, true);
+      bus.tick(-100);
+      bus.tick(NaN);
+      bus.tick(100);
+      assert(
+        bus.state().timeMs === 100,
+        `seed ${s}: timeMs accounting wrong (got ${bus.state().timeMs})`
+      );
+    }
+  });
+
   // --- stop() restores neutral exactly ---------------------------------------
   check(`stop() restores neutral exactly over ${SEED_COUNT} seeds`, () => {
     for (let s = 0; s < SEED_COUNT; s++) {
