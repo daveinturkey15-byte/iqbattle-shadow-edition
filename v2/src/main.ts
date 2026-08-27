@@ -1,4 +1,4 @@
-import { Application, Container, Text } from 'pixi.js';
+import { Application, Container, Graphics, Text } from 'pixi.js';
 import { T, STAGE_W, STAGE_H } from './theme.ts';
 import { buildGameScene, panel, text } from './scenes/game.ts';
 import { FAMILIES } from './puzzles/families.ts';
@@ -24,6 +24,7 @@ import { pick as pickWorld } from './worlds/registry.ts';
 import { maybeCurse } from './fate/cursepack.ts';
 import { playReveal, revealMotionEnabled } from './fx/reveal.ts';
 import { pickModifiers, type ModCtx } from './rounds/modifiers.ts';
+import { createChaos, type ChaosBus } from './fx/chaos.ts';
 import { goalCardForIndex, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
 import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
 import { hpFor, pointsFor } from './scenes/lms.ts';
@@ -438,6 +439,8 @@ let lastLayer = 0;
 function startRun(name: string, roomName: string, timerLen: number, seed?: number): void {
   seed = (seed ?? ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1))) >>> 0;
   run = { name, roomName, timerLen, seed, plan: planArc(seed, 2000), depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99, prevSanctuary: false, fateScoreMul: 1, curKind: 'puzzle', curAnswer: -1 };
+  /* P2: one chaos bus per run. Pure logic — all time enters via tick(dtMs). */
+  chaos = createChaos(seed, revealMotionEnabled());
   /* MP: the ladder, the attacks and the elimination sweep all hang off this. */
   lms = mp && mpRole ? makeDirector(mpRole, mp, seed) : null;
   closeAttackMenu();
@@ -452,6 +455,8 @@ function startRun(name: string, roomName: string, timerLen: number, seed?: numbe
 
 function endRun(): void {
   stopTick();
+  chaos?.stop();
+  chaos = null;
   closeAttackMenu();
   /* Same reason as toLanding(): the persona layers live in `view` so they can
    * outlive a depth, which meant the last chaos-round banner sat across the
@@ -534,6 +539,14 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
    * other things over it or in front"). They now go into an overlay that is
    * parented LAST, so nothing can ever cover them again. */
   const overlay = new Container();
+  /* P2: chaos juice overlays. The bus is pure; these are the only pixi it
+   * ever touches. */
+  chaosFlash = new Graphics();
+  chaosScan = new Graphics();
+  /* Into the overlay (parented LAST in deal) so the juice sits above the
+   * board but under the banners, which are added to the overlay afterwards. */
+  overlay.addChild(chaosFlash, chaosScan);
+  if (chaos) chaos.intensity(Math.min(1, plan.layer / 7)); /* corruption deepens with the descent */
 
   shell = Shell.attach(root, {
     onLobby: () => { run = null; toLanding(); },
@@ -642,6 +655,9 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
 /* ONE tick for the whole run — per-deal intervals accumulated into ghost
  * storms (BugSweep BUG 1/3/4/5). The tick self-cancels when the run dies. */
 let tickId: ReturnType<typeof setInterval> | null = null;
+let chaos: ChaosBus | null = null;
+let chaosFlash: Graphics | null = null;
+let chaosScan: Graphics | null = null;
 function stopTick(): void { if (tickId !== null) { clearInterval(tickId); tickId = null; } }
 function startTick(root: Container): void {
   stopTick();
@@ -650,6 +666,35 @@ function startTick(root: Container): void {
     if (run !== r) { stopTick(); return; }
     const left = Math.max(0, r.timerLen - (performance.now() - r.depthStartedAt) / 1000);
     shell?.setTimer(left / r.timerLen, fmtClock(Math.ceil(left)));
+    /* P2: drive the chaos bus from the run tick and paint its state. The
+     * ambient trigger rolls once per second from (runSeed, depth, second) —
+     * no local randomness, so host and clients corrupt in step. */
+    if (chaos) {
+      chaos.tick(250);
+      const st = chaos.state();
+      const layer = r.plan[r.depth - 1].layer;
+      const sec = Math.floor(st.timeMs / 1000);
+      const roll = mulberry((r.seed ^ Math.imul(r.depth, 0xC0FFEE) ^ Math.imul(sec, 0x9E3779B9)) >>> 0)();
+      if (roll < 0.25 * st.intensity) {
+        chaos.shake(0.3 + 0.5 * st.intensity, 300);
+        chaos.glitch(200);
+        if (roll < 0.1 * st.intensity) chaos.flash(0xff2244, 150);
+      }
+      if (st.scanlines !== (layer >= 4)) chaos.scanlines(layer >= 4);
+      root.x = st.shakeX * 8;
+      root.y = st.shakeY * 8;
+      if (chaosFlash) {
+        chaosFlash.clear();
+        if (st.flashAlpha > 0) chaosFlash.rect(0, 0, STAGE_W, STAGE_H).fill({ color: st.flashColor, alpha: st.flashAlpha });
+      }
+      if (chaosScan) {
+        chaosScan.clear();
+        if (st.scanlines) {
+          const off = Math.round(st.scanPhase * 4);
+          for (let y = off; y < STAGE_H; y += 4) chaosScan.rect(0, y, STAGE_W, 1).fill({ color: 0x000000, alpha: 0.12 * st.intensity });
+        }
+      }
+    }
     if (left <= 0) {
       stopTick();
       if (lms && mp) {
