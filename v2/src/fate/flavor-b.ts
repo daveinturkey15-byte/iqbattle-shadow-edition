@@ -64,6 +64,20 @@ export interface CountryMod {
   nextCorrectMul?: number;
   /** opaque pass-through flags (punctualTimerBonus / streakVisual etc.) */
   flag?: Record<string, unknown>;
+  /**
+   * Declarative chaos-bus cue — PURE DATA. The engine (main.ts) performs it
+   * via the chaos bus; this module never imports or calls the bus.
+   * Limits: flash.ms <= 200, shake.intensity <= 1, embers <= 64, melt 0..1.
+   */
+  cue?: {
+    shake?: { intensity: number; ms: number };
+    glitch?: number;          // ms
+    flash?: { color: number; ms: number };
+    embers?: number;
+    scanlines?: boolean;
+    melt?: number;            // 0..1
+    invert?: number;          // ms
+  };
 }
 
 type CountryFactory = () => CountryMod;
@@ -79,12 +93,14 @@ export const COUNTRIES: readonly CountryFactory[] = [
     bannerText: '\uD83C\uDF86 FIREWORKS — EVERY STREAK ANSWER GETS A SKY BURST (VISUAL BONUS)',
     cosmetic: 'fireworks',
     flag: { streakVisual: true },
+    cue: { flash: { color: 0xff5577, ms: 120 }, embers: 32 },
   }),
   () => ({
     id: 'fb:germany-punctual',
     kind: 'micro',
     bannerText: `\u23F1 PÜNKTLICHKEIT — ANSWER WITHIN ${PUNCTUAL_WINDOW_MS / 1000}S AND NEXT ROUND GAINS +${PUNCTUAL_BONUS_S}S`,
     flag: { punctualTimerBonusS: PUNCTUAL_BONUS_S, punctualWindowMs: PUNCTUAL_WINDOW_MS },
+    cue: { flash: { color: 0x66aaff, ms: 100 } },
   }),
   () => ({
     id: 'fb:japan-precision',
@@ -92,6 +108,7 @@ export const COUNTRIES: readonly CountryFactory[] = [
     bannerText: '\u2713 PRECISION — A FIRST-PICK CORRECT ANSWER PAYS ×1.1 THIS ROUND',
     nextCorrectMul: 1.1,
     flag: { requirePerfect: true },
+    cue: { flash: { color: 0xffffff, ms: 100 } },
   }),
   () => ({
     id: 'fb:brazil-carnival',
@@ -99,18 +116,21 @@ export const COUNTRIES: readonly CountryFactory[] = [
     bannerText: '\uD83C\uDF89 CARNIVAL — YOUR HANDS SAMBA WITHOUT YOU (400ms)',
     cosmetic: 'carnival-confetti',
     invertMs: 400,
+    cue: { invert: 400, shake: { intensity: 0.4, ms: 400 }, embers: 20 },
   }),
   () => ({
     id: 'fb:uk-drizzle',
     kind: 'micro',
     bannerText: '\uD83C\uDF27 MIND THE DRIZZLE. (PURELY COSMETIC)',
     cosmetic: 'drizzle',
+    cue: { scanlines: true },
   }),
   () => ({
     id: 'fb:egypt-sandhaze',
     kind: 'micro',
     bannerText: '\uD83C\uDFDC SAND-HAZE VEILS THE BOARD (COSMETIC)',
     cosmetic: 'sand-haze',
+    cue: { melt: 0.3, embers: 10 },
   }),
 ];
 

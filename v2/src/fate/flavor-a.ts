@@ -77,6 +77,20 @@ export interface FlavorMod {
   hpDelta?: number;
   /** opaque pass-through flags (tapeForgiveMs etc.) */
   flag?: Record<string, unknown>;
+  /**
+   * Declarative chaos-bus cue — PURE DATA. The engine (main.ts) performs it
+   * via the chaos bus; this module never imports or calls the bus.
+   * Limits: flash.ms <= 200, shake.intensity <= 1, embers <= 64, melt 0..1.
+   */
+  cue?: {
+    shake?: { intensity: number; ms: number };
+    glitch?: number;          // ms
+    flash?: { color: number; ms: number };
+    embers?: number;
+    scanlines?: boolean;
+    melt?: number;            // 0..1
+    invert?: number;          // ms
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -131,6 +145,7 @@ export function maybeFlavorA(ctx: FateCtx): FlavorMod | null {
         cosmetic: 'rope-shake',
         overlayMs: 4200,
         flag: { persona: foe.name },
+        cue: { shake: { intensity: 0.8, ms: 900 } },
       };
     }
     if (r < W_FA_ENTRANCE + W_FA_TAPE) {
@@ -146,6 +161,7 @@ export function maybeFlavorA(ctx: FateCtx): FlavorMod | null {
           tapeForgivenBanner: '\u27B4 YOU WATCHED. THE WELL REMEMBERS.',
           tapePunishedBanner: "\uD83D\uDCFC YOU DIDN'T WATCH THE TAPE \u2014 HP \u221215",
         },
+        cue: { glitch: 400, scanlines: true },
       };
     }
     return null;
@@ -159,6 +175,7 @@ export function maybeFlavorA(ctx: FateCtx): FlavorMod | null {
       bannerText: line,
       cosmetic: 'drizzle',
       overlayMs: 8000,
+      cue: { scanlines: true, embers: 8 },
     };
   }
 

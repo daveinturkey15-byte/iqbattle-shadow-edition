@@ -74,6 +74,20 @@ export interface CurseMod {
   riderBanners?: ReadonlyArray<{ text: string; color: string }>;
   /** opaque pass-through flags (curseMark / clearCurseMark) */
   flag?: Record<string, unknown>;
+  /**
+   * Declarative chaos-bus cue — PURE DATA. The engine (main.ts) performs it
+   * via the chaos bus; this module never imports or calls the bus.
+   * Limits: flash.ms <= 200, shake.intensity <= 1, embers <= 64, melt 0..1.
+   */
+  cue?: {
+    shake?: { intensity: number; ms: number };
+    glitch?: number;          // ms
+    flash?: { color: number; ms: number };
+    embers?: number;
+    scanlines?: boolean;
+    melt?: number;            // 0..1
+    invert?: number;          // ms
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -125,22 +139,26 @@ export const CURSES: readonly CurseFactory[] = [
     bannerText: '🪰 PESTILENCE — THE FLIES ARRIVE',
     timerDelta: -5,
     cosmetic: 'fly-motes',
+    cue: { glitch: 300, embers: 12 },
   }),
   () => ({
     id: 'cp2:horsemen', kind: 'curse',
     bannerText: '🐴 THE FOUR HAVE BEEN SUMMONED',
     hpDelta: -20,
     riderBanners: HORSEMEN,
+    cue: { shake: { intensity: 0.9, ms: 800 }, glitch: 500 },
   }),
   () => ({
     id: 'cp2:mark', kind: 'curse',
     bannerText: '💀 MARKED — SOMETHING FOLLOWS YOU',
     flag: { curseMark: true },
+    cue: { glitch: 200, invert: 300 },
   }),
   () => ({
     id: 'cp2:toil', kind: 'curse',
     bannerText: '⛏ TOIL — YOUR LAURELS WEIGH LESS',
     scoreMul: 0.75,
+    cue: { glitch: 250, melt: 0.2 },
   }),
 ];
 
@@ -150,12 +168,14 @@ export const BLESSINGS: readonly CurseFactory[] = [
     bannerText: '🕊 GRACE — ONE WRONG WILL BE FORGIVEN',
     forgiveNext: true,
     flag: { clearCurseMark: true },
+    cue: { flash: { color: 0xa8e6ff, ms: 150 } },
   }),
   () => ({
     id: 'cp2:sunlit', kind: 'blessing',
     bannerText: '☀ SUNLIT — WARMTH MENDS THE EDGES',
     hpDelta: 10,
     flag: { clearCurseMark: true },
+    cue: { flash: { color: 0xffd27f, ms: 180 }, embers: 16 },
   }),
 ];
 

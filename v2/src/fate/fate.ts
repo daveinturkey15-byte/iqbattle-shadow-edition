@@ -73,6 +73,20 @@ export interface FateMod {
   flag?: Record<string, unknown>;
   /** flair chip granted by blessings */
   chip?: string;
+  /**
+   * Declarative chaos-bus cue — PURE DATA. The engine (main.ts) performs it
+   * via the chaos bus; fate.ts never imports or calls the bus.
+   * Limits: flash.ms <= 200, shake.intensity <= 1, embers <= 64, melt 0..1.
+   */
+  cue?: {
+    shake?: { intensity: number; ms: number };
+    glitch?: number;          // ms
+    flash?: { color: number; ms: number };
+    embers?: number;
+    scanlines?: boolean;
+    melt?: number;            // 0..1
+    invert?: number;          // ms
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -117,31 +131,37 @@ export const FATES: readonly FateFactory[] = [
     id: 'midas', kind: 'fate',
     bannerText: '🪙 MIDAS — YOUR NEXT CORRECT ANSWER TURNS TO GOLD ×1.5',
     nextCorrectMul: 1.5,
+    cue: { flash: { color: 0xffd700, ms: 180 } },
   }),
   () => ({
     id: 'eclipse', kind: 'fate',
     bannerText: '🌑 ECLIPSE — A VEIL FALLS OVER THE BOARD (COSMETIC)',
     cosmetic: 'veil',
+    cue: { scanlines: true, melt: 0.35 },
   }),
   () => ({
     id: 'toll', kind: 'fate',
     bannerText: '⚰ THE TOLL — SCORE ×0.9 THIS ROUND',
     scoreMul: 0.9,
+    cue: { glitch: 250 },
   }),
   () => ({
     id: 'carnival_box', kind: 'fate',
     bannerText: '🎪 CARNIVAL BOX — ANSWER TRUE AND A COIN MAY DROP',
     coinOnCorrectP: 0.5,
+    cue: { flash: { color: 0xff66cc, ms: 150 }, embers: 24 },
   }),
   () => ({
     id: 'comet', kind: 'fate',
     bannerText: '☄ COMET — SIX SECONDS RETURNED TO THE CLOCK',
     timerDelta: 6,
+    cue: { flash: { color: 0x66ccff, ms: 120 }, embers: 16 },
   }),
   () => ({
     id: 'poltergeist', kind: 'fate',
     bannerText: '👻 POLTERGEIST — YOUR HANDS ARE NOT YOUR OWN (700ms)',
     invertMs: 700,
+    cue: { invert: 700, shake: { intensity: 0.5, ms: 700 } },
   }),
 ];
 
@@ -168,8 +188,10 @@ export function maybeFate(ctx: FateCtx): FateMod | null {
     const chip = rng() < 0.5 ? 'lollipop' : 'sticker';
     grantChip(chip);
     return chip === 'lollipop'
-      ? { id: 'lollipop', kind: 'blessing', bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS', chip }
-      : { id: 'sticker', kind: 'blessing', bannerText: '🌟 STICKER — WEAR IT PROUDLY', chip };
+      ? { id: 'lollipop', kind: 'blessing', bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS', chip,
+          cue: { flash: { color: 0xff9ecf, ms: 150 } } }
+      : { id: 'sticker', kind: 'blessing', bannerText: '🌟 STICKER — WEAR IT PROUDLY', chip,
+          cue: { flash: { color: 0xfff2a8, ms: 150 }, embers: 12 } };
   }
 
   if (hostile && ctx.depth >= 8 && r < W_NUKE) {
@@ -179,6 +201,7 @@ export function maybeFate(ctx: FateCtx): FateMod | null {
       bannerText: '☢ NUKE — EVERYONE LEFT AT 1 HP · NEXT ROUND FORCED GOOD',
       ...(hp !== null ? { hpDelta: 1 - hp } : {}),
       flag: { nuke: true, forcedAlign: 'good' },
+      cue: { flash: { color: 0xff3030, ms: 200 }, shake: { intensity: 1, ms: 600 } },
     };
   }
 
