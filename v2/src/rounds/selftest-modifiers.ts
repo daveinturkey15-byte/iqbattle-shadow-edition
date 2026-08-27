@@ -85,7 +85,7 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   }
 
   check('MODIFIERS registry contains exactly the expected modifiers', () => {
-    assert(MODIFIERS.length === 8, `expected 8 modifiers, got ${MODIFIERS.length}`);
+    assert(MODIFIERS.length === 10, `expected 10 modifiers, got ${MODIFIERS.length}`);
     const ids = MODIFIERS.map((m) => m.id);
     assert(ids.includes('mirror-flip'), 'missing mirror-flip modifier');
     assert(ids.includes('board-drift'), 'missing board-drift modifier');
@@ -95,6 +95,8 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     assert(ids.includes('inverted-controls'), 'missing inverted-controls modifier');
     assert(ids.includes('option-shuffle'), 'missing option-shuffle modifier');
     assert(ids.includes('fog-bank'), 'missing fog-bank modifier');
+    assert(ids.includes('ink-splatter'), 'missing ink-splatter modifier');
+    assert(ids.includes('scanline-roll'), 'missing scanline-roll modifier');
   });
 
   const ALIGNS = ['chaos', 'order', 'void', 'nexus'];

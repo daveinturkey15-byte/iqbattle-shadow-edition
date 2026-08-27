@@ -444,6 +444,106 @@ const fogBankModifier: RoundModifier = {
   },
 };
 
+/**
+ * Ink-splatter: an occlusion that wipes away. Alpha starts at a seeded value
+ * (≤ 0.4 → board always ≥ 60% visible) and decays to 0 over a seeded duration
+ * via the exposed pure step(tMs); the scene frame-loop drives it. Static mode
+ * applies a fixed mid-wipe alpha (identical rules, no motion). Teardown removes
+ * the ink (or restores the exact previous ink state).
+ */
+const inkSplatterModifier: RoundModifier = {
+  id: 'ink-splatter',
+  banner: 'INK SPLATTERS ACROSS THE BOARD',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origInk: { alpha: number; x: number; y: number; r: number } | undefined =
+      target.ink ? { ...target.ink } : undefined;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x8f14e456)) >>> 0);
+    const startAlpha = 0.2 + rng() * 0.2; // 0.2–0.4 → board always ≥ 60% visible
+    const r = 70 + rng() * 50;
+    const x = (rng() - 0.5) * 140;
+    const y = (rng() - 0.5) * 90;
+    const durationMs = 1200 + rng() * 800; // wipe-away time
+
+    const setAt = (tMs: number): void => {
+      const k = Math.max(0, 1 - tMs / durationMs); // linear wipe to exactly 0
+      target.ink = { alpha: startAlpha * k, x, y, r };
+    };
+
+    if (ctx.motion) {
+      setAt(0);
+    } else {
+      // Static variant: fixed mid-wipe alpha, identical rules, no motion.
+      target.ink = { alpha: startAlpha * 0.5, x, y, r };
+    }
+
+    const stop: ModifierStop = () => {
+      if (origInk === undefined) delete target.ink;
+      else target.ink = { ...origInk };
+    };
+    stop.step = (tMs: number): void => {
+      setAt(tMs);
+    };
+    return stop;
+  },
+};
+
+/**
+ * Scanline-roll: a rolling scanline band sweeping across the board. Alpha is
+ * capped at 0.4 so the board is always ≥ 60% visible. Time arrives only via the
+ * exposed pure step(tMs); the scene frame-loop drives the roll. Static mode
+ * pins the band at its seeded position (identical rules, no motion). Teardown
+ * removes the scanline (or restores the exact previous scanline state).
+ */
+const scanlineRollModifier: RoundModifier = {
+  id: 'scanline-roll',
+  banner: 'A SCANLINE ROLLS ACROSS',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origScanline: { y: number; bandH: number; alpha: number } | undefined =
+      target.scanline ? { ...target.scanline } : undefined;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x2c58f1a3)) >>> 0);
+    const alpha = 0.2 + rng() * 0.2; // 0.2–0.4 → board always ≥ 60% visible
+    const bandH = 24 + rng() * 24;
+    const travel = 120 + rng() * 80; // vertical travel range
+    const periodMs = 3000 + rng() * 2000;
+    const phase = rng() * Math.PI * 2;
+
+    const setAt = (tMs: number): void => {
+      const a = (2 * Math.PI * tMs) / periodMs + phase;
+      target.scanline = {
+        y: travel * Math.sin(a),
+        bandH,
+        alpha,
+      };
+    };
+
+    if (ctx.motion) {
+      setAt(0);
+    } else {
+      // Static variant: band pinned at its seeded t=0 position, identical rules.
+      target.scanline = { y: travel * Math.sin(phase), bandH, alpha };
+    }
+
+    const stop: ModifierStop = () => {
+      if (origScanline === undefined) delete target.scanline;
+      else target.scanline = { ...origScanline };
+    };
+    stop.step = (tMs: number): void => {
+      setAt(tMs);
+    };
+    return stop;
+  },
+};
+
 /** The active registry of round modifiers. */
 export const MODIFIERS: RoundModifier[] = [
   mirrorFlipModifier,
@@ -454,6 +554,8 @@ export const MODIFIERS: RoundModifier[] = [
   invertedControlsModifier,
   optionShuffleModifier,
   fogBankModifier,
+  inkSplatterModifier,
+  scanlineRollModifier,
 ];
 
 /**
