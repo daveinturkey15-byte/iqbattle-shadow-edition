@@ -132,6 +132,57 @@ export const COUNTRIES: readonly CountryFactory[] = [
     cosmetic: 'sand-haze',
     cue: { melt: 0.3, embers: 10 },
   }),
+  () => ({
+    id: 'fb:france-bagel',
+    kind: 'micro',
+    bannerText: '\uD83C\uDF60 BAGEL BREAK — A CROISSANT LANDS ON THE BOARD (COSMETIC)',
+    cosmetic: 'croissant',
+    cue: { embers: 8 },
+  }),
+  () => ({
+    id: 'fb:italy-pasta',
+    kind: 'micro',
+    bannerText: '\uD83D\uDC37 PASTA TANGLE — CONTROLS SLIP FOR 300ms',
+    cosmetic: 'pasta-tangle',
+    invertMs: 300,
+    cue: { invert: 300, shake: { intensity: 0.3, ms: 300 } },
+  }),
+  () => ({
+    id: 'fb:canada-maps',
+    kind: 'micro',
+    bannerText: '\uD83C\uDF41 MAPS — THE BOARD IS NOW A PARK (COSMETIC)',
+    cosmetic: 'park-maps',
+    cue: { scanlines: true },
+  }),
+  () => ({
+    id: 'fb:australia-sun',
+    kind: 'micro',
+    bannerText: '\u2600\uFE0F SUNBURN — THE BOARD GLOWS (COSMETIC)',
+    cosmetic: 'sunburn',
+    cue: { flash: { color: 0xffcc44, ms: 150 } },
+  }),
+  () => ({
+    id: 'fb:sweden-fika',
+    kind: 'micro',
+    bannerText: '\u2615 FIKA — A COFFEE BREAK (NEXT ROUND +1s)',
+    flag: { punctualTimerBonusS: 1, punctualWindowMs: 10000 },
+    cue: { flash: { color: 0x886644, ms: 100 } },
+  }),
+  () => ({
+    id: 'fb:greece-marble',
+    kind: 'micro',
+    bannerText: '\uD83D\uDD49 MARBLE — THE BOARD IS NOW A TEMPLE (COSMETIC)',
+    cosmetic: 'marble-temple',
+    cue: { flash: { color: 0xeeeeee, ms: 120 } },
+  }),
+  () => ({
+    id: 'fb:argentina-tango',
+    kind: 'micro',
+    bannerText: '\uD83D\uDC68\u200D\uD83D\uDC68 TANGO — CONTROLS SWAY FOR 350ms',
+    cosmetic: 'tango-sway',
+    invertMs: 350,
+    cue: { invert: 350, shake: { intensity: 0.35, ms: 350 } },
+  }),
 ];
 
 /* ------------------------------------------------------------------ */

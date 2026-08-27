@@ -51,6 +51,39 @@ function collectEvents(): AnyMod[] {
     cue: { flash: { color: 0xfff2a8, ms: 150 }, embers: 12 } });
   out.push({ id: 'nuke', kind: 'nuke', bannerText: '☢ NUKE — EVERYONE LEFT AT 1 HP · NEXT ROUND FORCED GOOD',
     cue: { flash: { color: 0xff3030, ms: 200 }, shake: { intensity: 1, ms: 600 } } });
+  // flavor-a.ts inline events (16 total)
+  out.push({ id: 'fa:slam-entrance', kind: 'entrance', bannerText: '⚔ ENTRANCE: THE PAPER TITAN — "READ A DICTIONARY COVER TO COVER"',
+    cue: { shake: { intensity: 0.8, ms: 900 } } });
+  out.push({ id: 'fa:tape-curse', kind: 'curse', bannerText: '📼 THE UNLABELED TAPE PLAYS — WATCH (5S) OR HP −15',
+    cue: { glitch: 400, scanlines: true } });
+  out.push({ id: 'fa:taunt', kind: 'taunt', bannerText: '🗤 TAUNT: "YOU CALLED THAT A STRATEGY?"',
+    cue: { glitch: 200 } });
+  out.push({ id: 'fa:reversal', kind: 'reversal', bannerText: '🔄 REVERSAL — CONTROLS INVERTED FOR 500ms',
+    cue: { invert: 500, shake: { intensity: 0.4, ms: 400 } } });
+  out.push({ id: 'fa:sanctuary', kind: 'sanctuary', bannerText: '✨ SANCTUARY — A MOMENT OF CALM (COSMETIC)',
+    cue: { flash: { color: 0x44ff88, ms: 150 }, embers: 16 } });
+  out.push({ id: 'fa:glitch-curse', kind: 'curse', bannerText: '🗸 GLITCH CURSE — SCREEN CORRUPTS (HP −10)',
+    cue: { glitch: 600, scanlines: true } });
+  out.push({ id: 'fa:pyro-entrance', kind: 'entrance', bannerText: '🔥 PYRO ENTRANCE: LORD HUSTLEBUCK CATCHES FIRE',
+    cue: { shake: { intensity: 0.9, ms: 800 }, embers: 32 } });
+  out.push({ id: 'fa:static-curse', kind: 'curse', bannerText: '📡 STATIC CURSE — SIGNAL LOST (HP −8)',
+    cue: { glitch: 800, scanlines: true } });
+  out.push({ id: 'fa:echo', kind: 'taunt', bannerText: '🕊 ECHO — YOUR TAUNTS BOUNCE BACK',
+    cue: { glitch: 300, embers: 6 } });
+  out.push({ id: 'fa:brit-drizzle', kind: 'weather', bannerText: 'MIND THE DRIZZLE.',
+    cue: { scanlines: true, embers: 8 } });
+  out.push({ id: 'fa:fog', kind: 'weather', bannerText: '🌫 FOG ROLLS IN — VISIBILITY DROPS (COSMETIC)',
+    cue: { scanlines: true, embers: 4 } });
+  out.push({ id: 'fa:thunder', kind: 'weather', bannerText: '⚡ THUNDER — A DISTANT RUMBLE',
+    cue: { flash: { color: 0xffffff, ms: 100 }, shake: { intensity: 0.5, ms: 300 } } });
+  out.push({ id: 'fa:quiet-blessing', kind: 'blessing', bannerText: '🔀 QUIET BLESSING — A SMALL FORTUNE (COSMETIC)',
+    cue: { flash: { color: 0x88ffcc, ms: 120 }, embers: 10 } });
+  out.push({ id: 'fa:taunt-neutral', kind: 'taunt', bannerText: '🎭 TAUNT: "NOT BAD. FOR A TUESDAY."',
+    cue: { glitch: 150 } });
+  out.push({ id: 'fa:reversal-neutral', kind: 'reversal', bannerText: '🔀 REVERSAL — BRIEF INVERSION (400ms)',
+    cue: { invert: 400 } });
+  out.push({ id: 'fa:aurora', kind: 'weather', bannerText: '🌌 AURORA — THE SKY DANCES (COSMETIC)',
+    cue: { flash: { color: 0x44ffaa, ms: 180 }, embers: 20 } });
   return out;
 }
 
