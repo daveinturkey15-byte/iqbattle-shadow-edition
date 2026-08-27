@@ -544,6 +544,78 @@ const scanlineRollModifier: RoundModifier = {
   },
 };
 
+/**
+ * Piano-keys: restyles the option tiles as piano keys. Pure flag on the
+ * target; identical under motion and static. Teardown restores the exact
+ * previous flag state (deletes it if absent).
+ */
+const pianoKeysModifier: RoundModifier = {
+  id: 'piano-keys',
+  banner: 'OPTIONS ARE PIANO KEYS',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origPianoKeys: boolean | undefined =
+      typeof target.pianoKeys === 'boolean' ? target.pianoKeys : undefined;
+    target.pianoKeys = true;
+
+    return () => {
+      if (origPianoKeys === undefined) delete target.pianoKeys;
+      else target.pianoKeys = origPianoKeys;
+    };
+  },
+};
+
+/**
+ * Tilt-3d: a 2D-to-3D perspective tilt (pitch in radians). Motion mode
+ * oscillates the pitch slowly via the exposed pure step(tMs); the scene
+ * frame-loop drives it. Static mode applies a fixed seeded pitch (identical
+ * rules, no motion). Teardown removes the tilt (or restores the exact
+ * previous tilt state).
+ */
+const tilt3dModifier: RoundModifier = {
+  id: 'tilt-3d',
+  banner: 'THE BOARD TILTS IN 3D',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origTilt: { pitch: number } | undefined =
+      target.tilt ? { ...target.tilt } : undefined;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x7d4a8e21)) >>> 0);
+    const basePitch = 0.15 + rng() * 0.15; // 0.15–0.30 rad base tilt
+    const swing = 0.05 + rng() * 0.05; // ± swing around the base
+    const periodMs = 4000 + rng() * 2000;
+    const phase = rng() * Math.PI * 2;
+
+    const setAt = (tMs: number): void => {
+      target.tilt = {
+        pitch: basePitch + swing * Math.sin((2 * Math.PI * tMs) / periodMs + phase),
+      };
+    };
+
+    if (ctx.motion) {
+      setAt(0);
+    } else {
+      // Static variant: fixed seeded pitch, identical rules, no motion.
+      target.tilt = { pitch: basePitch };
+    }
+
+    const stop: ModifierStop = () => {
+      if (origTilt === undefined) delete target.tilt;
+      else target.tilt = { ...origTilt };
+    };
+    stop.step = (tMs: number): void => {
+      setAt(tMs);
+    };
+    return stop;
+  },
+};
+
 /** The active registry of round modifiers. */
 export const MODIFIERS: RoundModifier[] = [
   mirrorFlipModifier,
@@ -556,6 +628,8 @@ export const MODIFIERS: RoundModifier[] = [
   fogBankModifier,
   inkSplatterModifier,
   scanlineRollModifier,
+  pianoKeysModifier,
+  tilt3dModifier,
 ];
 
 /**
