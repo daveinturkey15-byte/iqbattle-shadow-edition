@@ -206,6 +206,114 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  // --- Glitch: timed, motion-gated, intensity-scaled ---------------------------
+  check(`glitch timing and gating over ${SEED_COUNT} seeds`, () => {
+    for (let s = 0; s < SEED_COUNT; s++) {
+      const bus = createChaos(s, true);
+      bus.glitch(200);
+      bus.tick(1);
+      assert(
+        bus.state().glitch > 0,
+        `seed ${s}: glitch not active after request`
+      );
+      for (let t = 0; t < 20; t++) bus.tick(TICK_MS);
+      assert(
+        bus.state().glitch === 0,
+        `seed ${s}: glitch still active after expiry`
+      );
+      // motion=false: glitch must never report movement
+      const still = createChaos(s, false);
+      still.glitch(200);
+      still.tick(1);
+      assert(
+        still.state().glitch === 0,
+        `seed ${s}: motion=false reported glitch movement`
+      );
+      // intensity dial scales it
+      const dim = createChaos(s, true);
+      dim.intensity(0);
+      dim.glitch(200);
+      dim.tick(1);
+      assert(
+        dim.state().glitch === 0,
+        `seed ${s}: glitch not scaled by intensity dial`
+      );
+    }
+  });
+
+  // --- Melt: static amount, clamped 0..1, intensity-scaled ---------------------
+  check(`melt clamp and scaling over ${SEED_COUNT} seeds`, () => {
+    for (let s = 0; s < SEED_COUNT; s++) {
+      const bus = createChaos(s, true);
+      bus.melt(999);
+      assert(
+        bus.state().melt === 1,
+        `seed ${s}: melt not clamped to 1`
+      );
+      bus.melt(-3);
+      assert(
+        bus.state().melt === 0,
+        `seed ${s}: melt not clamped to 0`
+      );
+      bus.melt(0.5);
+      bus.intensity(0.5);
+      assert(
+        Math.abs(bus.state().melt - 0.25) < 1e-9,
+        `seed ${s}: melt not scaled by intensity dial`
+      );
+      // melt is a static effect: identical under motion=false
+      const still = createChaos(s, false);
+      still.melt(0.5);
+      assert(
+        still.state().melt === 0.5,
+        `seed ${s}: static melt mismatch`
+      );
+    }
+  });
+
+  // --- Invert: timed overlay ---------------------------------------------------
+  check(`invert timing over ${SEED_COUNT} seeds`, () => {
+    for (let s = 0; s < SEED_COUNT; s++) {
+      const bus = createChaos(s, true);
+      bus.invert(150);
+      bus.tick(1);
+      assert(
+        bus.state().invert > 0,
+        `seed ${s}: invert not active after request`
+      );
+      for (let t = 0; t < 15; t++) bus.tick(TICK_MS);
+      assert(
+        bus.state().invert === 0,
+        `seed ${s}: invert still active after expiry`
+      );
+    }
+  });
+
+  // --- Embers: count clamped, burst expires ------------------------------------
+  check(`embers clamp and expiry over ${SEED_COUNT} seeds`, () => {
+    for (let s = 0; s < SEED_COUNT; s++) {
+      const bus = createChaos(s, true);
+      bus.embers(9999);
+      bus.tick(1);
+      assert(
+        bus.state().embers === 64,
+        `seed ${s}: embers not clamped to 64`
+      );
+      bus.embers(-5);
+      bus.embers(3);
+      bus.tick(1);
+      assert(
+        bus.state().embers === 3,
+        `seed ${s}: embers count wrong`
+      );
+      for (let t = 0; t < 100; t++) bus.tick(TICK_MS);
+      assert(
+        bus.state().embers === 0,
+        `seed ${s}: embers did not expire`
+      );
+    }
+  });
+
   // --- stop() restores neutral exactly ---------------------------------------
   check(`stop() restores neutral exactly over ${SEED_COUNT} seeds`, () => {
     for (let s = 0; s < SEED_COUNT; s++) {
