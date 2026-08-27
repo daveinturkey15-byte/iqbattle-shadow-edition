@@ -545,10 +545,24 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
    * ever touches. */
   chaosFlash = new Graphics();
   chaosScan = new Graphics();
+  chaosMeltG = new Graphics();
+  chaosEmberG = new Graphics();
+  chaosGlitchG = new Graphics();
+  chaosInvertG = new Graphics();
+  /* Partial inversion via DIFFERENCE blend: it inverts whatever is already
+   * drawn (the board); banners are drawn after it, so they stay clean. */
+  chaosInvertG.blendMode = 'difference';
   /* Into the overlay (parented LAST in deal) so the juice sits above the
    * board but under the banners, which are added to the overlay afterwards. */
-  overlay.addChild(chaosFlash, chaosScan);
+  overlay.addChild(chaosFlash, chaosScan, chaosMeltG, chaosEmberG, chaosGlitchG, chaosInvertG);
   if (chaos) chaos.intensity(Math.min(1, plan.layer / 7)); /* corruption deepens with the descent */
+  /* P4: round boundary — persistent cue state lasts exactly one round. melt is
+   * a persistent bus value and cueScanlines is the flag the tick ORs into the
+   * scanline condition; reset both here, before this round's cues run. The
+   * time-limited cues (shake/glitch/flash/invert/embers) expire on the bus
+   * clock, which only advances while the run tick is alive. */
+  cueScanlines = false;
+  if (chaos) chaos.melt(0);
 
   shell = Shell.attach(root, {
     onLobby: () => { run = null; toLanding(); },
@@ -572,6 +586,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     if (cm) {
       if (typeof cm.hpDelta === 'number') r.hp = Math.max(0, Math.min(100, r.hp + cm.hpDelta));
       r.fateScoreMul = typeof cm.scoreMul === 'number' && cm.scoreMul > 0 ? cm.scoreMul : 1;
+      performCue(cm.cue);
       if (cm.bannerText) toastNow(overlay, cm.bannerText, T.gold);
     }
   } catch { /* fate optional */ }
@@ -600,9 +615,9 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   r.prevSanctuary = !!plan.sanctuary;
   try {
     const fa = maybeFlavorA({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA1A7 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
-    if (fa && fa.bannerText) toastNow(overlay, fa.bannerText, T.gold);
+    if (fa) { performCue(fa.cue); if (fa.bannerText) toastNow(overlay, fa.bannerText, T.gold); }
     const fb = maybeFlavorB({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFB2B3 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
-    if (fb && fb.bannerText) toastNow(overlay, fb.bannerText, T.muted);
+    if (fb) { performCue(fb.cue); if (fb.bannerText) toastNow(overlay, fb.bannerText, T.muted); }
   } catch { /* flavor optional */ }
   setDreadLayer(plan.align === 'good' ? 0 : plan.layer);
   if (plan.align !== r.prevAlign && r.prevAlign !== null) sting(plan.align === 'good' ? 'heal' : 'pain');
@@ -616,8 +631,10 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     if (offers.length) {
       /* No board, no clock: the round tick used to keep counting under the
        * emerald screen and "drown" a player mid-choice (and in MP it would
-       * have swept the whole table for a depth nobody could answer). */
+       * have swept the whole table for a depth nobody could answer). The
+       * juice freezes with the tick, so clear it too. */
       stopTick();
+      clearJuice();
       shell.setTimer(1, fmtClock(r.timerLen));
       const pickRoot = buildInterlude(offers, (id) => {
         r.emeralds.push(id);
@@ -636,6 +653,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   // fate roll (hostile/neutral flavor events)
   const fate = maybeFate({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA7E)) >>> 0), hp: r.hp, seed: r.seed });
   if (fate) {
+    performCue(fate.cue);
     if (fate.bannerText) toastNow(overlay, fate.bannerText, T.gold);
     if (typeof fate.timerDelta === 'number' && fate.timerDelta < 0) r.hp -= 0; // timer handled per-scene
   }
@@ -660,7 +678,53 @@ let tickId: ReturnType<typeof setInterval> | null = null;
 let chaos: ChaosBus | null = null;
 let chaosFlash: Graphics | null = null;
 let chaosScan: Graphics | null = null;
+let chaosMeltG: Graphics | null = null;
+let chaosEmberG: Graphics | null = null;
+let chaosGlitchG: Graphics | null = null;
+let chaosInvertG: Graphics | null = null;
+/* P4: true while a fate cue asked for scanlines this round. The tick ORs it
+ * into the layer>=4 condition so a cue's scanlines survive the per-tick sync.
+ * Reset at the top of every deal (round boundary). */
+let cueScanlines = false;
+let emberPts: Array<{ x: number; y: number; s: number }> | null = null;
+let glitchBands: number[] | null = null;
 function stopTick(): void { if (tickId !== null) { clearInterval(tickId); tickId = null; } }
+/* P4: perform a fate event's declarative cue through the chaos bus. The bus
+ * clamps/drops everything (flash <=200ms & <=3Hz, shake 0..1, embers <=64) and
+ * selftest-fate.ts already proved every shipped cue is in limits, so nothing
+ * is re-checked here. Persistent pieces (melt, scanlines) are scoped to the
+ * round by the reset at the top of deal(). */
+function performCue(cue: {
+  shake?: { intensity: number; ms: number };
+  glitch?: number;
+  flash?: { color: number; ms: number };
+  embers?: number;
+  scanlines?: boolean;
+  melt?: number;
+  invert?: number;
+} | null | undefined): void {
+  if (!chaos || !cue) return;
+  try {
+    if (cue.shake) chaos.shake(cue.shake.intensity, cue.shake.ms);
+    if (cue.glitch) chaos.glitch(cue.glitch);
+    if (cue.flash) chaos.flash(cue.flash.color, cue.flash.ms);
+    if (cue.embers !== undefined) chaos.embers(cue.embers);
+    if (cue.scanlines) cueScanlines = true;
+    if (cue.melt !== undefined) chaos.melt(cue.melt);
+    if (cue.invert) chaos.invert(cue.invert);
+  } catch { /* juice must never kill a round */ }
+}
+/* P4: wipe all juice overlays — used wherever the tick stops but the root
+ * stays on screen (emerald interlude, MP timeout), so no frozen flash or
+ * ember field lingers over a static screen. */
+function clearJuice(): void {
+  chaosFlash?.clear();
+  chaosScan?.clear();
+  chaosMeltG?.clear();
+  chaosEmberG?.clear();
+  chaosGlitchG?.clear();
+  chaosInvertG?.clear();
+}
 function startTick(root: Container): void {
   stopTick();
   const r = run!;
@@ -682,7 +746,8 @@ function startTick(root: Container): void {
         chaos.glitch(200);
         if (roll < 0.1 * st.intensity) chaos.flash(0xff2244, 150);
       }
-      if (st.scanlines !== (layer >= 4)) chaos.scanlines(layer >= 4);
+      const scanOn = layer >= 4 || cueScanlines;
+      if (st.scanlines !== scanOn) chaos.scanlines(scanOn);
       root.x = st.shakeX * 8;
       root.y = st.shakeY * 8;
       if (chaosFlash) {
@@ -696,15 +761,59 @@ function startTick(root: Container): void {
           for (let y = off; y < STAGE_H; y += 4) chaosScan.rect(0, y, STAGE_W, 1).fill({ color: 0x000000, alpha: 0.12 * st.intensity });
         }
       }
+      /* P4: paint the rest of the cue state. Melt is a static tint; invert is
+       * a partial DIFFERENCE-blend inversion (bus caps it at 0.4*dial so the
+       * board stays legible); embers are a deterministic dot field (static —
+       * no motion under motion=false); glitch bands are offset slices, only
+       * active while the bus reports a glitch (0 under motion=false). */
+      if (chaosMeltG) {
+        chaosMeltG.clear();
+        if (st.melt > 0) chaosMeltG.rect(0, 0, STAGE_W, STAGE_H).fill({ color: 0x2a0f00, alpha: 0.35 * st.melt });
+      }
+      if (chaosEmberG) {
+        chaosEmberG.clear();
+        if (st.embers > 0) {
+          if (!emberPts) {
+            const e = mulberry(0xE4B4);
+            emberPts = Array.from({ length: 64 }, () => ({ x: e(), y: e(), s: 2 + Math.floor(e() * 3) }));
+          }
+          const pts = emberPts;
+          for (let i = 0; i < st.embers && i < pts.length; i++) {
+            const p = pts[i]!;
+            chaosEmberG.rect(p.x * STAGE_W, p.y * STAGE_H, p.s, p.s).fill({ color: 0xffb84d, alpha: 0.7 });
+          }
+        }
+      }
+      if (chaosGlitchG) {
+        chaosGlitchG.clear();
+        if (st.glitch > 0) {
+          if (!glitchBands) {
+            const g = mulberry(0x4C17);
+            glitchBands = Array.from({ length: 8 }, () => g());
+          }
+          const bands = glitchBands;
+          for (let i = 0; i < 4; i++) {
+            const y = bands[i]! * STAGE_H;
+            const xoff = Math.sin(st.timeMs * 0.02 + i * 1.7) * 24 * st.glitch;
+            chaosGlitchG.rect(xoff, y, STAGE_W, 3).fill({ color: 0x66ffee, alpha: 0.6 * st.glitch });
+          }
+        }
+      }
+      if (chaosInvertG) {
+        chaosInvertG.clear();
+        if (st.invert > 0) chaosInvertG.rect(0, 0, STAGE_W, STAGE_H).fill({ color: 0xffffff, alpha: st.invert });
+      }
     }
     if (left <= 0) {
       stopTick();
       if (lms && mp) {
         /* MP: the host owns the clock. It punishes every seat that never
          * answered and closes the depth; clients just stop and wait for the
-         * reveal so two screens can never disagree about who timed out. */
+         * reveal so two screens can never disagree about who timed out. The
+         * juice freezes with the tick, so clear it. */
         r.streak = 0;
         toastNow(root, 'TIME DROWNED YOU', T.bad);
+        clearJuice();
         lms.timeout(); /* host sweeps + reveals; clients simply wait */
         return;
       }
