@@ -161,6 +161,189 @@ const WEATHER_LINES: readonly string[] = [
 ];
 
 /* ------------------------------------------------------------------ */
+/* Shipped event roster (pure data — the gate validates THIS, not copies) */
+/* ------------------------------------------------------------------ */
+/*
+ * The 16 flavor-a events, exported as data exactly like fate.ts's FATES,
+ * flavor-b.ts's COUNTRIES and cursepack.ts's CURSES/BLESSINGS.
+ * maybeFlavorA() selects from this roster; selftest-fate.ts imports it.
+ * Entrance banners show roster persona #1; the engine swaps in the seeded
+ * persona (same id/weight/cue/selection as before this lift — only the
+ * banner template's persona name changes, ids/weights unchanged).
+ */
+export const FA_EVENTS: readonly FlavorMod[] = [
+  {
+    id: 'fa:slam-entrance',
+    kind: 'entrance',
+    bannerText: '⚔ ENTRANCE: THE PAPER TITAN — "READ A DICTIONARY COVER TO COVER"',
+    cosmetic: 'rope-shake',
+    overlayMs: 4200,
+    flag: { persona: ROSTER[0]!.name },
+    cue: { shake: { intensity: 0.8, ms: 900 } },
+  },
+  {
+    id: 'fa:tape-curse',
+    kind: 'curse',
+    bannerText: '📼 THE UNLABELED TAPE PLAYS — WATCH (5S) OR HP −15',
+    cosmetic: 'tape-countdown',
+    overlayMs: TAPE_MS,
+    hpDelta: TAPE_HP,
+    flag: {
+      tapeForgiveMs: TAPE_MS,
+      tapeForgivenBanner: '➻ YOU WATCHED. THE WELL REMEMBERS.',
+      tapePunishedBanner: "📼 YOU DIDN'T WATCH THE TAPE — HP −15",
+    },
+    cue: { glitch: 400, scanlines: true },
+  },
+  {
+    id: 'fa:taunt',
+    kind: 'taunt',
+    bannerText: '🗤 TAUNT: "YOU CALLED THAT A STRATEGY?"',
+    cosmetic: 'taunt-bubble',
+    cue: { glitch: 200 },
+  },
+  {
+    id: 'fa:reversal',
+    kind: 'reversal',
+    bannerText: '🔄 REVERSAL — CONTROLS INVERTED FOR 500ms',
+    invertMs: 500,
+    cue: { invert: 500, shake: { intensity: 0.4, ms: 400 } },
+  },
+  {
+    id: 'fa:sanctuary',
+    kind: 'sanctuary',
+    bannerText: '✨ SANCTUARY — A MOMENT OF CALM (COSMETIC)',
+    cosmetic: 'sanctuary-glow',
+    cue: { flash: { color: 0x44ff88, ms: 150 }, embers: 16 },
+  },
+  {
+    id: 'fa:glitch-curse',
+    kind: 'curse',
+    bannerText: '🗸 GLITCH CURSE — SCREEN CORRUPTS (HP −10)',
+    cosmetic: 'glitch-overlay',
+    hpDelta: -10,
+    cue: { glitch: 600, scanlines: true },
+  },
+  {
+    id: 'fa:pyro-entrance',
+    kind: 'entrance',
+    bannerText: '🔥 PYRO ENTRANCE: THE PAPER TITAN CATCHES FIRE',
+    cosmetic: 'pyro-entrance',
+    overlayMs: 3500,
+    flag: { persona: ROSTER[0]!.name },
+    cue: { shake: { intensity: 0.9, ms: 800 }, embers: 32 },
+  },
+  {
+    id: 'fa:static-curse',
+    kind: 'curse',
+    bannerText: '📡 STATIC CURSE — SIGNAL LOST (HP −8)',
+    cosmetic: 'static-overlay',
+    hpDelta: -8,
+    cue: { glitch: 800, scanlines: true },
+  },
+  {
+    id: 'fa:echo',
+    kind: 'taunt',
+    bannerText: '🕊 ECHO — YOUR TAUNTS BOUNCE BACK',
+    cosmetic: 'echo-ring',
+    cue: { glitch: 300, embers: 6 },
+  },
+  {
+    id: 'fa:brit-drizzle',
+    kind: 'weather',
+    bannerText: 'MIND THE DRIZZLE.',
+    cosmetic: 'drizzle',
+    overlayMs: 8000,
+    cue: { scanlines: true, embers: 8 },
+  },
+  {
+    id: 'fa:fog',
+    kind: 'weather',
+    bannerText: '🌫 FOG ROLLS IN — VISIBILITY DROPS (COSMETIC)',
+    cosmetic: 'fog',
+    overlayMs: 6000,
+    cue: { scanlines: true, embers: 4 },
+  },
+  {
+    id: 'fa:thunder',
+    kind: 'weather',
+    bannerText: '⚡ THUNDER — A DISTANT RUMBLE',
+    cosmetic: 'thunder-flash',
+    cue: { flash: { color: 0xffffff, ms: 100 }, shake: { intensity: 0.5, ms: 300 } },
+  },
+  {
+    id: 'fa:quiet-blessing',
+    kind: 'blessing',
+    bannerText: '🔀 QUIET BLESSING — A SMALL FORTUNE (COSMETIC)',
+    cosmetic: 'blessing-glow',
+    cue: { flash: { color: 0x88ffcc, ms: 120 }, embers: 10 },
+  },
+  {
+    id: 'fa:taunt-neutral',
+    kind: 'taunt',
+    bannerText: '🎭 TAUNT: "NOT BAD. FOR A TUESDAY."',
+    cosmetic: 'taunt-bubble',
+    cue: { glitch: 150 },
+  },
+  {
+    id: 'fa:reversal-neutral',
+    kind: 'reversal',
+    bannerText: '🔀 REVERSAL — BRIEF INVERSION (400ms)',
+    invertMs: 400,
+    cue: { invert: 400 },
+  },
+  {
+    id: 'fa:aurora',
+    kind: 'weather',
+    bannerText: '🌌 AURORA — THE SKY DANCES (COSMETIC)',
+    cosmetic: 'aurora',
+    overlayMs: 7000,
+    cue: { flash: { color: 0x44ffaa, ms: 180 }, embers: 20 },
+  },
+];
+
+/** Window -> roster index (hostile slices, in roll order). */
+const FA_HOSTILE: readonly (readonly [w: number, i: number])[] = [
+  [W_FA_ENTRANCE, 0], // fa:slam-entrance
+  [W_FA_TAPE, 1],     // fa:tape-curse
+  [W_FA_TAUNT, 2],    // fa:taunt
+  [W_FA_REVERSAL, 3], // fa:reversal
+  [W_FA_SANCTUARY, 4],// fa:sanctuary
+  [W_FA_GLITCH, 5],   // fa:glitch-curse
+  [W_FA_PYRO, 6],     // fa:pyro-entrance
+  [W_FA_STATIC, 7],   // fa:static-curse
+  [W_FA_ECHO, 8],     // fa:echo
+];
+
+/** Window -> roster index (neutral slices, in roll order). */
+const FA_NEUTRAL: readonly (readonly [w: number, i: number])[] = [
+  [W_FA_WEATHER, 9],  // fa:brit-drizzle
+  [W_FA_FOG, 10],     // fa:fog
+  [W_FA_THUNDER, 11], // fa:thunder
+  [W_FA_BLESS, 12],   // fa:quiet-blessing
+  [W_FA_TAUNT_N, 13], // fa:taunt-neutral
+  [W_FA_REVERSAL_N, 14], // fa:reversal-neutral
+  [W_FA_AURORA, 15],  // fa:aurora
+];
+
+/** Roster events that template in a seeded persona / weather line. */
+function materialize(ev: FlavorMod, rng: () => number): FlavorMod {
+  if (ev.id === 'fa:slam-entrance' || ev.id === 'fa:pyro-entrance') {
+    const foe = ROSTER[Math.floor(rng() * ROSTER.length) % ROSTER.length];
+    const banner =
+      ev.id === 'fa:slam-entrance'
+        ? `⚔ ENTRANCE: ${foe.name} — "${foe.tagline}"`
+        : `🔥 PYRO ENTRANCE: ${foe.name} CATCHES FIRE`;
+    return { ...ev, bannerText: banner, flag: { persona: foe.name } };
+  }
+  if (ev.id === 'fa:brit-drizzle') {
+    const line = WEATHER_LINES[Math.floor(rng() * WEATHER_LINES.length) % WEATHER_LINES.length];
+    return { ...ev, bannerText: line };
+  }
+  return ev;
+}
+
+/* ------------------------------------------------------------------ */
 /* Roll                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -179,176 +362,16 @@ export function maybeFlavorA(ctx: FateCtx): FlavorMod | null {
 
   const r = rng();
 
-  if (ctx.align === 'bad' || ctx.align === 'chaotic') {
-    if (r < W_FA_ENTRANCE) {
-      const foe = ROSTER[Math.floor(rng() * ROSTER.length) % ROSTER.length];
-      return {
-        id: 'fa:slam-entrance',
-        kind: 'entrance',
-        bannerText: `\u2694 ENTRANCE: ${foe.name} — "${foe.tagline}"`,
-        cosmetic: 'rope-shake',
-        overlayMs: 4200,
-        flag: { persona: foe.name },
-        cue: { shake: { intensity: 0.8, ms: 900 } },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE) {
-      return {
-        id: 'fa:tape-curse',
-        kind: 'curse',
-        bannerText: `\uD83D\uDCFC THE UNLABELED TAPE PLAYS — WATCH (${TAPE_MS / 1000}S) OR HP \u221215`,
-        cosmetic: 'tape-countdown',
-        overlayMs: TAPE_MS,
-        hpDelta: TAPE_HP,
-        flag: {
-          tapeForgiveMs: TAPE_MS,
-          tapeForgivenBanner: '\u27B4 YOU WATCHED. THE WELL REMEMBERS.',
-          tapePunishedBanner: "\uD83D\uDCFC YOU DIDN'T WATCH THE TAPE \u2014 HP \u221215",
-        },
-        cue: { glitch: 400, scanlines: true },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT) {
-      return {
-        id: 'fa:taunt',
-        kind: 'taunt',
-        bannerText: '\uD83C\uDFE4 TAUNT: "YOU CALLED THAT A STRATEGY?"',
-        cosmetic: 'taunt-bubble',
-        cue: { glitch: 200 },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL) {
-      return {
-        id: 'fa:reversal',
-        kind: 'reversal',
-        bannerText: '\uD83D\uDD04 REVERSAL — CONTROLS INVERTED FOR 500ms',
-        invertMs: 500,
-        cue: { invert: 500, shake: { intensity: 0.4, ms: 400 } },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY) {
-      return {
-        id: 'fa:sanctuary',
-        kind: 'sanctuary',
-        bannerText: '\u2728 SANCTUARY — A MOMENT OF CALM (COSMETIC)',
-        cosmetic: 'sanctuary-glow',
-        cue: { flash: { color: 0x44ff88, ms: 150 }, embers: 16 },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH) {
-      return {
-        id: 'fa:glitch-curse',
-        kind: 'curse',
-        bannerText: '\uD83D\uDCF8 GLITCH CURSE — SCREEN CORRUPTS (HP \u221210)',
-        cosmetic: 'glitch-overlay',
-        hpDelta: -10,
-        cue: { glitch: 600, scanlines: true },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO) {
-      const foe = ROSTER[Math.floor(rng() * ROSTER.length) % ROSTER.length];
-      return {
-        id: 'fa:pyro-entrance',
-        kind: 'entrance',
-        bannerText: `\uD83D\uDD25 PYRO ENTRANCE: ${foe.name} CATCHES FIRE`,
-        cosmetic: 'pyro-entrance',
-        overlayMs: 3500,
-        flag: { persona: foe.name },
-        cue: { shake: { intensity: 0.9, ms: 800 }, embers: 32 },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO + W_FA_STATIC) {
-      return {
-        id: 'fa:static-curse',
-        kind: 'curse',
-        bannerText: '\uD83D\uDCE1 STATIC CURSE — SIGNAL LOST (HP \u22128)',
-        cosmetic: 'static-overlay',
-        hpDelta: -8,
-        cue: { glitch: 800, scanlines: true },
-      };
-    }
-    if (r < W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO + W_FA_STATIC + W_FA_ECHO) {
-      return {
-        id: 'fa:echo',
-        kind: 'taunt',
-        bannerText: '\uD83D\uDD0A ECHO — YOUR TAUNTS BOUNCE BACK',
-        cosmetic: 'echo-ring',
-        cue: { glitch: 300, embers: 6 },
-      };
-    }
-    return null;
-  }
+  const windows =
+    ctx.align === 'bad' || ctx.align === 'chaotic' ? FA_HOSTILE :
+    ctx.align === 'neutral' ? FA_NEUTRAL : null;
+  if (windows === null) return null;
 
-  if (ctx.align === 'neutral') {
-    if (r < W_FA_WEATHER) {
-      const line = WEATHER_LINES[Math.floor(rng() * WEATHER_LINES.length) % WEATHER_LINES.length];
-      return {
-        id: 'fa:brit-drizzle',
-        kind: 'weather',
-        bannerText: line,
-        cosmetic: 'drizzle',
-        overlayMs: 8000,
-        cue: { scanlines: true, embers: 8 },
-      };
-    }
-    if (r < W_FA_WEATHER + W_FA_FOG) {
-      return {
-        id: 'fa:fog',
-        kind: 'weather',
-        bannerText: '\uD83C\uDF2B FOG ROLLS IN — VISIBILITY DROPS (COSMETIC)',
-        cosmetic: 'fog',
-        overlayMs: 6000,
-        cue: { scanlines: true, embers: 4 },
-      };
-    }
-    if (r < W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER) {
-      return {
-        id: 'fa:thunder',
-        kind: 'weather',
-        bannerText: '\u26A1 THUNDER — A DISTANT RUMBLE',
-        cosmetic: 'thunder-flash',
-        cue: { flash: { color: 0xffffff, ms: 100 }, shake: { intensity: 0.5, ms: 300 } },
-      };
-    }
-    if (r < W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS) {
-      return {
-        id: 'fa:quiet-blessing',
-        kind: 'blessing',
-        bannerText: '\uD83C\uDF40 QUIET BLESSING — A SMALL FORTUNE (COSMETIC)',
-        cosmetic: 'blessing-glow',
-        cue: { flash: { color: 0x88ffcc, ms: 120 }, embers: 10 },
-      };
-    }
-    if (r < W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N) {
-      return {
-        id: 'fa:taunt-neutral',
-        kind: 'taunt',
-        bannerText: '\uD83C\uDFAD TAUNT: "NOT BAD. FOR A TUESDAY."',
-        cosmetic: 'taunt-bubble',
-        cue: { glitch: 150 },
-      };
-    }
-    if (r < W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N + W_FA_REVERSAL_N) {
-      return {
-        id: 'fa:reversal-neutral',
-        kind: 'reversal',
-        bannerText: '\uD83D\uDD00 REVERSAL — BRIEF INVERSION (400ms)',
-        invertMs: 400,
-        cue: { invert: 400 },
-      };
-    }
-    if (r < W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N + W_FA_REVERSAL_N + W_FA_AURORA) {
-      return {
-        id: 'fa:aurora',
-        kind: 'weather',
-        bannerText: '\uD83C\uDF0C AURORA — THE SKY DANCES (COSMETIC)',
-        cosmetic: 'aurora',
-        overlayMs: 7000,
-        cue: { flash: { color: 0x44ffaa, ms: 180 }, embers: 20 },
-      };
-    }
+  let acc = 0;
+  for (const [w, i] of windows) {
+    acc += w;
+    if (r < acc) return materialize(FA_EVENTS[i]!, rng);
   }
-
   return null;
 }
 

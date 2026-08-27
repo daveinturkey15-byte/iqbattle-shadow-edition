@@ -12,7 +12,7 @@
  * ==========================================================================*/
 
 import { FATES, maybeFate, type FateCtx, type FateMod } from './fate.ts';
-import { maybeFlavorA, type FlavorMod } from './flavor-a.ts';
+import { FA_EVENTS, maybeFlavorA, type FlavorMod } from './flavor-a.ts';
 import { COUNTRIES, maybeFlavorB, type CountryMod } from './flavor-b.ts';
 import { CURSES, BLESSINGS, maybeCurse, type CurseMod } from './cursepack.ts';
 
@@ -43,6 +43,8 @@ function collectEvents(): AnyMod[] {
   for (const f of COUNTRIES) out.push(f());
   for (const f of CURSES) out.push(f());
   for (const f of BLESSINGS) out.push(f());
+  // flavor-a events: imported straight from the shipped roster (no copies).
+  for (const e of FA_EVENTS) out.push(e);
   // Inline events produced by the roll functions (not in factory tables).
   // Cues mirror the inline objects in fate.ts maybeFate().
   out.push({ id: 'lollipop', kind: 'blessing', bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS',
@@ -51,39 +53,6 @@ function collectEvents(): AnyMod[] {
     cue: { flash: { color: 0xfff2a8, ms: 150 }, embers: 12 } });
   out.push({ id: 'nuke', kind: 'nuke', bannerText: '☢ NUKE — EVERYONE LEFT AT 1 HP · NEXT ROUND FORCED GOOD',
     cue: { flash: { color: 0xff3030, ms: 200 }, shake: { intensity: 1, ms: 600 } } });
-  // flavor-a.ts inline events (16 total)
-  out.push({ id: 'fa:slam-entrance', kind: 'entrance', bannerText: '⚔ ENTRANCE: THE PAPER TITAN — "READ A DICTIONARY COVER TO COVER"',
-    cue: { shake: { intensity: 0.8, ms: 900 } } });
-  out.push({ id: 'fa:tape-curse', kind: 'curse', bannerText: '📼 THE UNLABELED TAPE PLAYS — WATCH (5S) OR HP −15',
-    cue: { glitch: 400, scanlines: true } });
-  out.push({ id: 'fa:taunt', kind: 'taunt', bannerText: '🗤 TAUNT: "YOU CALLED THAT A STRATEGY?"',
-    cue: { glitch: 200 } });
-  out.push({ id: 'fa:reversal', kind: 'reversal', bannerText: '🔄 REVERSAL — CONTROLS INVERTED FOR 500ms',
-    cue: { invert: 500, shake: { intensity: 0.4, ms: 400 } } });
-  out.push({ id: 'fa:sanctuary', kind: 'sanctuary', bannerText: '✨ SANCTUARY — A MOMENT OF CALM (COSMETIC)',
-    cue: { flash: { color: 0x44ff88, ms: 150 }, embers: 16 } });
-  out.push({ id: 'fa:glitch-curse', kind: 'curse', bannerText: '🗸 GLITCH CURSE — SCREEN CORRUPTS (HP −10)',
-    cue: { glitch: 600, scanlines: true } });
-  out.push({ id: 'fa:pyro-entrance', kind: 'entrance', bannerText: '🔥 PYRO ENTRANCE: LORD HUSTLEBUCK CATCHES FIRE',
-    cue: { shake: { intensity: 0.9, ms: 800 }, embers: 32 } });
-  out.push({ id: 'fa:static-curse', kind: 'curse', bannerText: '📡 STATIC CURSE — SIGNAL LOST (HP −8)',
-    cue: { glitch: 800, scanlines: true } });
-  out.push({ id: 'fa:echo', kind: 'taunt', bannerText: '🕊 ECHO — YOUR TAUNTS BOUNCE BACK',
-    cue: { glitch: 300, embers: 6 } });
-  out.push({ id: 'fa:brit-drizzle', kind: 'weather', bannerText: 'MIND THE DRIZZLE.',
-    cue: { scanlines: true, embers: 8 } });
-  out.push({ id: 'fa:fog', kind: 'weather', bannerText: '🌫 FOG ROLLS IN — VISIBILITY DROPS (COSMETIC)',
-    cue: { scanlines: true, embers: 4 } });
-  out.push({ id: 'fa:thunder', kind: 'weather', bannerText: '⚡ THUNDER — A DISTANT RUMBLE',
-    cue: { flash: { color: 0xffffff, ms: 100 }, shake: { intensity: 0.5, ms: 300 } } });
-  out.push({ id: 'fa:quiet-blessing', kind: 'blessing', bannerText: '🔀 QUIET BLESSING — A SMALL FORTUNE (COSMETIC)',
-    cue: { flash: { color: 0x88ffcc, ms: 120 }, embers: 10 } });
-  out.push({ id: 'fa:taunt-neutral', kind: 'taunt', bannerText: '🎭 TAUNT: "NOT BAD. FOR A TUESDAY."',
-    cue: { glitch: 150 } });
-  out.push({ id: 'fa:reversal-neutral', kind: 'reversal', bannerText: '🔀 REVERSAL — BRIEF INVERSION (400ms)',
-    cue: { invert: 400 } });
-  out.push({ id: 'fa:aurora', kind: 'weather', bannerText: '🌌 AURORA — THE SKY DANCES (COSMETIC)',
-    cue: { flash: { color: 0x44ffaa, ms: 180 }, embers: 20 } });
   return out;
 }
 
@@ -172,6 +141,29 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     const c = maybeCurse(ctx);
     return JSON.stringify([f?.id ?? null, a?.id ?? null, b?.id ?? null, c?.id ?? null]);
   }
+
+  check(`every id the pickers return is in the imported rosters (300 seeds)`, () => {
+    const roster = new Set<string>();
+    for (const f of FATES) roster.add(f().id);
+    for (const e of FA_EVENTS) roster.add(e.id);
+    for (const f of COUNTRIES) roster.add(f().id);
+    for (const f of CURSES) roster.add(f().id);
+    for (const f of BLESSINGS) roster.add(f().id);
+    roster.add('lollipop'); roster.add('sticker'); roster.add('nuke');
+    const missing: string[] = [];
+    for (let seed = 0; seed < 300; seed++) {
+      for (const depth of [3, 7, 13, 21]) {
+        for (const align of ALIGNS) {
+          const ctx: FateCtx = { seed, depth, align, hp: 50 };
+          for (const mod of [maybeFate(ctx), maybeFlavorA(ctx), maybeFlavorB(ctx), maybeCurse(ctx)]) {
+            if (mod && !roster.has(mod.id)) missing.push(mod.id);
+          }
+        }
+      }
+    }
+    const uniq = [...new Set(missing)];
+    assert(uniq.length === 0, `picker(s) returned ids missing from imported rosters: ${uniq.slice(0, 8).join(', ')}`);
+  });
 
   check(`pickers deterministic for a given (seed, depth) over ${SEEDS.length * DEPTHS.length * ALIGNS.length} cases`, () => {
     for (const seed of SEEDS) {
