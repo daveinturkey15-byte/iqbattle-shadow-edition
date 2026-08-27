@@ -937,6 +937,13 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
    * deep gets strange. Every teardown is registered with the scene. */
   const modMax = Math.min(3, Math.max(1, Math.floor(plan.layer / 2)));
   const mctx: ModCtx = { depth, seed: r.seed, layer: plan.layer, align: plan.align, motion: revealMotionEnabled() };
+  /* Transform about the stage centre, not the container origin. Pixi rotates
+   * and scales around (0,0) by default, so mirror-flip (scale.x = -1) and
+   * rotate-90 swung the whole board clean off the 1600x900 stage — a black
+   * screen. Pivot and position both at the centre leaves the board looking
+   * exactly the same while making those transforms happen in place. */
+  scene.pivot.set(STAGE_W / 2, STAGE_H / 2);
+  scene.position.set(STAGE_W / 2, STAGE_H / 2);
   for (const mod of pickModifiers(mctx, modMax)) {
     const stop = mod.apply(mctx, scene);
     onSceneStop(stop);
