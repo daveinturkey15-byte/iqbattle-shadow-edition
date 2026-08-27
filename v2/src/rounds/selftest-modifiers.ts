@@ -26,7 +26,47 @@ function cloneStub(s: BoardTarget): BoardTarget {
     scale: { x: s.scale.x, y: s.scale.y },
     x: s.x,
     y: s.y,
+    rotation: s.rotation,
+    fog: s.fog ? { ...s.fog } : undefined,
+    ink: s.ink ? { ...s.ink } : undefined,
+    scanline: s.scanline ? { ...s.scanline } : undefined,
+    tilt: s.tilt ? { ...s.tilt } : undefined,
+    pianoKeys: s.pianoKeys,
+    inverted: s.inverted,
+    optionOrder: s.optionOrder ? [...s.optionOrder] : undefined,
   };
+}
+
+function sameState(a: BoardTarget, b: BoardTarget): boolean {
+  if (a.scale.x !== b.scale.x || a.scale.y !== b.scale.y) return false;
+  if (a.x !== b.x || a.y !== b.y) return false;
+  if (a.rotation !== b.rotation) return false;
+  if (a.pianoKeys !== b.pianoKeys) return false;
+  if (a.inverted !== b.inverted) return false;
+  const fa = a.fog;
+  const fb = b.fog;
+  if ((fa === undefined) !== (fb === undefined)) return false;
+  if (fa && fb && (fa.alpha !== fb.alpha || fa.x !== fb.x || fa.y !== fb.y || fa.r !== fb.r)) return false;
+  const ia = a.ink;
+  const ib = b.ink;
+  if ((ia === undefined) !== (ib === undefined)) return false;
+  if (ia && ib && (ia.alpha !== ib.alpha || ia.x !== ib.x || ia.y !== ib.y || ia.r !== ib.r)) return false;
+  const sa = a.scanline;
+  const sb = b.scanline;
+  if ((sa === undefined) !== (sb === undefined)) return false;
+  if (sa && sb && (sa.y !== sb.y || sa.bandH !== sb.bandH || sa.alpha !== sb.alpha)) return false;
+  const ta = a.tilt;
+  const tb = b.tilt;
+  if ((ta === undefined) !== (tb === undefined)) return false;
+  if (ta && tb && ta.pitch !== tb.pitch) return false;
+  const oa = a.optionOrder;
+  const ob = b.optionOrder;
+  if ((oa === undefined) !== (ob === undefined)) return false;
+  if (oa && ob) {
+    if (oa.length !== ob.length) return false;
+    for (let i = 0; i < oa.length; i++) if (oa[i] !== ob[i]) return false;
+  }
+  return true;
 }
 
 export function selfTest(): { ok: boolean; failures: string[] } {
@@ -44,11 +84,13 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   }
 
-  check('MODIFIERS registry contains exactly the two expected modifiers', () => {
-    assert(MODIFIERS.length === 2, `expected 2 modifiers, got ${MODIFIERS.length}`);
+  check('MODIFIERS registry contains exactly the expected modifiers', () => {
+    assert(MODIFIERS.length === 4, `expected 4 modifiers, got ${MODIFIERS.length}`);
     const ids = MODIFIERS.map((m) => m.id);
     assert(ids.includes('mirror-flip'), 'missing mirror-flip modifier');
     assert(ids.includes('board-drift'), 'missing board-drift modifier');
+    assert(ids.includes('rotate-90'), 'missing rotate-90 modifier');
+    assert(ids.includes('breathing'), 'missing breathing modifier');
   });
 
   const ALIGNS = ['chaos', 'order', 'void', 'nexus'];
@@ -76,29 +118,20 @@ export function selfTest(): { ok: boolean; failures: string[] } {
 
         // Determinism check: same (seed, depth) produces identical state
         assert(
-          appliedStateA.scale.x === appliedStateB.scale.x &&
-            appliedStateA.scale.y === appliedStateB.scale.y &&
-            appliedStateA.x === appliedStateB.x &&
-            appliedStateA.y === appliedStateB.y,
+          sameState(appliedStateA, appliedStateB),
           `[${mod.id} seed=${seed} depth=${depth}] non-deterministic apply under motion=true`
         );
 
         // Teardown check: restores exact pre-apply values
         teardownA();
         assert(
-          initialA.scale.x === snapshotA.scale.x &&
-            initialA.scale.y === snapshotA.scale.y &&
-            initialA.x === snapshotA.x &&
-            initialA.y === snapshotA.y,
+          sameState(initialA, snapshotA),
           `[${mod.id} seed=${seed} depth=${depth}] teardown failed to restore exact pre-apply values (motion=true)`
         );
 
         teardownB();
         assert(
-          initialB.scale.x === snapshotA.scale.x &&
-            initialB.scale.y === snapshotA.scale.y &&
-            initialB.x === snapshotA.x &&
-            initialB.y === snapshotA.y,
+          sameState(initialB, snapshotA),
           `[${mod.id} seed=${seed} depth=${depth}] teardownB failed to restore exact pre-apply values (motion=true)`
         );
 
@@ -116,29 +149,20 @@ export function selfTest(): { ok: boolean; failures: string[] } {
 
         // Determinism check for static variant
         assert(
-          staticAppliedA.scale.x === staticAppliedB.scale.x &&
-            staticAppliedA.scale.y === staticAppliedB.scale.y &&
-            staticAppliedA.x === staticAppliedB.x &&
-            staticAppliedA.y === staticAppliedB.y,
+          sameState(staticAppliedA, staticAppliedB),
           `[${mod.id} seed=${seed} depth=${depth}] non-deterministic apply under motion=false`
         );
 
         // Teardown check for static variant
         staticTeardownA();
         assert(
-          staticStubA.scale.x === staticSnapshot.scale.x &&
-            staticStubA.scale.y === staticSnapshot.scale.y &&
-            staticStubA.x === staticSnapshot.x &&
-            staticStubA.y === staticSnapshot.y,
+          sameState(staticStubA, staticSnapshot),
           `[${mod.id} seed=${seed} depth=${depth}] teardown failed to restore exact pre-apply values (motion=false)`
         );
 
         staticTeardownB();
         assert(
-          staticStubB.scale.x === staticSnapshot.scale.x &&
-            staticStubB.scale.y === staticSnapshot.scale.y &&
-            staticStubB.x === staticSnapshot.x &&
-            staticStubB.y === staticSnapshot.y,
+          sameState(staticStubB, staticSnapshot),
           `[${mod.id} seed=${seed} depth=${depth}] teardownB failed to restore exact pre-apply values (motion=false)`
         );
       }

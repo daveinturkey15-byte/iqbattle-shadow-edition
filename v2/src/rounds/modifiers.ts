@@ -21,15 +21,41 @@ export interface ModCtx {
 export interface RoundModifier {
   id: string;
   when(ctx: ModCtx): boolean;
-  apply(ctx: ModCtx, scene: unknown): () => void;
+  apply(ctx: ModCtx, scene: unknown): ModifierStop;
   banner?: string;
 }
+
+/**
+ * Teardown returned by apply(). Optionally exposes a pure step(tMs) that the
+ * scene frame-loop drives; time arrives only as this argument (no ambient
+ * clock, no Date.now). Calling stop() always restores the pre-apply state
+ * exactly.
+ */
+export type ModifierStop = (() => void) & {
+  step?: (tMs: number) => void;
+};
 
 /** Duck-typed container interface matching Pixi Container transform props. */
 export interface BoardTarget {
   scale: { x: number; y: number };
   x: number;
   y: number;
+  /** Radians. Set by rotate-90. */
+  rotation?: number;
+  /** Fog-bank occlusion (alpha ≤ 0.4 → board always ≥ 60% visible). */
+  fog?: { alpha: number; x: number; y: number; r: number };
+  /** Ink-splatter occlusion (alpha decays to 0 as it wipes away). */
+  ink?: { alpha: number; x: number; y: number; r: number };
+  /** Scanline-roll band (partial height, alpha ≤ 0.4). */
+  scanline?: { y: number; bandH: number; alpha: number };
+  /** Tilt-3d perspective pitch (radians). */
+  tilt?: { pitch: number };
+  /** Piano-keys restyle flag for the option tiles. */
+  pianoKeys?: boolean;
+  /** Inverted-controls flag. */
+  inverted?: boolean;
+  /** Option-shuffle permutation of the 8 option slots. */
+  optionOrder?: number[];
 }
 
 /** Pure mulberry32 32-bit PRNG generator. */
@@ -182,8 +208,87 @@ const boardDriftModifier: RoundModifier = {
   },
 };
 
+/**
+ * Rotate-90: rotates the board container a quarter turn (seeded direction).
+ * A pure transform — identical under motion and static. Teardown restores the
+ * exact previous rotation (including the absent case).
+ */
+const rotate90Modifier: RoundModifier = {
+  id: 'rotate-90',
+  banner: 'BOARD ROTATED 90°',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origRotation: number | undefined =
+      typeof target.rotation === 'number' ? target.rotation : undefined;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x27d1b6e3)) >>> 0);
+    const dir = rng() < 0.5 ? 1 : -1;
+    target.rotation = (origRotation ?? 0) + dir * (Math.PI / 2);
+
+    return () => {
+      if (origRotation === undefined) delete target.rotation;
+      else target.rotation = origRotation;
+    };
+  },
+};
+
+/**
+ * Breathing: slow deterministic scale oscillation. Time arrives only via the
+ * exposed pure step(tMs); the scene frame-loop drives it. Static mode applies
+ * a fixed mid-breath scale (identical rules, no motion). Teardown restores the
+ * exact previous scale.
+ */
+const breathingModifier: RoundModifier = {
+  id: 'breathing',
+  banner: 'THE BOARD IS BREATHING',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origScaleX = target.scale.x;
+    const origScaleY = target.scale.y;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x9666f0f9)) >>> 0);
+    const amp = 0.04 + rng() * 0.04;        // 4–8% scale swing
+    const periodMs = 2400 + rng() * 1200;   // slow breath
+    const phase = rng() * Math.PI * 2;
+
+    const setAt = (tMs: number): void => {
+      const s = 1 + amp * Math.sin((2 * Math.PI * tMs) / periodMs + phase);
+      target.scale.x = origScaleX * s;
+      target.scale.y = origScaleY * s;
+    };
+
+    if (ctx.motion) {
+      setAt(0);
+    } else {
+      // Static variant: fixed mid-breath scale, identical rules, no motion.
+      target.scale.x = origScaleX * (1 + amp * 0.5);
+      target.scale.y = origScaleY * (1 + amp * 0.5);
+    }
+
+    const stop: ModifierStop = () => {
+      target.scale.x = origScaleX;
+      target.scale.y = origScaleY;
+    };
+    stop.step = (tMs: number): void => {
+      setAt(tMs);
+    };
+    return stop;
+  },
+};
+
 /** The active registry of round modifiers. */
-export const MODIFIERS: RoundModifier[] = [mirrorFlipModifier, boardDriftModifier];
+export const MODIFIERS: RoundModifier[] = [
+  mirrorFlipModifier,
+  boardDriftModifier,
+  rotate90Modifier,
+  breathingModifier,
+];
 
 /**
  * Deterministically picks up to `max` modifiers eligible for the given context.
