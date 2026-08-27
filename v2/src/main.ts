@@ -666,7 +666,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   r.curKind = useRp.kind;
   r.curAnswer = -1;
   if (useRp.kind === 'takeover') { r.lastTakeover = r.depth; setPresence('hidden'); dealTakeover(root, useRp.index, useSeed, overlay); }
-  else dealPuzzle(root, useRp.index, useSeed, r.depth, overlay);
+  else { juiceW = BOARD_PANEL.x + BOARD_PANEL.w; /* keep the sidebar clean */ dealPuzzle(root, useRp.index, useSeed, r.depth, overlay); }
   root.addChild(overlay); /* banners on top of the board, always */
   startTick(root);
   show(root);
@@ -686,6 +686,11 @@ let chaosInvertG: Graphics | null = null;
  * into the layer>=4 condition so a cue's scanlines survive the per-tick sync.
  * Reset at the top of every deal (round boundary). */
 let cueScanlines = false;
+/* Feel pass (15:00 build): the juice column. Puzzle rounds scope every juice
+ * rect to the board column so the sidebar (player list, clock, x >= 984) is
+ * never inverted, scanned or melted; takeover rounds hide the sidebar, so
+ * their juice may run full-stage. Set at each deal() branch. */
+let juiceW = STAGE_W;
 let emberPts: Array<{ x: number; y: number; s: number }> | null = null;
 let glitchBands: number[] | null = null;
 function stopTick(): void { if (tickId !== null) { clearInterval(tickId); tickId = null; } }
@@ -752,13 +757,13 @@ function startTick(root: Container): void {
       root.y = st.shakeY * 8;
       if (chaosFlash) {
         chaosFlash.clear();
-        if (st.flashAlpha > 0) chaosFlash.rect(0, 0, STAGE_W, STAGE_H).fill({ color: st.flashColor, alpha: st.flashAlpha });
+        if (st.flashAlpha > 0) chaosFlash.rect(0, 0, juiceW, STAGE_H).fill({ color: st.flashColor, alpha: st.flashAlpha });
       }
       if (chaosScan) {
         chaosScan.clear();
         if (st.scanlines) {
           const off = Math.round(st.scanPhase * 4);
-          for (let y = off; y < STAGE_H; y += 4) chaosScan.rect(0, y, STAGE_W, 1).fill({ color: 0x000000, alpha: 0.12 * st.intensity });
+          for (let y = off; y < STAGE_H; y += 4) chaosScan.rect(0, y, juiceW, 1).fill({ color: 0x000000, alpha: 0.12 * st.intensity });
         }
       }
       /* P4: paint the rest of the cue state. Melt is a static tint; invert is
@@ -768,7 +773,7 @@ function startTick(root: Container): void {
        * active while the bus reports a glitch (0 under motion=false). */
       if (chaosMeltG) {
         chaosMeltG.clear();
-        if (st.melt > 0) chaosMeltG.rect(0, 0, STAGE_W, STAGE_H).fill({ color: 0x2a0f00, alpha: 0.35 * st.melt });
+        if (st.melt > 0) chaosMeltG.rect(0, 0, juiceW, STAGE_H).fill({ color: 0x2a0f00, alpha: 0.35 * st.melt });
       }
       if (chaosEmberG) {
         chaosEmberG.clear();
@@ -780,7 +785,7 @@ function startTick(root: Container): void {
           const pts = emberPts;
           for (let i = 0; i < st.embers && i < pts.length; i++) {
             const p = pts[i]!;
-            chaosEmberG.rect(p.x * STAGE_W, p.y * STAGE_H, p.s, p.s).fill({ color: 0xffb84d, alpha: 0.7 });
+            chaosEmberG.rect(p.x * juiceW, p.y * STAGE_H, p.s, p.s).fill({ color: 0xffb84d, alpha: 0.7 });
           }
         }
       }
@@ -795,13 +800,13 @@ function startTick(root: Container): void {
           for (let i = 0; i < 4; i++) {
             const y = bands[i]! * STAGE_H;
             const xoff = Math.sin(st.timeMs * 0.02 + i * 1.7) * 24 * st.glitch;
-            chaosGlitchG.rect(xoff, y, STAGE_W, 3).fill({ color: 0x66ffee, alpha: 0.6 * st.glitch });
+            chaosGlitchG.rect(xoff, y, juiceW, 3).fill({ color: 0x66ffee, alpha: 0.6 * st.glitch });
           }
         }
       }
       if (chaosInvertG) {
         chaosInvertG.clear();
-        if (st.invert > 0) chaosInvertG.rect(0, 0, STAGE_W, STAGE_H).fill({ color: 0xffffff, alpha: st.invert });
+        if (st.invert > 0) chaosInvertG.rect(0, 0, juiceW, STAGE_H).fill({ color: 0xffffff, alpha: st.invert });
       }
     }
     if (left <= 0) {
