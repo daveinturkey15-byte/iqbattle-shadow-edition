@@ -282,12 +282,87 @@ const breathingModifier: RoundModifier = {
   },
 };
 
+/**
+ * Lurch: a one-shot positional jolt that decays to zero over ~400 ms. Time
+ * arrives only via the exposed pure step(tMs); the scene frame-loop drives it.
+ * Static mode applies a fixed quarter-magnitude offset (identical rules, no
+ * motion). Teardown restores the exact previous position.
+ */
+const lurchModifier: RoundModifier = {
+  id: 'lurch',
+  banner: 'THE BOARD LURCHES',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origX = target.x;
+    const origY = target.y;
+
+    const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x6a09e667)) >>> 0);
+    const angle = rng() * Math.PI * 2;
+    const mag = 14 + rng() * 10; // 14–24 px jolt
+    const dx = Math.cos(angle) * mag;
+    const dy = Math.sin(angle) * mag;
+    const durationMs = 400;
+
+    const setAt = (tMs: number): void => {
+      const k = Math.max(0, 1 - tMs / durationMs); // linear decay to exactly 0
+      target.x = origX + dx * k;
+      target.y = origY + dy * k;
+    };
+
+    if (ctx.motion) {
+      setAt(0); // full jolt at t=0
+    } else {
+      // Static variant: fixed quarter-magnitude offset, identical rules.
+      target.x = origX + dx * 0.25;
+      target.y = origY + dy * 0.25;
+    }
+
+    const stop: ModifierStop = () => {
+      target.x = origX;
+      target.y = origY;
+    };
+    stop.step = (tMs: number): void => {
+      setAt(tMs);
+    };
+    return stop;
+  },
+};
+
+/**
+ * Inverted-controls: flips input direction for the round. Pure flag on the
+ * target; identical under motion and static. The banner MUST announce the
+ * control change. Teardown restores the exact previous flag state.
+ */
+const invertedControlsModifier: RoundModifier = {
+  id: 'inverted-controls',
+  banner: 'CONTROLS INVERTED',
+  when: (ctx: ModCtx): boolean => ctx.depth >= 0,
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
+    const target = resolveBoardTarget(scene);
+    if (!target) return () => {};
+
+    const origInverted: boolean | undefined =
+      typeof target.inverted === 'boolean' ? target.inverted : undefined;
+    target.inverted = true;
+
+    return () => {
+      if (origInverted === undefined) delete target.inverted;
+      else target.inverted = origInverted;
+    };
+  },
+};
+
 /** The active registry of round modifiers. */
 export const MODIFIERS: RoundModifier[] = [
   mirrorFlipModifier,
   boardDriftModifier,
   rotate90Modifier,
   breathingModifier,
+  lurchModifier,
+  invertedControlsModifier,
 ];
 
 /**
