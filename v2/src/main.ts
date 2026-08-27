@@ -22,7 +22,8 @@ import { emeraldPick, buildInterlude } from './scenes/interlude.ts';
 import { applyBackdrop } from './worlds/backdrops.ts';
 import { pick as pickWorld } from './worlds/registry.ts';
 import { maybeCurse } from './fate/cursepack.ts';
-import { playReveal } from './fx/reveal.ts';
+import { playReveal, revealMotionEnabled } from './fx/reveal.ts';
+import { pickModifiers, type ModCtx } from './rounds/modifiers.ts';
 import { goalCardForIndex, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
 import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
 import { hpFor, pointsFor } from './scenes/lms.ts';
@@ -769,6 +770,16 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
     locked: () => !!lms && !lms.mayAnswer(),
   });
   root.addChild(scene);
+
+  /* P1: round modifiers — pure function of (runSeed, depth) so host and every
+   * client roll the SAME ones. Count scales with layer: shallow stays clean,
+   * deep gets strange. Every teardown is registered with the scene. */
+  const modMax = Math.min(3, Math.max(1, Math.floor(plan.layer / 2)));
+  const mctx: ModCtx = { depth, seed: r.seed, layer: plan.layer, align: plan.align, motion: revealMotionEnabled() };
+  for (const mod of pickModifiers(mctx, modMax)) {
+    const stop = mod.apply(mctx, scene);
+    onSceneStop(stop);
+  }
 }
 
 /**
