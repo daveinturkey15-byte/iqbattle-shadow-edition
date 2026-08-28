@@ -1,4 +1,4 @@
-# V2 PUZZLE DNA — extracted from live iqversus.com (2026-08-25, rounds 4-5 + refs)
+# V2 PUZZLE DNA — extracted from the live original site (2026-08-25, rounds 4-5 + refs)
 
 This is the ground truth for the v2 puzzle engine. Deviations are DEFECTS.
 
@@ -18,7 +18,7 @@ This is the ground truth for the v2 puzzle engine. Deviations are DEFECTS.
 
 ## Anti-patterns (why v1 failed Dave's play test)
 - Rainbow palettes on every board (8 hues) → options indistinguishable.
-- Generic plus/cross shapes with color-rotation rules → "made up", not iqversus.
+- Generic plus/cross shapes with color-rotation rules → "made up", not original-site.
 - No whitespace discipline → wonky ultrawide layout.
 - Rules that need the answer key to understand → "puzzles don't work".
 
@@ -34,6 +34,6 @@ This is the ground truth for the v2 puzzle engine. Deviations are DEFECTS.
 - Stack: Vite + TypeScript + PixiJS v8 (`v2/` folder; old build untouched at root until parity).
 - Fixed logical stage 1600×900, letterbox-scaled to viewport (kills layout wonk forever).
 - Scenes: Boot → Landing → Lobby → Game(puzzle | takeover) → Interlude → End.
-- Puzzle engine: `families/` — each family = generate(seed,diff) + independent solve(puzzle) + render(glyphs). Families mirror REAL iqversus rules only: count-grid, accretion, rotation-composite, position-orbit, missing-section. NO color-rotation families. One hue per board from a rotating hue wheel.
-- Chaos layer: takeover stages are SEPARATE scenes the director drops into between puzzle blocks (Dave: "main gameplay is only puzzles when it's like iqversus, then the chaotic themed modes"). Never mutates a puzzle round's board.
+- Puzzle engine: `families/` — each family = generate(seed,diff) + independent solve(puzzle) + render(glyphs). Families mirror REAL original-site rules only: count-grid, accretion, rotation-composite, position-orbit, missing-section. NO color-rotation families. One hue per board from a rotating hue wheel.
+- Chaos layer: takeover stages are SEPARATE scenes the director drops into between puzzle blocks (Dave: "main gameplay is only puzzles when it's like the original site, then the chaotic themed modes"). Never mutates a puzzle round's board.
 - Gauntlet: every family ships with a solver; gauntlet runs solver audits (0 wrong answers tolerable), screenshot-vs-DNA layout diff, and a soak.

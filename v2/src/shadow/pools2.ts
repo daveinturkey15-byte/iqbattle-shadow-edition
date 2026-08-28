@@ -210,7 +210,7 @@ export type EmeraldId =
 export type FateId =
   | 'midas' | 'eclipse' | 'toll' | 'carnival_box' | 'comet' | 'poltergeist';
 
-/** Solve-flavour lines per real iqversus rule family (see puzzles/families*). */
+/** Solve-flavour lines per real original-site rule family (see puzzles/families*). */
 export const FAMILY_SOLVE: Record<FamilyId, string[]> = {
   'count-grid': [
     "Count-grid. Arithmetic wears a disguise. A thin one.",

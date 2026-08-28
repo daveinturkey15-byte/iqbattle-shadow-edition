@@ -68,7 +68,7 @@ function weaponFor(weapon, d){
   var w = WEAPONS[weapon]; return w ? Object.assign({}, w) : null;
 }
 
-/* Seeded PRNG: fnv-1a string hash -> mulberry32 (same pattern as gen_iqvs.js). */
+/* Seeded PRNG: fnv-1a string hash -> mulberry32 (same pattern as gen_iqb.js). */
 function rngFrom(seed){
   let h = 2166136261 >>> 0;
   const s = String(seed == null ? '' : seed);

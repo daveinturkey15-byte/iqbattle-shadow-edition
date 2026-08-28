@@ -1,6 +1,6 @@
 /* intro.js — IQ.Intro: boot-sequence film.
    First load per browser session (sessionStorage IQB_INTRO_SEEN): black ->
-   emerald glow -> 'IQ' fade -> 'VERSUS' slam+shake -> typed subtitle -> card.
+   emerald glow -> 'IQ' fade -> 'BATTLE' slam+shake -> typed subtitle -> card.
    Stage-3 returns replay a corrupted variant: crimson glow, glitch slam.
    Skippable on tap/keypress. Injected CSS. reduced-motion = simple fade. */
 (function () {
@@ -14,7 +14,7 @@
     black:   [0,    0],
     glow:    [250,  150],
     iq:      [1000, 650],
-    versus:  [1650, 1150],
+    battle:  [1650, 1150],
     subType: [2250, 1600],
     card:    [3600, 2700],
     hold:    [1400, 1100]   // extra dwell once card is up, then dissolve
@@ -42,8 +42,8 @@
     'text-shadow:0 0 26px #00e68a66}',
     '#iqIntro.corr .iq-iq{text-shadow:0 0 26px #e0103088}',
     '#iqIntro .iq-iq.on{opacity:1}',
-    '#iqIntro .iq-versus{font-size:9vmin;color:#00e68a;text-shadow:0 0 18px #00e68a55}',
-    '#iqIntro.corr .iq-versus{color:#ff2447;text-shadow:2px 0 #00e5ff,-2px 0 #ff0033}',
+    '#iqIntro .iq-battle{font-size:9vmin;color:#00e68a;text-shadow:0 0 18px #00e68a55}',
+    '#iqIntro.corr .iq-battle{color:#ff2447;text-shadow:2px 0 #00e5ff,-2px 0 #ff0033}',
     '@keyframes iqSlam{0%{opacity:0;transform:scale(3.2)}55%{opacity:1;transform:scale(.94)}75%{transform:scale(1.05)}100%{transform:scale(1)}}',
     '@keyframes iqGlitchSlam{0%{opacity:0;transform:scale(3.2) translateX(-6%) skewX(14deg)}',
     '18%{opacity:1;transform:scale(.92) translateX(5%) skewX(-10deg)}',
@@ -51,8 +51,8 @@
     '70%{transform:scale(1.03)}100%{transform:scale(1) translateX(0) skewX(0)}}',
     '@keyframes iqShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-9px,4px)}40%{transform:translate(7px,-5px)}60%{transform:translate(-5px,2px)}80%{transform:translate(4px,-2px)}}',
     '@keyframes iqFlicker{0%,100%{opacity:1}42%{opacity:1}44%{opacity:.25}46%{opacity:1}71%{opacity:1}72%{opacity:.4}73%{opacity:1}}',
-    '#iqIntro .iq-versus.slam{animation:iqSlam .38s cubic-bezier(.2,.9,.3,1) both,iqShake .32s ease-out .3s}',
-    '#iqIntro.corr .iq-versus.slam{animation:iqGlitchSlam .5s steps(12,end) both,iqShake .38s ease-out .38s,iqFlicker 1.4s linear .6s infinite}',
+    '#iqIntro .iq-battle.slam{animation:iqSlam .38s cubic-bezier(.2,.9,.3,1) both,iqShake .32s ease-out .3s}',
+    '#iqIntro.corr .iq-battle.slam{animation:iqGlitchSlam .5s steps(12,end) both,iqShake .38s ease-out .38s,iqFlicker 1.4s linear .6s infinite}',
     '#iqIntro .iq-sub{margin-top:2.2vmin;font-size:min(3.4vmin,15px);letter-spacing:.34em;',
     'text-transform:uppercase;color:#9fb3ab;min-height:1.4em;white-space:pre-wrap}',
     '#iqIntro.corr .iq-sub{color:#d98a99}',
@@ -67,8 +67,8 @@
     '#iqIntro .iq-card.on{opacity:1;transform:translateY(0)}',
     '@media (prefers-reduced-motion: reduce){',
     '#iqIntro .iq-glow{transition:none}',
-    '#iqIntro .iq-versus.slam,#iqIntro.corr .iq-versus.slam{animation:none;transition:opacity .4s ease}',
-    '#iqIntro.corr .iq-versus.slam{text-shadow:0 0 18px #e0103088}',
+    '#iqIntro .iq-battle.slam,#iqIntro.corr .iq-battle.slam{animation:none;transition:opacity .4s ease}',
+    '#iqIntro.corr .iq-battle.slam{text-shadow:0 0 18px #e0103088}',
     '}'
   ].join('');
 
@@ -102,7 +102,7 @@
     el.setAttribute('role', 'presentation');
     el.innerHTML =
       '<div class="iq-glow"></div>' +
-      '<div class="iq-logo"><span class="iq-iq">IQ</span><span class="iq-versus">VERSUS</span></div>' +
+      '<div class="iq-logo"><span class="iq-iq">IQ</span><span class="iq-battle">BATTLE</span></div>' +
       '<div class="iq-sub"></div>' +
       '<div class="iq-card">' + (corrupt ? 'no way back' : 'tap to begin') + '</div>';
     document.body.appendChild(el);
@@ -135,7 +135,7 @@
     el.classList.add('done', 'done-typing');
     el.querySelector('.iq-glow').classList.add('on');
     el.querySelector('.iq-iq').classList.add('on');
-    el.querySelector('.iq-versus').classList.add('slam');
+    el.querySelector('.iq-battle').classList.add('slam');
     el.querySelector('.iq-sub').textContent = corrupt ? SUB_CORRUPT : SUB_NORMAL;
     el.querySelector('.iq-card').classList.add('on');
     later(function () { dissolve(done); }, corrupt ? 700 : 900);
@@ -157,7 +157,7 @@
       el.querySelector('.iq-glow').classList.add('on');
       el.querySelector('.iq-iq').style.transition = 'none';
       el.querySelector('.iq-iq').classList.add('on');
-      var vs = el.querySelector('.iq-versus');
+      var vs = el.querySelector('.iq-battle');
       vs.style.transition = 'opacity .5s ease'; vs.style.opacity = '1';
       el.querySelector('.iq-sub').textContent = corrupt ? SUB_CORRUPT : SUB_NORMAL;
       el.querySelector('.iq-card').classList.add('on');
@@ -165,7 +165,7 @@
     } else {
       later(function () { el.querySelector('.iq-glow').classList.add('on'); }, t('glow'));
       later(function () { el.querySelector('.iq-iq').classList.add('on'); }, t('iq'));
-      later(function () { el.querySelector('.iq-versus').classList.add('slam'); }, t('versus'));
+      later(function () { el.querySelector('.iq-battle').classList.add('slam'); }, t('battle'));
       typeSubtitle(corrupt ? SUB_CORRUPT : SUB_NORMAL, t('subType'), corrupt ? 34 : 26);
       later(function () { el.querySelector('.iq-card').classList.add('on'); }, t('card') + 300);
       later(function () { dissolve(done); }, t('card') + 300 + t('hold'));

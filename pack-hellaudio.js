@@ -1,5 +1,5 @@
 /* ============================================================================
- * pack-hellaudio.js — IQ Versus: SHADOW · HELL-AUDIO hooks pack (always:true)
+ * pack-hellaudio.js — IQ Battle: SHADOW · HELL-AUDIO hooks pack (always:true)
  * ----------------------------------------------------------------------------
  * SPEC (Dave): "progressively more chaotic, more fire, blood, shaking, melting,
  * wild demons screaming audio" — NOTHING reacted to the hell-heaven LAYER depth

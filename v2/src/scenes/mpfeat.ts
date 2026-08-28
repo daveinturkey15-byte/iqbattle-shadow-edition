@@ -1,6 +1,6 @@
 /* ============================================================================
  * MP GAME FEATURES — v1 LMS/attack feature layer as pure functions + UI specs
- * for IQ Versus: SHADOW v2. Ports lms.js (Build-B semantics) onto the v2 wire
+ * for IQ Battle: SHADOW v2. Ports lms.js (Build-B semantics) onto the v2 wire
  * (src/scenes/mp.ts), which owns the protocol; THIS module owns the game rules
  * Main wires around it. Zero DOM, zero timers, zero network, zero randomness
  * outside injected RNG — every function here is deterministic and pure.

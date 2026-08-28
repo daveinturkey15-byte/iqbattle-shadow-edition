@@ -51,7 +51,7 @@ function sample(fam,d,r,hues){
   p.rule='each color holds one run, and every run lasts one tile longer';
   if(d>=3)p.rule='each color holds one run, and every run lasts twice the previous';
  }else if(fam==='rotAccum'){
-  // iqvs fix: rotation never marches alone — the shade deepens every second
+  // iqb fix: rotation never marches alone — the shade deepens every second
   // step so each tile is bound by TWO channels; this also removes the old
   // fibonacci mode's consecutive duplicate tiles (a==0 gave equal neighbours).
   // Hard mode replaces fib with widening turns: +1,+2,+3 quarters, cycling.

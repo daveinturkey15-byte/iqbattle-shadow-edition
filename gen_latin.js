@@ -1,4 +1,4 @@
-/* IQ.GenV['latin'] — iqversus-faithful color-latin grids for IQ BATTLE.
+/* IQ.GenV['latin'] — original-site-faithful color-latin grids for IQ BATTLE.
    One shape type per puzzle; exactly ONE attribute (color) varies, stepping by a
    constant k (mod 8) along every column (or every row). One punched hole.
    Options: the rule-satisfying tile + 7 decoys that each violate the color step. */

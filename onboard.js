@@ -1,4 +1,4 @@
-/* IQ Versus: Shadow — onboard.js
+/* IQ Battle: Shadow — onboard.js
  * First-run hint system. Loaded after fun.js. Shell calls
  * window.IQ.Onboard.start() when a game begins; on the very first game
  * (no localStorage flag 'IQB_ONBOARDED') it stacks three dismissible

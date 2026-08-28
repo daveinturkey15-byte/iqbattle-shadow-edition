@@ -1,5 +1,5 @@
 /* ============================================================================
- * pack-story.js — IQ Versus: SHADOW · descent mythology & redemption arc
+ * pack-story.js — IQ Battle: SHADOW · descent mythology & redemption arc
  * ----------------------------------------------------------------------------
  * SPEC (Dave): LORE AND STORY woven through runs — descent mythology +
  * sanctuary redemption beats, budgeted through the existing DemonSay channel
@@ -212,7 +212,7 @@ function chapterCard(title) {
   '@media (prefers-reduced-motion:reduce){.iq-story-card{animation:none!important;' +
   'opacity:.92!important}}</style>' +
   '<div style="font-size:11px;letter-spacing:.34em;color:#b8a6ff;' +
-  'text-shadow:0 0 10px rgba(107,75,216,.85)">IQ VERSUS \u00b7 SHADOW</div>' +
+  'text-shadow:0 0 10px rgba(107,75,216,.85)">IQ BATTLE \u00b7 SHADOW</div>' +
   '<div style="margin-top:6px;font-size:24px;font-weight:800;color:#f2ecff;' +
   'text-shadow:0 0 16px rgba(200,16,46,.65),0 2px 4px rgba(0,0,0,.9)">' +
   String(title).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>' +

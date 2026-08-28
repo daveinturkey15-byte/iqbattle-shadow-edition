@@ -1,4 +1,4 @@
-# W1 · Original iqversus.com Recon — parity baseline (2026-08-24)
+# W1 · Original-Site Recon — parity baseline (2026-08-24)
 
 Live-verified today via headless Chromium (room `14QKVJ40`, 3-round solo host match). This is the look/feel contract for rounds 1–N before the shadow diverges into W1 content.
 

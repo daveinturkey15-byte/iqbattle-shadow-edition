@@ -1,4 +1,4 @@
-/* jank-driver.cjs — READ-ONLY live feel/jank hunt for IQ Versus v2 dev (:8791).
+/* jank-driver.cjs — READ-ONLY live feel/jank hunt for IQ Battle v2 dev (:8791).
  * Own headless Chrome (:9337). Instruments main.ts in-flight (window.__Q run
  * state; repo untouched). Trusted CDP input. JSONL + screenshots + summary.
  */

@@ -24,12 +24,12 @@ Findings below state which build they apply to. Line numbers cite **Build B (cur
 `HOSTER` → HOST ROOM. Lobby title: `Room 8NLK9 — share this code!`; `G.mp={on:true,host:true,code:'8NLK9'}`; `IQ.Net.myUid()==='HOST'`; banner `OPENING ROOM 8NLK9…`.
 
 ### Step 2 — Join · PASS
-JOINER revealed code input (`#toggle-join`), entered `8NLK9`, JOIN. Both tabs then showed `#lobby-count`=2 and byte-identical rosters: `[iqvs-8NLK9/HOSTER/isHost:true, Cmt8l51jz7ow/JOINER/isHost:false]`. Repeatable in later rooms (X8U3M, EWZZ2, GB789, GJL2J).
+JOINER revealed code input (`#toggle-join`), entered `8NLK9`, JOIN. Both tabs then showed `#lobby-count`=2 and byte-identical rosters: `[iqb-8NLK9/HOSTER/isHost:true, Cmt8l51jz7ow/JOINER/isHost:false]`. Repeatable in later rooms (X8U3M, EWZZ2, GB789, GJL2J).
 
 ### Step 3 — Stage parity after START · FAIL native / PASS harness-relayed
 Host clicked START: `begin` frame reached joiner (net debug ring `begin in`), both entered `scr-play`.
-- **Build A+B**: host dealt round normally (`G.curStage='puzzle'`, `G.stageSeed=…`) but **the round frame never shipped**: `localStorage['iqvs-neterr'] === "extra is not defined"`. Root cause D1 below. Joiner stuck forever: `screen:'play', round:0, awaitingRound:true`, empty board, `DEPTH 1` label — a permanently hung lobby-to-play transition for any real same-browser pair (and any PeerJS-client too, since the crash is pre-broadcast).
-- Harness workaround: rebuilt the intended frame host-side (identical to `broadcastRound()` lines 658–664 minus the bug) and wrote it onto the game's own storage bus key (`iqvs-bus-<code>`, `src:'HOST'`). Join tab applied it through the normal `applyIncomingRound` path.
+- **Build A+B**: host dealt round normally (`G.curStage='puzzle'`, `G.stageSeed=…`) but **the round frame never shipped**: `localStorage['iqb-neterr'] === "extra is not defined"`. Root cause D1 below. Joiner stuck forever: `screen:'play', round:0, awaitingRound:true`, empty board, `DEPTH 1` label — a permanently hung lobby-to-play transition for any real same-browser pair (and any PeerJS-client too, since the crash is pre-broadcast).
+- Harness workaround: rebuilt the intended frame host-side (identical to `broadcastRound()` lines 658–664 minus the bug) and wrote it onto the game's own storage bus key (`iqb-bus-<code>`, `src:'HOST'`). Join tab applied it through the normal `applyIncomingRound` path.
 - Parity result: join mounted `round:n, curStage:'puzzle', stageSeed` **identical** to host every time (e.g. seed `1657912208`, `533493012`, `2764054303`, `1661935505`, `1876018507`, `2674715676`).
 - Sanitize check on the wire: frame keys = `t,n,timerLen,w1,stg,kind,board,oddBoard,seq,options,ord,imp` — **no `answer`/`rule`/`explanation`** (`frameHasAnswer:false`).
 
@@ -61,7 +61,7 @@ Score cards render click-bound for rivals when `G.lms&&G.mp.on` (index.html:507 
 
 **D1 · Round frame never broadcasts — multiplayer unplayable past lobby (CRITICAL, all builds)**
 `broadcastRound()`: `if(def&&def.frame){const f=def.frame();if(f&&typeof f==='object')extra=f} IQ.Net.broadcast(Object.assign(base,extra));`
-`extra` is never declared; script runs `'use strict'` → ReferenceError on every host round → swallowed into `localStorage['iqvs-neterr']` (observed value: `"extra is not defined"`). Clients hang at `awaitingRound=true` with an empty board indefinitely.
+`extra` is never declared; script runs `'use strict'` → ReferenceError on every host round → swallowed into `localStorage['iqb-neterr']` (observed value: `"extra is not defined"`). Clients hang at `awaitingRound=true` with an empty board indefinitely.
 Fix shape: declare `let extra;` (or `extra=null`) — index.html:662-664 [A: 661-662].
 
 **D2 · Storage-bus host handler whitelists only hello/pick — client→host frames silently dropped (HIGH, all builds)**
@@ -76,7 +76,7 @@ Fix shape: default-branch host inbound like the client branch (`emit(m.t,m)` aft
 index.html:842-843: `if(!G.spectating&&alive&&alive.length<=1)`. A surviving host whose hp latched `spectating` (sticky, 324) never ends an LMS match even after everyone else is eliminated. Observed live: elim fired at round 20, match still dealing at round 22+, `ends:0`.
 
 **D5 · Intermittent reveal omission of a registered pick (LOW/MEDIUM, observed once, build A, not reproduced instrumented)**
-One reveal shipped without a pick that was verifiably in `G.remotePicks` pre-answer; the following round's reveal included it (+140 late credit). Hypotheses (most→least likely): (a) dual transport paths (storage event + 400 ms poll, net.js:90-139) racing the single `state.seen` nonce map produced a late duplicate registration between reveal-build and clear (812); (b) rAF suspension in hidden headless tabs desynchronized the 1250 ms pick-hold / 1400 ms reveal timers from wall-clock expectations, letting the clear at 812 run between registration read and snapshot; (c) single-key bus (`iqvs-bus-<code>` last-value-wins, net.js:119) dropping a frame under burst. Recommend: include `n` in reveals (fixes the dedup half) and unit-smoke `onRemotePick→hostRevealBroadcast` ordering.
+One reveal shipped without a pick that was verifiably in `G.remotePicks` pre-answer; the following round's reveal included it (+140 late credit). Hypotheses (most→least likely): (a) dual transport paths (storage event + 400 ms poll, net.js:90-139) racing the single `state.seen` nonce map produced a late duplicate registration between reveal-build and clear (812); (b) rAF suspension in hidden headless tabs desynchronized the 1250 ms pick-hold / 1400 ms reveal timers from wall-clock expectations, letting the clear at 812 run between registration read and snapshot; (c) single-key bus (`iqb-bus-<code>` last-value-wins, net.js:119) dropping a frame under burst. Recommend: include `n` in reveals (fixes the dedup half) and unit-smoke `onRemotePick→hostRevealBroadcast` ordering.
 
 **D6 · Cosmetic:** recurring console `404` for `/favicon.ico` (no favicon asset). No other console errors/pageerrors captured in any phase; audio/AU warnings none.
 
@@ -91,7 +91,7 @@ One reveal shipped without a pick that was verifiably in `G.remotePicks` pre-ans
 ## Console error log (per step)
 | Phase | Tab | Entry |
 |---|---|---|
-| every host round | host | `localStorage['iqvs-neterr'] = "extra is not defined"` (D1; written via catch, not console.error — visible as persistent artifact) |
+| every host round | host | `localStorage['iqb-neterr'] = "extra is not defined"` (D1; written via catch, not console.error — visible as persistent artifact) |
 | step2 / step5 / step6 / step6b | join | `Failed to load resource: 404` → `/favicon.ico` (D6) |
 | all phases | both | no `pageerror`, no other console errors/warnings captured |
 | PeerJS | both | `unpkg.com/peerjs@1.4.7` 200; `0.peerjs.com` broker 200; data channel never opened (bus carried all traffic) |
@@ -101,7 +101,7 @@ Driver = browser-tool evaluate snippets; no game file modified. Core primitives 
 - `__qaDrive.setVal/click` — native setter + `el.click()` (puppeteer actionability times out on animated overlays).
 - Banner recorder: MutationObserver on `.event-banner` (auto-removed ≤1400 ms).
 - Outbound frame tap: wraps `IQ.Net.broadcast/send` (inbound frames reach neither tap nor `__qa.frames`; use `IQ.Net.debugLog()` for inbound).
-- Round relay (works around D1): host stashes `JSON.stringify(Object.assign({t:'round',n,timerLen,stg:{id,seed}}, def.frame()))` → harness writes `{bc:1,src:'HOST',_n:<fresh>}` onto `iqvs-bus-<code>` → client poll applies it (400 ms).
+- Round relay (works around D1): host stashes `JSON.stringify(Object.assign({t:'round',n,timerLen,stg:{id,seed}}, def.frame()))` → harness writes `{bc:1,src:'HOST',_n:<fresh>}` onto `iqb-bus-<code>` → client poll applies it (400 ms).
 - Deterministic answering (QA introspection only): host `IQ.Stage.get(stage).describe()` → `ord.indexOf(answer)`; identical display order both sides via frame `ord`.
 - Attack prompt: Node-side `page.on('dialog')` must be re-registered per weapon choice (first handler persists otherwise).
 - State reads: function-form `tab.evaluate` reaches page globals (`G`, `IQ`); string-form evaluates in an isolated world (DOM shared, JS heap not).

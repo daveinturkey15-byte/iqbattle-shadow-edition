@@ -182,7 +182,7 @@ export const dotMatrixRotate: Family = {
 };
 
 /* ========================================================================
- * LINE REFLECTION — real iqversus mirror family: a 2×2 of line-segment
+ * LINE REFLECTION — real original-site mirror family: a 2×2 of line-segment
  * figures on a 3×3 point lattice. The right column mirrors the left
  * horizontally (across the figure's vertical center axis); the bottom row
  * mirrors the top vertically. Hole = double mirror = 180° rotation of the

@@ -1,4 +1,4 @@
-/* IQ Versus: Shadow — gfx-title.js
+/* IQ Battle: Shadow — gfx-title.js
  * Boot + menu title motion upgrade. Presentation ONLY: no game logic,
  * no scoring. Self-initialising; observes body class changes (stage
  * machine act-0..act-3) and section visibility. Everything degrades

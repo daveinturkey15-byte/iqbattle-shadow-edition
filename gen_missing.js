@@ -1,5 +1,5 @@
 /* IQ.Gens['missingSec'] — MISSING-SECTION generator pack for IQ BATTLE (W1).
- * Faithful to the ORIGINAL iqversus 'missing section' family
+ * Faithful to the original site's 'missing section' family
  * (research/w1-original-recon.md#17): a larger REPEATING pattern field
  * (6x6 leaf cells tiled from 2x2 / 2x3 motif blocks — cube / flower /
  * lattice motifs) with one whole rectangular SECTION removed.
@@ -112,7 +112,7 @@ function generate(opts){
   var meta={bw:bw,bh:bh,BGX:BGX,BGY:BGY,rule:rule,pal:pal,h0:h0,sx:sx,sy:sy,
             rotA:rotA,rotB:rotB,shape:shape,template:template};
 
-  /* --- pick the removed section: iqvs convention pins it bottom-right --- */
+  /* --- pick the removed section: iqb convention pins it bottom-right --- */
   var holeBX=BGX-1,holeBY=BGY-1;
   var holeIndex=holeBY*BGX+holeBX;
 

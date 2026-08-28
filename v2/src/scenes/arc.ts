@@ -90,7 +90,7 @@ export function applyArc(scene: Container, plan: ArcPlan): void {
   if (plan.sanctuary) sanctuaryOn(scene);
 }
 
-/** Full-chrome revert to faithful original-iqversus tokens ("the light remembers you"). */
+/** Full-chrome revert to faithful original-site tokens ("the light remembers you"). */
 export function sanctuaryOn(scene: Container): void {
   const st = ensureState(scene);
   if (!st.sanctuary) {

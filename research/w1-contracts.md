@@ -42,7 +42,7 @@ Host `broadcastRound()` adds ONE optional field:
 - Attacks: new client→host frame `{t:'attack', targetUid, weapon:'rotten'|'curse'}` costing attacker points (constants from BalanceModel); host validates affordability, applies −N to target, includes results in next reveal scores[] (no extra frame type needed for state).
 
 ## C8 · Parity rule (first rounds identical)
-While `G.round <= 2 && !anyW1Flagged`: no world skins, no dim modes, no retro, no amp beats — pure baseline clone matching iqversus.com tokens (research/w1-original-recon.md). Divergence begins round 3+ (or immediately if host toggles W1 OFF→ shadow classic).
+While `G.round <= 2 && !anyW1Flagged`: no world skins, no dim modes, no retro, no amp beats — pure baseline clone matching original-site tokens (research/w1-original-recon.md). Divergence begins round 3+ (or immediately if host toggles W1 OFF→ shadow classic).
 
 ---
 

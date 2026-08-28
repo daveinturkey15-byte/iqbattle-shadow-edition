@@ -1,5 +1,5 @@
 # PLAN — RESTORE THE VISION
-### IQ Versus: SHADOW · written 2026-08-26 for the next model
+### IQ Battle: SHADOW · written 2026-08-26 for the next model
 
 > Owner, after playing the current build:
 > *"the game is feeling good but defo a lot less chaotic and fun than the original
@@ -20,12 +20,12 @@ But the rebuild only ported the *systems*, not the *density*. v1 had 89 root
 scripts and 25+ "army packs" firing constantly; v2 has **four fate modules
 holding 28 text banners between them**. And critically, **the chaos only lives
 in takeover rounds** — which are roughly 1 round in 3. The other two-thirds are
-puzzle rounds, and a v2 puzzle round is pixel-clean vanilla IQ Versus with, at
+puzzle rounds, and a v2 puzzle round is pixel-clean vanilla IQ Battle with, at
 best, one line of pink text over it.
 
 The owner's spec says the opposite:
 
-> *"yes it's predominantly like a puzzle game like [IQ Versus] and will mainly
+> *"yes it's predominantly like a puzzle game like [IQ Battle] and will mainly
 > revert to that **but there'll be alterations of the gameplay**"*
 
 **That is the gap.** The puzzle round — the thing you spend most of the game
@@ -73,7 +73,7 @@ in a run. **TEXT** = exists only as a banner string. **MISSING** = not present.
 
 | Ask | Status |
 |---|---|
-| Predominantly puzzle, reverting to IQ Versus between chaos | ✅ LIVE |
+| Predominantly puzzle, reverting to IQ Battle between chaos | ✅ LIVE |
 | Mostly bad/evil, ~1 in 5–6 good round that heals | ✅ LIVE (`arc-data.ts`) |
 | Endless, no round limit, play until you die | ✅ LIVE (2000-depth plan = effectively endless) |
 | No difficulty setting | ✅ LIVE (ramps off depth only) |

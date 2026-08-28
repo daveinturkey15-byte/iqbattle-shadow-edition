@@ -61,7 +61,7 @@ export function headerBar(parent: Container, opts: HeaderOpts = {}): Container {
   if (opts.logo) {
     richLine(bar, 130, 18, [
       { str: 'IQ ', color: T.accentB },
-      { str: 'VERSUS', color: T.accentA },
+      { str: 'BATTLE', color: T.accentA },
     ], 22);
   } else if (opts.leftLabel) {
     makePillLink(bar, 40, 18, opts.leftLabel, opts.onLeft ?? (() => undefined));

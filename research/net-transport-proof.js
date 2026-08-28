@@ -94,7 +94,7 @@ function makeWorld(seed) {
     seed, rng, now: 0,
     store: new Map(),          // shared localStorage backing store
     tabs: [],                  // participants listening for storage events
-    peers: {},                 // PeerJS registry: 'iqvs-<code>' -> {peer}
+    peers: {},                 // PeerJS registry: 'iqb-<code>' -> {peer}
     errors: [],                // uncaught exceptions inside scheduled fns
     consoleErr: [],            // console.error output from realms
     arrivals: {},              // transport-level arrivals keyed by frame id

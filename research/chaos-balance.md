@@ -1,4 +1,4 @@
-# Chaos Pacing Design — IQ Versus: Shadow
+# Chaos Pacing Design — IQ Battle: Shadow
 
 *Author: ChaosBalance. Grounded in `shadow.js` `Shadow.TIMELINE` (L202–231), `index.html` stage gates (L255–296) + answer flow (L393–430), `chaos.js` effects API (`setAct`, `setIntensity`, `embers`, `shake`, `glitch`, `flash`, `invert`, `pulse`).*
 

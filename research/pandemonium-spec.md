@@ -3,9 +3,9 @@
 *Author: EngineSpec. This is the contract Main integrates the expansion lanes against.*
 
 **Sources (merged):**
-- **(a) v1 capture** — PuzzleResearch's iqversus.com capture (raw evidence: headless-profile localStorage keys `rsh_caps` = gauntlet-1, `rsh2_0..9` + `rsh2_idx` = gauntlet-2 with per-tile base64 PNGs; report delivered to Main).
+- **(a) v1 capture** — PuzzleResearch's original-site capture (raw evidence: headless-profile localStorage keys `rsh_caps` = gauntlet-1, `rsh2_0..9` + `rsh2_idx` = gauntlet-2 with per-tile base64 PNGs; report delivered to Main).
 - **(b) sibling specialist contracts** — `gen_morph.js` (GenMorph), `gen_sets.js` (GenSets), `gen_shade.js` (GenShade). All three verified live on disk: each registers into `IQ.Gens2`, `generate({difficulty,seed})` returns a valid puzzle, `validate(p) → {ok,errors[]}` passes.
-- **(c) engine cell shape** — `puzzles.js` / `gen_iqvs.js`: cell `{shape,color,rot}`, tile `{cols,rows,cells}`.
+- **(c) engine cell shape** — `puzzles.js` / `gen_iqb.js`: cell `{shape,color,rot}`, tile `{cols,rows,cells}`.
 
 ---
 
@@ -22,7 +22,7 @@ root.IQ.Gens2[rootName] = { name, generate(opts), validate(p), selfTest?, explai
 - `selfTest(n=100)` → `{pass, fail, details}` — validate + determinism + uniqueness across kinds × difficulties. Run via `node gen_<name>.js`.
 - RNG: mulberry32 exactly as `IQ.Puzzles` (`a|=0; a=(a+0x6D2B79F5)|0; t=Math.imul(a^(a>>>15),1|a); …`), wrapped in an `Rng{f,int,chance,pick,range,shuffle}` helper. Seed derivation: `(opts.seed != null ? opts.seed : (Date.now() ^ Math.random()*1e9)) >>> 0`; seed echoed in `id`.
 
-> **Legacy note:** `gen_iqvs.js` and `gen_latin.js` assign `root.IQ.GenV = api`, overwriting each other on load order. New modules MUST use the `IQ.Gens2[name]` namespace above; Main's gauntlet runner reads `IQ.Gens2` only.
+> **Legacy note:** `gen_iqb.js` and `gen_latin.js` assign `root.IQ.GenV = api`, overwriting each other on load order. New modules MUST use the `IQ.Gens2[name]` namespace above; Main's gauntlet runner reads `IQ.Gens2` only.
 
 ## 1. Core data model
 
@@ -107,7 +107,7 @@ Glyph vocab (capture): square, h-bar, v-bar, circle, ellipse, ring, hollow-squar
 Universal invariants (all archetypes):
 - Exactly **one** rule-satisfying option among the 8; it sits at `options[answer]`, answer slot uniform-random.
 - Options pairwise unique under canonical key (order-insensitive JSON deep-equal).
-- **Deliberate divergence from capture:** iqversus.com sometimes ships duplicate correct-looking options (observed 3 identical). We do NOT — uniqueness is enforced by every validator. Better UX, and reveal highlighting needs distinct nodes.
+- **Deliberate divergence from capture:** the original site sometimes ships duplicate correct-looking options (observed 3 identical). We do NOT — uniqueness is enforced by every validator. Better UX, and reveal highlighting needs distinct nodes.
 
 | Archetype | Decoy recipe (priority order) |
 |---|---|
@@ -150,7 +150,7 @@ Implementations:
 - latin/shade: scan both axes × all steps k against visible gaps; hole color must be the UNIQUE rule-admitting candidate (`acceptableHoleColors` pattern from `gen_latin.js`; shade restricts to family membership, recovering `(base,step) mod 3`).
 - sets: hole's row and column each miss exactly one class, both the SAME class, equal to the answer; every decoy violates the set rule.
 - morph: detect period L∈{3,4} from pairwise-distinct visible frames; expected = `frames[8 % L]`; exactly one option matches canonically.
-- capture-faithful four (`colorRow/colorCol/latinSquare3/hueStepDiag`): derive truth from the hole's row/column/(x+y)/reading-order position as in `gen_iqvs.js`; decoys must fail the derived rule under the §4 priority mutations.
+- capture-faithful four (`colorRow/colorCol/latinSquare3/hueStepDiag`): derive truth from the hole's row/column/(x+y)/reading-order position as in `gen_iqb.js`; decoys must fail the derived rule under the §4 priority mutations.
 
 Determinism check: `JSON.stringify(generate({difficulty:d, seed:s}))` identical across two calls, for sampled (d,s) pairs — part of selfTest.
 

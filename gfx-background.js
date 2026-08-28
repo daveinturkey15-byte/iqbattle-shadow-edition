@@ -1,4 +1,4 @@
-/* IQ.GfxBg — animated stage-reactive background layer for IQ VERSUS.
+/* IQ.GfxBg — animated stage-reactive background layer for IQ BATTLE.
  * Canvas fixed behind #app (z-index 0). Stage 0: drifting dot-grid +
  * slow luxe-navy gradient shift. Stage 1: faint crimson mist drift.
  * Stage 2: ember sparks + darker breathing vignette. Stage 3: full

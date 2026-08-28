@@ -1,4 +1,4 @@
-/* IQ.Shadow — corruption persona for IQ VERSUS (degrades into IQ VERSUS: SHADOW).
+/* IQ.Shadow — corruption persona for IQ BATTLE (degrades into IQ BATTLE: SHADOW).
    Text quips + original abstract SVG silhouette only. No copyrighted assets. */
 (function () {
   'use strict';

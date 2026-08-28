@@ -9,7 +9,7 @@
  * ██████  S E C U R I T Y   W A R N I N G  —  R E A D   T H I S  ██████
  * █                                                                   █
  * █  THE ROUND PAYLOAD MUST NEVER CONTAIN THE ANSWER ON THE CLIENT.   █
- * █  The original iqversus.com is server-authoritative: the server     █
+ * █  The original site is server-authoritative: the server             █
  * █  knows which option is correct and NEVER tells the browser during  █
  * █  play (only at reveal). We have no server on GitHub Pages, so the  █
  * █  HOST is the authority. That means ANY code that builds the        █
@@ -58,7 +58,7 @@
  *   - Bus nonces are '<uid>.<counter>.<ts>': strictly unique per sender, so
  *     back-to-back reveal+round bursts can never collide into a false
  *     "already seen" (old Date.now()+Math.random lost ~78 frames per seed).
- *   - Outbox rings are PER-WRITER ('iqvs-bus-<code>-ob-<uid>-<salt>', 256
+ *   - Outbox rings are PER-WRITER ('iqb-bus-<code>-ob-<uid>-<salt>', 256
  *     slots, >10s entries pruned on write): only the writer ever mutates its
  *     own ring (zero cross-tab read-modify-write race) and readers NEVER
  *     delete — every poll-only tab independently drains the full stream.
@@ -71,7 +71,7 @@
   var root = typeof window !== 'undefined' ? window : globalThis;
   root.IQ = root.IQ || {};
 
-  var MAX_ID_RETRIES = 8;        // iqvs-CODE, iqvs-CODE2, ... before giving up
+  var MAX_ID_RETRIES = 8;        // iqb-CODE, iqb-CODE2, ... before giving up
   var ID_CHARS = /^[A-Z0-9]{3,12}$/;
 
   // ---- session state -------------------------------------------------------
@@ -103,7 +103,7 @@
     } catch (e) {}
   }
   /* ---- storage-event transport (same-browser, file://-proof).
-   * Frames JSON'd into localStorage key 'iqvs-bus-<code>'; 'storage' events
+   * Frames JSON'd into localStorage key 'iqb-bus-<code>'; 'storage' events
    * fire in every OTHER tab sharing the origin. */
   var BC_ID_HOST = 'HOST';
   var lsKey = null, lsMyId = null, lsBoxId = null, obSeq = 0;
@@ -195,7 +195,7 @@
       if (!m || !m._n || m._n === lsLastNonce) return;
       lsLastNonce = m._n;
       try { lsHandler({ key: lsKey, newValue: raw }); }
-      catch (e) { try { root.localStorage.setItem('iqvs-neterr', String((e && e.message) || e) + ' :: ' + String((e && e.stack) || '').slice(0, 400)); } catch (_e) {} }
+      catch (e) { try { root.localStorage.setItem('iqb-neterr', String((e && e.message) || e) + ' :: ' + String((e && e.stack) || '').slice(0, 400)); } catch (_e) {} }
     } catch (e) {}
   }
   function startPoll() { if (!lsPollTimer) lsPollTimer = setInterval(lsPoll, 400); }
@@ -204,7 +204,7 @@
     if (typeof root.localStorage === 'undefined' || typeof root.addEventListener === 'undefined') return false;
     bcClose();
     try {
-      lsKey = 'iqvs-bus-' + code;
+      lsKey = 'iqb-bus-' + code;
       lsMyId = myId;
       // one ring identity per session: rebound codes reuse it, a NEW session
       // (different myId, or post-teardown) gets a fresh salt so old rings are
@@ -218,7 +218,7 @@
   }
   function bcClose() {
     try { root.removeEventListener('storage', lsHandler); } catch (e) {}
-    try { root.localStorage.removeItem('iqvs-bus-' + state.code); } catch (e) {}
+    try { root.localStorage.removeItem('iqb-bus-' + state.code); } catch (e) {}
     try { if (lsKey && lsBoxId) root.localStorage.removeItem(lsKey + '-ob-' + lsBoxId); } catch (e) {}
     lsKey = null; stopPoll();
   }
@@ -385,7 +385,7 @@
     return typeof root.Peer === 'function';
   };
 
-  /* Host a room. Resolves {code} once our Peer id is live. If `iqvs-CODE`
+  /* Host a room. Resolves {code} once our Peer id is live. If `iqb-CODE`
    * is taken on the broker we retry with numeric suffixes (CODE2, CODE3...). */
   Net.host = function (roomCode, displayName) {
     return new Promise(function (resolve, reject) {
@@ -407,7 +407,7 @@
 
       function tryOpen() {
         attempt++;
-        var id = 'iqvs-' + base + (attempt > 1 ? String(attempt) : '');
+        var id = 'iqb-' + base + (attempt > 1 ? String(attempt) : '');
         var peer = new root.Peer(id, { debug: 1 });
         state.peer = peer;
         peer.on('open', function () {
@@ -499,7 +499,7 @@
         tryN++;
         var conn;
         try {
-          conn = peer.connect('iqvs-' + code, { reliable: true, serialization: 'json' });
+          conn = peer.connect('iqb-' + code, { reliable: true, serialization: 'json' });
         } catch (e) { scheduleRetry(); return; }
         state.hostConn = conn;
         wire(conn);

@@ -44,7 +44,7 @@ own header ("port of frozen-v1 X") and this session's wave reports
 | `gen_sets.js` ('sets') | — | QUEUED | Set-completion (shape classes per row/col) is fully structural; strong candidate. |
 | `gen_depth.js` ('compound','relay'), `gen_depth2.js` ('parquet','pendulum') | — | QUEUED | Deep-composition families; audited designs exist in v1 to mine. |
 | `gen_wild.js` ('wild') | — | QUEUED | Rule-twist corruption mode; deferred until DNA-real set exhausted. |
-| `gen_dual.js`, `gen_iqvs.js`, `gen_latin.js`, `gen_shade.js` | — | N/A | Color/hue-step rules — banned by DNA rule 1 + anti-patterns. |
+| `gen_dual.js`, `gen_iqb.js`, `gen_latin.js`, `gen_shade.js` | — | N/A | Color/hue-step rules — banned by DNA rule 1 + anti-patterns. |
 | `gen_seqpack.js` (sequences) | — | N/A | Arithmetic *color*-step sequences; structural sequence variant folded into QUEUED ideas above. |
 | `gen_retro_a.js`, `gen_retro_b.js` (retro puzzle envelopes feeding retro-* stages) | takeover scenes own their logic | N/A | Superseded: each v2 takeover is a self-contained scene with its own seeded sim + `selfTest()`. |
 

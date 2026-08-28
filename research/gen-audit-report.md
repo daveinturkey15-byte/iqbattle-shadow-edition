@@ -58,7 +58,7 @@ the same "near-identical options" class as the QA report.
 
 | Verdict | Family | Rule sentence | Notes |
 |---|---|---|---|
-| **FIXED** | missing section | e.g. "each band of the field keeps one face color" (+ rotation/spacing clauses) | The removed SECTION position was RANDOM (`r.int(BGX/BGY)`) — this is the QA screenshot's TOP-LEFT hole. Pinned to bottom-right unconditionally (iqversus convention); `validate()` now rejects any other holeIndex. Decoy sections remain phase-shift/orientation/color single-mutations; 40-sample re-audit clean. |
+| **FIXED** | missing section | e.g. "each band of the field keeps one face color" (+ rotation/spacing clauses) | The removed SECTION position was RANDOM (`r.int(BGX/BGY)`) — this is the QA screenshot's TOP-LEFT hole. Pinned to bottom-right unconditionally (original-site convention); `validate()` now rejects any other holeIndex. Decoy sections remain phase-shift/orientation/color single-mutations; 40-sample re-audit clean. |
 
 ## modes/mode-puzzle.js — generator tables (table lines only)
 
@@ -68,7 +68,7 @@ the same "near-identical options" class as the QA report.
   (gen_rotate.js:144). This is the exact puzzle in
   `research/refs/qa-depth6-puzzle.webp`: triangle-only grid, hole anywhere,
   near-identical options.
-- iqvs kept/boosted dominant early (tier<=2), latin/cycle retained beside it;
+- iqb kept/boosted dominant early (tier<=2), latin/cycle retained beside it;
   count/dual/wild weights untouched; retroA/retroB gate untouched.
 - **HANDOFF (not my files):** `modes/floorfall.js`, `modes/hunterdodge.js`,
   `modes/laserstorm.js`, `modes/dronedodge.js` carry copy-pasted tables that

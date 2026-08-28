@@ -3,7 +3,7 @@ import { T, STAGE_W } from '../theme.ts';
 import { panel, text } from './game.ts';
 import { edgeRect, headerBar, makeButton, makeTextInput, richLine } from './shell.ts';
 
-/** Faithful iqversus landing (per DNA + recon): header (logo · HOW TO PLAY · SIGN IN),
+/** Faithful original-site landing (per DNA + recon): header (logo · HOW TO PLAY · SIGN IN),
  * hero H1 with accent "IQ-style", three feature cards, Create-A-Room card.
  * No navigation logic inside — everything routes through the callbacks. */
 
@@ -80,7 +80,7 @@ export function buildLanding(cb: LandingCallbacks): Container {
 
   richLine(card, cw / 2, 28, [
     { str: 'IQ ', color: T.accentB },
-    { str: 'VERSUS', color: T.accentA },
+    { str: 'BATTLE', color: T.accentA },
   ], 32);
   const sub = text(card, 'abstract reasoning · corrupted', 0, 72, 11, T.muted);
   sub.style.letterSpacing = 2;

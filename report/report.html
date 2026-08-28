@@ -35,14 +35,14 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 <div style="font-size:9.5pt;line-height:1.5;color:#e8dcd2">
 <b style="color:#00e68a">iPhone blocker fixed.</b> Play-testing on iPhone revealed the landing overflowed small screens and Create Room hung on the broker. Landing rebuilt mobile-first: <b>PLAY SOLO</b> / <b>HOST ROOM</b> (join-by-code tucked away), 3.5s broker timeout race, iOS-zoom-safe inputs. Verified on emulated iPhone 390×844 with real touch events: landing fits with zero overflow, all 8 options tappable, solo + host + join flows PASS on the live deployment.<br><br>
 <b style="color:#00e68a">Multiplayer scoring rebuilt host-authoritative.</b> Swarm testing exposed that clients could never truly score (picks unwired, name-collision score crossover). Now: clients send uid-stamped picks; host computes and broadcasts accumulated scores; clients apply by uid (same-name tabs can never cross-apply). Verified 2-player mobile-viewport end-to-end on live: 280/240 scoreboards identical cross-tab.<br><br>
-<b style="color:#00e68a">Puzzles rebuilt from captured ground truth.</b> 20 live iqversus rounds captured with per-tile data and reveal-verified answers. Real recipe decoded: 2×2/3×3 grids, bottom-right hole, six archetypes (color-by-row/column, Latin-square, diagonal hue-step, morph sequences, categorical completion), 7-hue flat palette, duplicates-allowed decoys. New primary generator implements this; six competing variant generators (color-latin, rotation, count, shape-cycle, dual-axis, wild-corruption) stage-gated behind it.<br><br>
+<b style="color:#00e68a">Puzzles rebuilt from captured ground truth.</b> 20 live original-site rounds captured with per-tile data and reveal-verified answers. Real recipe decoded: 2×2/3×3 grids, bottom-right hole, six archetypes (color-by-row/column, Latin-square, diagonal hue-step, morph sequences, categorical completion), 7-hue flat palette, duplicates-allowed decoys. New primary generator implements this; six competing variant generators (color-latin, rotation, count, shape-cycle, dual-axis, wild-corruption) stage-gated behind it.<br><br>
 <b style="color:#00e68a">Fidelity + a11y + graphics.</b> Oxanium webfont, 4-stop signature gradient, near-black panels, black option cells with hairline borders, 30px round header — top-10 visual deltas from a computed-style side-by-side audit applied. Animated hellscape background, board corner-brackets, deal-in tile staggers, title drips. Keyboard/touch/ARIA fixes: relic cards and options now keyboard-reachable, modifier-guarded number keys, idempotent reveals.<br><br>
 <b style="color:#00e68a">Swarm total:</b> 36 sub-agents across 3 mega-waves. Live verification: full solo gauntlet (10 rounds, all stages, emeralds, results, zero JS errors), 2-player MP (join→sync→pick→reveal→scores by uid), mobile 375px + 390×844 passes.
 </div></div>
 
 
-<h1>IQ <span>VERSUS</span> → IQ VERSUS: <em>SHADOW</em></h1>
-<div class="sub">Rebuild report · reverse-engineered from iqversus.com · delivered 2026-08-23</div>
+<h1>THE <span>ORIGINAL</span> → IQ BATTLE: <em>SHADOW</em></h1>
+<div class="sub">Rebuild report · reverse-engineered from the original site · delivered 2026-08-23</div>
 
 <div class="kv">
 <div><b>2,400+</b><small>lines of code</small></div>
@@ -52,7 +52,7 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 </div>
 
 <h2>1 · What Was Asked vs What Was Built</h2>
-<p>A rebuild of IQ Versus that <b>looks and feels identical to the original at first</b> — same luxe dark-navy UI, same puzzle format, same flow — then degenerates into a chaotic evil meta-game: a mid-round-1 power-cut “zap”, subtle wrongness in round 2, and full Shadow-the-Hedgehog-flavored corruption from round 3 onward, ending as <b>IQ VERSUS: SHADOW</b>. Plus: real room-code multiplayer hostable on GitHub Pages, a puzzle forge, and far less frequent ability picks so the game stays playable.</p>
+<p>A rebuild of IQ Battle that <b>looks and feels identical to the original at first</b> — same luxe dark-navy UI, same puzzle format, same flow — then degenerates into a chaotic evil meta-game: a mid-round-1 power-cut “zap”, subtle wrongness in round 2, and full Shadow-the-Hedgehog-flavored corruption from round 3 onward, ending as <b>IQ BATTLE: SHADOW</b>. Plus: real room-code multiplayer hostable on GitHub Pages, a puzzle forge, and far less frequent ability picks so the game stays playable.</p>
 
 <h2>2 · The Original: Findings From Live Inspection + Client-Bundle Analysis</h2>
 <table>
@@ -66,7 +66,7 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 </table>
 
 <h2>3 · Security Review</h2>
-<h3>iqversus.com</h3>
+<h3>The original</h3>
 <table>
 <tr><th>#</th><th>Finding</th><th>Verdict</th></tr>
 <tr><td>1</td><td>Server-authoritative answering — answer key never in client bundle; anti-replay round caching</td><td class="pass">STRONG</td></tr>
@@ -75,7 +75,7 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 <tr><td>4</td><td>Optimistic versioning on settings prevents host/co-host race conditions</td><td class="pass">GOOD</td></tr>
 <tr><td>5</td><td>No secrets/PII in bundle; minimal localStorage</td><td class="pass">OK</td></tr>
 </table>
-<h3>IQ Versus: Shadow</h3>
+<h3>IQ Battle: Shadow</h3>
 <p>Same good pattern applied: the host broadcasts rounds <b>with the answer stripped</b> (<code>IQ.Net.sanitizeRound</code>); clients send picks; host sends reveals. Fully offline-capable; zero network calls in solo; data confined to localStorage; no eval, no external assets beyond the PeerJS CDN.</p>
 
 <h2>4 · Architecture</h2>
@@ -92,7 +92,7 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 
 <h2 class="pb">5 · Fidelity: Original vs Clone</h2>
 <table>
-<tr><th></th><th>IQ Versus</th><th>Clone (Act 0)</th></tr>
+<tr><th></th><th>The original</th><th>Clone (Act 0)</th></tr>
 <tr><td>Branding/flow</td><td>Name + room → create/join by code → lobby (rounds/timer) → match</td><td>Identical flow; code-based join</td></tr>
 <tr><td>Look</td><td>Navy luxe, blue→pink accents, pill buttons, 8-tile grid, scoreboard</td><td>Pixel-matched tokens; verified by screenshot diff against live site</td></tr>
 <tr><td>Puzzle format</td><td>Matrix + “?” + 8 tiles</td><td>Same, + sequence & odd-one-out kinds; same decoy philosophy</td></tr>
@@ -101,7 +101,7 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 
 <h2>6 · The Evil Layer (new)</h2>
 <ul>
-<li><b>Slow-burn arc:</b> zap mid-R1 → one wrong thing in R2 → palette drain @R3 → crimson @R5 → full Shadow realm @R7 (title becomes <b>IQ VERSUS: SHADOW</b>).</li>
+<li><b>Slow-burn arc:</b> zap mid-R1 → one wrong thing in R2 → palette drain @R3 → crimson @R5 → full Shadow realm @R7 (title becomes <b>IQ BATTLE: SHADOW</b>).</li>
 <li><b>Shadow persona:</b> deadpan quips (“Welcome to the shadow realm.”), optional pitched-down robot voice, original silhouette avatar — no copyrighted assets.</li>
 <li><b>Chaos Emeralds</b> (only rounds 3/6/9 — unhurried by design): CHAOS CONTROL (saves you from impossible rounds), DOOM BLOOM, GRAVITY GREED, BLACK ARROW, CRIMSON VEIL, FINAL CHAOS — each a real tradeoff.</li>
 <li><b>Corrupted & impossible puzzles:</b> from R4 the house quietly breaks patterns; from R6 some rounds have <i>no valid answer</i> — survivable via emeralds, otherwise everyone bleeds together. The joke always has a counterplay.</li>
@@ -140,7 +140,7 @@ ul{margin:1mm 0 2.2mm 4.2mm}li{margin-bottom:.9mm}
 <li>Forge authors matrix-kind puzzles only (by design — it matches the original’s core format).</li>
 </ul>
 
-<div class="footer">IQ Versus: Shadow rebuild report · local build at Desktop/stuff/iqbattle/ · original analyzed via live play + public client bundle (iqversus.com, 2026-08-23) · this document generated locally</div>
+<div class="footer">IQ Battle: Shadow rebuild report · local build at Desktop/stuff/iqbattle/ · original analyzed via live play + public client bundle (the original site, 2026-08-23) · this document generated locally</div>
 
 </body>
 </html>

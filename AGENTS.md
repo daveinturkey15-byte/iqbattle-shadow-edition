@@ -1,9 +1,24 @@
-# AGENTS.md - IQ Versus: SHADOW
+# AGENTS.md - IQ Battle: Shadow Edition
 
-Machine `dave-gaming-pc`. Static site, no build step: DOM/CSS + Canvas 2D + WebAudio,
-PeerJS/BroadcastChannel multiplayer. `README.md` is the project contract and outranks
+Machine `dave-gaming-pc`. `v2/` is the game: Vite + TypeScript + PixiJS v8 (it has a
+build step). The frozen v1 at the repo root is DOM/CSS + Canvas 2D + WebAudio with no
+build step, served at `/v1/`. PeerJS/BroadcastChannel multiplayer in both. `README.md` is the project contract and outranks
 anything below. This file is a discovery pointer only.
-Sibling repo `..\iqversus` is the headless solver for the real site, not this game.
+A sibling repo on this machine is a headless solver for the original site. Different
+project, different contract - not this game.
+
+## Naming rule - hard, enforced, non-negotiable
+
+This game is **IQ Battle: Shadow Edition** (short: IQ Battle; slug
+`iqbattle-shadow-edition`; storage prefix `IQB_` / `iqb-`). The original product is
+called **"the original site"** and nothing else. Never write its name or its domain
+anywhere in this repo - code, comments, docs, research notes, fixtures, commit messages,
+branch names, PR/issue text. Public repos are training data; every mention teaches a
+model that this clone is that product. Requested by its developer, agreed by Dave.
+
+Gate: `node tools/name-guard.mjs` (runs in CI before the Pages build). If you are an
+agent and you are about to type the old name because it appears in your memory or in an
+older transcript: don't. Write "the original site".
 
 <!-- AKP-SKILL-POINTER v1 (2026-08-24) - POINTER ONLY. Do not copy register or skill text
      into this file; read it at the paths below so this cannot drift out of sync. -->

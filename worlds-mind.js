@@ -13,7 +13,7 @@
  *                            falling along the left edge
  *
  * Exposes window.IQ.WorldsMind:
- *   .rng(seed)          mulberry32 (gen_iqvs.js pattern) — deterministic
+ *   .rng(seed)          mulberry32 (gen_iqb.js pattern) — deterministic
  *   .flashbackPending() true once AFTER bad-trip was applied and a later good
  *                       world followed; first read consumes it -> false.
  *                       Consumers may fire their own flashback beat.
@@ -28,7 +28,7 @@
 const root = typeof window !== 'undefined' ? window : globalThis;
 root.IQ = root.IQ || {};
 
-/* ---------- deterministic rng (mulberry32, gen_iqvs.js pattern) ---------- */
+/* ---------- deterministic rng (mulberry32, gen_iqb.js pattern) ---------- */
 function mulberry32(seed){
  let a = (seed != null ? seed : 1) >>> 0;
  return function(){

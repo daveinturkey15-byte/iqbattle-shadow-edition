@@ -1,4 +1,4 @@
-// content_prompts.js — evil-flavored puzzle prompts for IQ Versus: Shadow
+// content_prompts.js — evil-flavored puzzle prompts for IQ Battle: Shadow
 // Shown above boards. Each <60 chars. window.IQ.Prompts
 (function () {
   'use strict';

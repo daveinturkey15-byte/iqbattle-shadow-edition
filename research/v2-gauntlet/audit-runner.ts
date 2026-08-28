@@ -99,7 +99,7 @@ function auditFamily(f: Family): AuditResult {
 }
 
 async function main(): Promise<void> {
-  console.log('== IQ VERSUS V2 — SOLVER AUDIT ==');
+  console.log('== IQ BATTLE V2 — SOLVER AUDIT ==');
   console.log(`samples: ${SAMPLES}/family x diffs ${DIFFS.join('/')} | tolerance: 0 wrong answers\n`);
 
   const loaded = await Promise.all(FAMILY_MODULES.map(([f, s]) => loadFamilyModule(f, s)));

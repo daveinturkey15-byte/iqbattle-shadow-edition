@@ -1,6 +1,6 @@
 /* ============================================================
    modes/mode-puzzle.js — STAGE #1 "SIGIL TRIAL" (W2 polymorphic)
-   The classic IQ Versus round, ported onto the Stage contract.
+   The classic IQ Battle round, ported onto the Stage contract.
    Owns: gen_* families + rotation tables, forged puzzles, the
    round-1 power cut, option grid, MP pick relay (legacy pattern).
    Never touches window.G — resolves a StageResult; the engine
@@ -35,10 +35,10 @@ function fallbackPuzzle(){
 }
 function makePuzzle(ctx){
  const G_=root.Gens||{};const table=
-  ctx.tier<=0?['iqvs','iqvs','latin','cycle']:
-  ctx.tier===1?['iqvs','iqvs','iqvs','latin','cycle','count','logicA','missingSec']:
-  ctx.tier===2?['iqvs','iqvs','latin','cycle','count','dual','dual','logicA','logicB','seqPack','missingSec']:
-  ['wild','wild','dual','iqvs','iqvs','latin','logicA','logicB','seqPack','missingSec'];
+  ctx.tier<=0?['iqb','iqb','latin','cycle']:
+  ctx.tier===1?['iqb','iqb','iqb','latin','cycle','count','logicA','missingSec']:
+  ctx.tier===2?['iqb','iqb','latin','cycle','count','dual','dual','logicA','logicB','seqPack','missingSec']:
+  ['wild','wild','dual','iqb','iqb','latin','logicA','logicB','seqPack','missingSec'];
  let gname=table[Math.floor(ctx.rng()*table.length)];
  if(ctx.depth>=7&&G_.compound&&ctx.rng()<.07)gname='compound';
  else if(ctx.depth>=8&&G_.relay&&ctx.rng()<.06)gname='relay';

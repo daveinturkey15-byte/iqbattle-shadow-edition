@@ -1,5 +1,5 @@
 /* ============================================================================
- * mparc-stress.ts — headless MP+ARC interplay stress for IQ Versus SHADOW v2.
+ * mparc-stress.ts — headless MP+ARC interplay stress for IQ Battle SHADOW v2.
  * Drives net2.ts + scenes/mp.ts sessions over deterministic stub transports
  * and batteries planArc edge cases. READ-ONLY vs game code. Output: console
  * verdicts consumed by bugs-mparc.md.

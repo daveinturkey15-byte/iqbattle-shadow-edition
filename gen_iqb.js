@@ -1,4 +1,4 @@
-/* IQ.GenV 'iqvs' — research-faithful generator matching captured iqversus.com puzzles.
+/* IQ.GenV 'iqb' — research-faithful generator matching captured original-site puzzles.
    Archetypes: colorRow, colorCol, latinSquare, hueStepDiag. Grids 2x2 (easy) / 3x3.
    Hole always bottom-right. Decoys = single-attribute mutations, duplicates allowed. */
 (function(){
@@ -53,7 +53,7 @@ function gen(opts){
  while(options.length<8)options.push({cols:1,rows:1,cells:[{shape:truth.shape,color:(truth.color+options.length)%8,rot:truth.rot}]});
  const answer=Math.floor(r()*8);
  const others=options.slice(1);others.splice(answer,0,correct);
- return {id:'iqvs-m'+d+'-'+seed.toString(36),kind:'matrix',difficulty:d,
+ return {id:'iqb-m'+d+'-'+seed.toString(36),kind:'matrix',difficulty:d,
   prompt:'WHICH FRAGMENT COMPLETES THE PATTERN?',rule:ruleName,
   board:{cols:size,rows:size,cells:cells,holeIndex:hole},
   options:others,answer:answer};
@@ -66,7 +66,7 @@ function fallback(kind,d,seed,r){
   const correct={shape:shape,color:hues[n%hues.length],rot:0};
   const options=[{cols:1,rows:1,cells:[correct]}];
   while(options.length<8){const m={shape:shape,color:(correct.color+options.length)%8,rot:0};options.push({cols:1,rows:1,cells:[m]})}
-  return {id:'iqvs-s-'+seed.toString(36),kind:'sequence',difficulty:d,prompt:'WHAT COMES NEXT?',rule:'colors continue the sequence',seq:seq,options:options,answer:Math.floor(r()*8)};
+  return {id:'iqb-s-'+seed.toString(36),kind:'sequence',difficulty:d,prompt:'WHAT COMES NEXT?',rule:'colors continue the sequence',seq:seq,options:options,answer:Math.floor(r()*8)};
  }
  const size=3,cells=[];const odd=Math.floor(r()*n);
  for(let i=0;i<n;i++)cells.push({shape:shape,color:hues[0],rot:0});
@@ -74,9 +74,9 @@ function fallback(kind,d,seed,r){
  const correct={shape:shape,color:hues[1],rot:0};
  const options=[{cols:1,rows:1,cells:[correct]}];
  while(options.length<8){const m={shape:shape,color:(hues[1]+1+Math.floor(r()*6))%8,rot:0};options.push({cols:1,rows:1,cells:[m]})}
- return {id:'iqvs-o-'+seed.toString(36),kind:'oddone',difficulty:d,prompt:'ONE FRAGMENT IS AN IMPOSTOR',rule:'one cell breaks the color pattern',oddBoard:{cols:size,rows:size,cells:cells,oddIndex:odd},options:options,answer:Math.floor(r()*8)};
+ return {id:'iqb-o-'+seed.toString(36),kind:'oddone',difficulty:d,prompt:'ONE FRAGMENT IS AN IMPOSTOR',rule:'one cell breaks the color pattern',oddBoard:{cols:size,rows:size,cells:cells,oddIndex:odd},options:options,answer:Math.floor(r()*8)};
 }
-root.IQ.GenV={name:'iqvs',generate:gen,validate:function(p){return {ok:!!(p&&p.options&&p.options.length===8&&typeof p.answer==='number'&&p.answer>=0&&p.answer<8&&(p.board||p.seq||p.oddBoard))}},
+root.IQ.GenV={name:'iqb',generate:gen,validate:function(p){return {ok:!!(p&&p.options&&p.options.length===8&&typeof p.answer==='number'&&p.answer>=0&&p.answer<8&&(p.board||p.seq||p.oddBoard))}},
  explain:function(p){return (p&&p.rule)||''}};
 if(typeof module!=='undefined'&&module.exports)module.exports=root.IQ.GenV;
 })();

@@ -1,4 +1,4 @@
-/* IQ.CursorFX — cursed cursor for IQ VERSUS: SHADOW.
+/* IQ.CursorFX — cursed cursor for IQ BATTLE: SHADOW.
    stage >= 2 (body.act-2/act-3): native cursor hidden over #app only;
    JS-positioned original SVG crimson wisp/ember trails the pointer with lag.
    stage 3: wisp becomes a tiny Shadow eye pair.

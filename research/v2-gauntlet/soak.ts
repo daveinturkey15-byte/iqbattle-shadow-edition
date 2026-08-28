@@ -145,7 +145,7 @@ async function soakTakeovers(): Promise<{ ran: number; failed: boolean; lines: s
 /* ------------------------------------------------------------------ */
 
 async function main(): Promise<void> {
-  console.log('== IQ VERSUS V2 — SOAK ==');
+  console.log('== IQ BATTLE V2 — SOAK ==');
   console.log(`${SEEDS} seeds/family, diff sweeps 1..5 | prim invariants + takeover self-tests\n`);
 
   /* Part 1 */

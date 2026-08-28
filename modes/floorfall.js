@@ -168,10 +168,10 @@ function fallbackPuzzle() {
 function sourcePuzzle(ctx) {
   var G_ = root.Gens || {};
   var tier = ctx.tier | 0;
-  var table = tier <= 0 ? ['iqvs', 'iqvs', 'latin', 'cycle']
-    : tier === 1 ? ['iqvs', 'iqvs', 'latin', 'cycle', 'count', 'logicA', 'missingSec']
-    : tier === 2 ? ['iqvs', 'latin', 'cycle', 'count', 'dual', 'dual', 'logicA', 'logicB', 'seqPack', 'missingSec']
-    : ['wild', 'wild', 'dual', 'iqvs', 'latin', 'logicA', 'logicB', 'seqPack', 'missingSec'];
+  var table = tier <= 0 ? ['iqb', 'iqb', 'latin', 'cycle']
+    : tier === 1 ? ['iqb', 'iqb', 'latin', 'cycle', 'count', 'logicA', 'missingSec']
+    : tier === 2 ? ['iqb', 'latin', 'cycle', 'count', 'dual', 'dual', 'logicA', 'logicB', 'seqPack', 'missingSec']
+    : ['wild', 'wild', 'dual', 'iqb', 'latin', 'logicA', 'logicB', 'seqPack', 'missingSec'];
   var gname = table[Math.floor(ctx.rng() * table.length)];
   if (tier >= 2 && (G_.retroA || G_.retroB) && ctx.rng() < .12) gname = (G_.retroA && (!G_.retroB || ctx.rng() < .5)) ? 'retroA' : 'retroB';
   var gen = G_[gname];

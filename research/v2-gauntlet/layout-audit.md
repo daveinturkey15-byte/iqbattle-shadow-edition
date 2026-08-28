@@ -1,4 +1,4 @@
-# V2 Layout Audit — IQ Versus: SHADOW (READ-ONLY visual gauntlet)
+# V2 Layout Audit — IQ Battle: SHADOW (READ-ONLY visual gauntlet)
 
 Auditor: LayoutAudit · Date: 2026-08-26 · App: http://127.0.0.1:8792 (hub iqbattle-v2, vite :8792)
 Method: headless Chromium 151 via raw CDP; three emulated viewports (1024×576, 1920×1080, 2560×1440, deviceScaleFactor 1).

@@ -4,7 +4,7 @@
  * Dave's lore (v2 law): mostly bad/chaotic, ~1-in-5 good rounds that heal,
  * descent gets worse with depth, good rounds continue the previous redemption
  * thread (inherit the closed block's depth), and on heaven rounds the ENTIRE
- * chrome reverts to faithful original-iqversus tokens (SANCTUARY).
+ * chrome reverts to faithful original-site tokens (SANCTUARY).
  *
  * Lineage: v1 alignment.js (blocks of 4-6 hostile closed by exactly 1 good =>
  * long-run ~5:1; redemption continuity inherits arcDepth) + v1 sanctuary.js
@@ -142,7 +142,7 @@ export const ARC_TOKENS: readonly [ActTokens, ActTokens, ActTokens, ActTokens] =
 ];
 
 /**
- * Faithful original-iqversus chrome (v1 sanctuary.js; research/w1-original-recon.md).
+ * Faithful original-site chrome (v1 sanctuary.js; research/w1-original-recon.md).
  * Applied wholesale on good/heaven rounds — "the light remembers you".
  */
 export const SANCTUARY_TOKENS = {

@@ -3,7 +3,7 @@ import { rngFrom, triCluster } from './types.ts';
 import type { Prim } from '../glyphs.ts';
 
 /**
- * COUNT GRID — real iqversus round-5 DNA: a 3×3 of triangle clusters whose
+ * COUNT GRID — real original-site round-5 DNA: a 3×3 of triangle clusters whose
  * counts form an arithmetic(row) × geometric(col) grid. Options differ ONLY
  * in count (single-attribute decoys). Hole bottom-right.
  *
@@ -57,7 +57,7 @@ export const countGrid: Family = {
 };
 
 /**
- * ACCRETION — real iqversus round-4 DNA: a 2×2 where a base diamond gains
+ * ACCRETION — real original-site round-4 DNA: a 2×2 where a base diamond gains
  * structural elements each step (diagonal + corner dots, then both diagonals
  * + more dots). Options mutate which elements appear. Hole bottom-right.
  */

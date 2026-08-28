@@ -163,7 +163,7 @@ function makeDoc(withModalExtra) {
   boot.appendChild(row);
 
   var cardBox = new El('div', { cls: 'boot-card' });
-  cardBox.appendChild(new El('div', { cls: 'boot-logo' })).textContent = 'IQ VERSUS';
+  cardBox.appendChild(new El('div', { cls: 'boot-logo' })).textContent = 'IQ BATTLE';
   cardBox.appendChild(new El('input', { id: 'boot-name' }));
   cardBox.appendChild(new El('input', { id: 'boot-room' }));
   cardBox.appendChild(new El('button', { id: 'boot-solo', cls: 'btn btn-primary boot-big' }));

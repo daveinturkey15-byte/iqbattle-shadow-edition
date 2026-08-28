@@ -1,6 +1,6 @@
-# IQ VERSUS: SHADOW — v2 Player + Dev Cheat Sheet
+# IQ BATTLE: SHADOW — v2 Player + Dev Cheat Sheet
 
-Vite + TypeScript + PixiJS v8 rebuild of iqversus.com with the corruption arc layered on top.
+Vite + TypeScript + PixiJS v8 rebuild of the original site with the corruption arc layered on top.
 Fixed 1600×900 logical stage, letterboxed to any viewport. Ground truth for the puzzle engine:
 `v2/DNA.md`. The old v1 build stays frozen at repo root (`modes/*.js` — read-only reference).
 
@@ -42,7 +42,7 @@ Landing → **CREATE ROOM** (name + optional room name) → Lobby (round timer 1
 5-char room code) → START → depths descend one round at a time until HP hits 0 or the arc plan is
 exhausted. End screen: score, depth, DESCEND AGAIN / BACK TO LANDING.
 
-Each depth deals either a **puzzle round** (the iqversus core) or a **takeover round** (chaos
+Each depth deals either a **puzzle round** (the IQ Battle core) or a **takeover round** (chaos
 stage). Rules of the deal (`main.ts`):
 
 - **Puzzles**: difficulty ramps `min(5, 1 + floor(depth/6))`; correct answer pays
@@ -140,7 +140,7 @@ Sources: `puzzles/families.ts`, `families2.ts`, `families3.ts`; shapes in `puzzl
   accents stay cold-blue until the descent turns crimson.
 - **Layers 1–7** track consecutive hostile rounds: a deepening crimson vignette plus a whispered
   banner ("something followed you down" → "nothing above us now").
-- **Sanctuary**: on every good round the entire chrome reverts to faithful original-iqversus
+- **Sanctuary**: on every good round the entire chrome reverts to faithful original-site
   tokens (`SANCTUARY_TOKENS`, "the light remembers you") and banishes the Shadow presence. The
   good closer inherits the closed block's depth as its layer — heaven ascends out of the arc it
   closes.

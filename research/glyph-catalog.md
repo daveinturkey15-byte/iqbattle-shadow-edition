@@ -1,13 +1,13 @@
-# Glyph Catalog — iqversus.com visual vocabulary
+# Glyph Catalog — original-site visual vocabulary
 
 **Author:** GlyphCatalog (research-only; no game-code edits)
 **Date:** 2026-08-24
-**Sources:** (a) live site `https://www.iqversus.com` — all 25 tile PNGs downloaded & pixel-decoded; (b) main bundle `index-Bf6hA1cI.js` (655 KB) string/protocol analysis; (c) live `/how-to-play` DOM inventory (60 `<img>` verified); (d) sibling `research/w0-*.md` reports (incorporated as they land).
-**Purpose:** every iqversus glyph as drawing primitives reproducible in our renderer (`cellSVG` in `index.html`, cell = `{shape,color,rot}` in a 40×40 viewBox).
+**Sources:** (a) the live original site — all 25 tile PNGs downloaded & pixel-decoded; (b) main bundle `index-Bf6hA1cI.js` (655 KB) string/protocol analysis; (c) live `/how-to-play` DOM inventory (60 `<img>` verified); (d) sibling `research/w0-*.md` reports (incorporated as they land).
+**Purpose:** every original-site glyph as drawing primitives reproducible in our renderer (`cellSVG` in `index.html`, cell = `{shape,color,rot}` in a 40×40 viewBox).
 
 ---
 
-## 1. How iqversus delivers glyphs
+## 1. How the original site delivers glyphs
 
 - Glyphs are **pre-rendered 220×220 PNGs with transparency** (`/assets/answer-<0-7>-<hash>.png`). There is **zero client-side shape drawing** — no `moveTo`/`arc`/`Path2D` anywhere in the bundle.
 - In-game, the **server sends integer `tileIndex`** refs inside round frames; the client maps `tileIndex → PNG URL` (`roundAssets`). Question boards are grids of the same PNGs (`luxe-game-question-cell-image`); answers are 8 tiles in a 4-col CSS grid, square `--luxe-game-tile-size`.
@@ -94,7 +94,7 @@ Fill fractions are vs full 220×220 tile; bbox-normalized they run 0.42–0.65. 
 
 ## 5. Port notes for our `cellSVG`
 
-- Add shapes `hexagon`, `star`; add `hollow` flag (or `fill:0|1`) to the cell contract for outline variants — iqversus treats outline-vs-solid as a *rule axis* ("moving down changes an outline into a solid"), so it's puzzle-relevant, not cosmetic.
+- Add shapes `hexagon`, `star`; add `hollow` flag (or `fill:0|1`) to the cell contract for outline variants — the original site treats outline-vs-solid as a *rule axis* ("moving down changes an outline into a solid"), so it's puzzle-relevant, not cosmetic.
 - Keep `rot` semantics (90° steps); hexagon rot 0 = pointy-top; star rot 0 = point-up; plus rot 45° ≡ our `cross`.
 - Their stroke weight convention: hollow = ~0.08u stroke, centered on the ideal edge.
 - Sharp corners everywhere (no `rx`) — matches their crisp PNG look.

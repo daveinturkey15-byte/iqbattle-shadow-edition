@@ -1,6 +1,6 @@
-# W0 Deep Capture - Live iqversus.com Puzzle System (ResMorph)
+# W0 Deep Capture - Live Original-Site Puzzle System (ResMorph)
 
-**Date:** 2026-08-24 · **Agent:** ResMorph · **Target:** live https://www.iqversus.com/ solo gauntlets
+**Date:** 2026-08-24 · **Agent:** ResMorph · **Target:** the live original site, solo gauntlets
 **Method:** CDP JSON-RPC over WebSocket to shared headless Chrome (DevToolsActivePort port 52607, daemon 0618...), short-lived node -e children, page-side JS drivers, OffscreenCanvas alpha-mask decoding of runtime blob-PNG tiles (bbox w/h, centroid, fill, aspect, perimeter ratio, dominant HSL, 24x24 hex silhouette). Ground truth from post-answer reveal classes.
 
 ## Capture score

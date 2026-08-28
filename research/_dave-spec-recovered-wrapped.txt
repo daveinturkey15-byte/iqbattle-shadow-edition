@@ -2,12 +2,12 @@
 
 ===== USER MSG 0 (140 chars) =====
 hi, my PC crashed earlier and was off for 4 hours, I have a giant prompt to send you so you can
-improve IQversus shadow, its a real overhaul
+improve IQBattle shadow, its a real overhaul
 
 
 ===== USER MSG 1 (504 chars) =====
 You will defo need an agent swarm of Ox alpha max for these, all with diff tasks etc, and you will
-need to once again venture into the original https://www.iqversus.com/ to see examples of the
+need to once again venture into the original site to see examples of the
 puzzles by playing some rounds, readin gthe "how to play" guide in the top right, etc, we want the
 website to look and feel near identifcal for the first few rounds, but then it turns into my game
 ... and this is now what I am thinking after these intial steps r done (and this is just the
@@ -15,7 +15,7 @@ beggining, mwahahaa!)
 
 
 ===== USER MSG 2 (4411 chars) =====
-right I've got loads of ideas which we can get into the game into IQ versus Shado So the idea would
+right I've got loads of ideas which we can get into the game into IQ Battle Shado So the idea would
 be that there's hundreds of variants of the rounds and sometimes there's layers and essentially most
 of it is bad and evil as we already have and chaotic but maybe 1 in 5 or 6 rounds is good and gives
 you a chance to like heal or recover So yeah as far as there being good and bad there's different
@@ -83,7 +83,7 @@ later?
 ===== USER MSG 6 (282 chars) =====
 I am suprised with the amount of things I asked to be implemented and researeched etc you still only
 hav 2 sub agents live, try again, frequently, all using ox alpha free, and implement the 100s of
-variations of the game i asked and the truer to original iqversus modes and base too
+variations of the game i asked and the truer to original-site modes and base too
 
 
 ===== USER MSG 7 (753 chars) =====
@@ -98,7 +98,7 @@ here is the giant prompt from earlier you seem to have ignored? -
 
 
 ===== USER MSG 8 (7154 chars) =====
-right I've got loads of ideas which we can get into the game into IQ versus Shado So the idea would
+right I've got loads of ideas which we can get into the game into IQ Battle Shado So the idea would
 be that there's hundreds of variants of the rounds and sometimes there's layers and essentially most
 of it is bad and evil as we already have and chaotic but maybe 1 in 5 or 6 rounds is good and gives
 you a chance to like heal or recover So yeah as far as there being good and bad there's different
@@ -200,7 +200,7 @@ close the gap
 
 ===== USER MSG 15 (362 chars) =====
 ok, there is issues with the game and it doesnt feel totally re worked, it feels broken and regreed
-an the the puzzles are too basic, they need to make sense and be closer to iqversus and then the
+an the the puzzles are too basic, they need to make sense and be closer to the original site and then the
 gameplay needs to be fun and make sense even if chaotic, this needs a large pass , re read all the
 info you have and all the prompts and improve it like an AGI would
 

@@ -1,8 +1,8 @@
 # W0 Deep-Capture Report — Set-Completion / Shade-Step / Latin Variants (ResSets)
 
-Live target: https://www.iqversus.com (solo gauntlets, CDP raw-WebSocket + page-injected canvas decoder).
+Live target: the original site (solo gauntlets, CDP raw-WebSocket + page-injected canvas decoder).
 Gauntlets played: 3 (g1 dead-room, a1 partial, b1 1 round, **c1 full 10/10**). Ground-truth rounds captured: **11** (10 c1 + 1 b1), every one with server reveal (-correct-reveal) recorded.
-Raw data: research/w0-ressets-data.json (per-tile pixel features: alpha mask stats, connected components, enclosed-hole flood-fill, image moments θ/aspect, centroid, dominant hex + HSL). localStorage mirror: rsh3_ressets_{c1,b1,a1,g1} on www.iqversus.com origin.
+Raw data: research/w0-ressets-data.json (per-tile pixel features: alpha mask stats, connected components, enclosed-hole flood-fill, image moments θ/aspect, centroid, dominant hex + HSL). localStorage mirror: rsh3_ressets_{c1,b1,a1,g1} on the original site origin.
 
 ## 1. Shape-class taxonomy (pixel signatures, 220×220 tiles)
 

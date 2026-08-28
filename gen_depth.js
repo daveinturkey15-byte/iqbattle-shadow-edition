@@ -1,6 +1,6 @@
 /* gen_depth.js — IQ.Gens['compound'] + IQ.Gens['relay'] — HIGH-DEPTH PACK (Wave A / GenDepth)
  * ============================================================================
- * Dave: "puzzles too basic — closer to iqversus, must make SENSE even when
+ * Dave: "puzzles too basic — closer to the original site, must make SENSE even when
  * chaotic." The 16 audited families (research/gen-audit-report.md) go easy at
  * deep floors (>=10) because the same small-period shapes recycle. This pack
  * adds two genuinely deeper compositions that stay ONE-SENTENCE verifiable:

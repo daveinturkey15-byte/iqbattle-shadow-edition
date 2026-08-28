@@ -1,5 +1,5 @@
 # UX REDESIGN SPEC — RESULTS · EMERALD INTERLUDE · HOST LOBBY
-### Shadow-themed pass for IQ Versus: Shadow · implementable by Main in one pass · zero external assets
+### Shadow-themed pass for IQ Battle: Shadow · implementable by Main in one pass · zero external assets
 
 **Author:** UXResults · **Date:** 2026-08-24
 

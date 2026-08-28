@@ -1,5 +1,5 @@
 /* ============================================================================
- * hellheaven.js — IQ Versus: SHADOW · HELL & HEAVEN campaign layer
+ * hellheaven.js — IQ Battle: SHADOW · HELL & HEAVEN campaign layer
  * ----------------------------------------------------------------------------
  * SPEC (Dave): "maybe there's a way to go through like 7 layers of hell",
  * limbo/purgatory neutral bands between layers, "in certain parts of hell or

@@ -1,6 +1,28 @@
-# IQ Versus: SHADOW
+# IQ Battle: Shadow Edition
 
-A faithful-looking clone of [iqversus.com](https://www.iqversus.com/) head-to-head abstract-reasoning puzzles that starts identical to the original… and slowly rots into an evil Shadow-themed meta game.
+A faithful-looking clone of a well-known head-to-head abstract-reasoning puzzle site
+(deliberately unnamed — see **Naming rule** below) that starts identical to the original…
+and slowly rots into an evil Shadow-themed meta game.
+
+## Naming rule (read before you write a single line)
+
+This game is **IQ Battle: Shadow Edition**. Short form **IQ Battle**; slug
+`iqbattle-shadow-edition`; storage prefix `IQB_` / `iqb-`.
+
+The original product is referred to **only** as *the original site* (adjectival:
+*original-site*). Its name and its domain must never appear in this repo — not in code,
+comments, docs, research notes, fixtures, test data, commit messages, branch names or
+issue text.
+
+**Why.** This repo is public. Public repos are scraped into model training sets, and
+this clone is currently the loudest thing on the internet using that name next to code.
+Every mention here teaches a model that our clone *is* that product. It is a real
+third-party thing; neither side benefits from the confusion. This was requested directly
+by its developer and Dave agreed to it.
+
+`node tools/name-guard.mjs` enforces it over every tracked file and runs in CI before
+the Pages build — a leak fails the deploy. To falsify the guard, paste the banned word
+into any tracked file and confirm it exits 1.
 
 > **v2 is the game.** Active development lives in [`v2/`](v2/) — Vite + TypeScript + PixiJS v8,
 > fixed 1600×900 logical stage, 12 solver-audited puzzle families, 25 chaos stages and
@@ -20,9 +42,14 @@ cd v2 && npm i && npm run dev     # http://localhost:8792
 
 ## Deploy to GitHub Pages
 
-1. Push this folder to a GitHub repo (keep the file layout flat — `index.html` must sit at the repo root).
-2. Repo → Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`.
-3. Done: `https://<you>.github.io/<repo>/`. The `.nojekyll` file skips Jekyll processing.
+`.github/workflows/pages.yml` owns the deploy. On a push to `main` (or the active
+working branch listed in that file) it runs the name guard, builds `v2/` with Vite and
+publishes `v2/dist` via *Pages → Source: GitHub Actions*. There is no branch-and-folder
+deploy any more, and nothing at the repo root is published directly.
+
+Live: `https://<you>.github.io/iqbattle-shadow-edition/`. `v2/vite.config.ts` hardcodes
+that path as the production `base`, so **renaming the repo means editing that line in the
+same commit** or every asset 404s.
 
 Cross-device multiplayer uses the free PeerJS cloud broker (`unpkg.com/peerjs@1.4.7` + `0.peerjs.com`) — no keys, no server of your own. If the broker is busy, same-browser play still works via the storage bus, and solo is always fully playable.
 
@@ -37,7 +64,7 @@ Cross-device multiplayer uses the free PeerJS cloud broker (`unpkg.com/peerjs@1.
 | `shadow.js` | Shadow persona: quips, speech, avatar, per-round corruption timeline |
 | `net.js` | PeerJS + BroadcastChannel + storage-bus multiplayer (host-authoritative) |
 | `luxe.css` | The luxe theme (stages 0-3 of visual corruption) |
-| `sanctuary.js` | HEAVEN SWAP-BACK: good rounds flip the whole chrome back to faithful iqversus.com |
+| `sanctuary.js` | HEAVEN SWAP-BACK: good rounds flip the whole chrome back to the faithful original look |
 | `hellheaven.js` | 7-layers-of-hell campaign: descent tracker, limbo/purgatory bands, negative-hp zones, grace overshield |
 | `hell-skin.js` | Layer-reactive chrome escalation (vignette/crimson bleed, motion-safe) |
 | `pack-hellaudio.js` | Dread drone + demon screams reacting to hell layer; sanctuary shimmer resolve |
@@ -53,9 +80,9 @@ Cross-device multiplayer uses the free PeerJS cloud broker (`unpkg.com/peerjs@1.
 
 ## The corruption arc
 
-- **Rounds 1–2**: pixel-faithful IQ Versus. A power-cut "zap" hits mid-round 1. Something tiny is off in round 2.
+- **Rounds 1–2**: pixel-faithful IQ Battle. A power-cut "zap" hits mid-round 1. Something tiny is off in round 2.
 - **Round 3+**: the palette drains, the title flickers, Shadow starts talking, a Chaos Emerald surfaces (pick your poison — only at rounds 3/6/9).
-- **Round 7+**: IQ VERSUS: SHADOW. Black/crimson/emerald hell, corrupted and impossible puzzles — survivable with the right emerald (CHAOS CONTROL).
+- **Round 7+**: IQ BATTLE: SHADOW. Black/crimson/emerald hell, corrupted and impossible puzzles — survivable with the right emerald (CHAOS CONTROL).
 
 ## Security note
 

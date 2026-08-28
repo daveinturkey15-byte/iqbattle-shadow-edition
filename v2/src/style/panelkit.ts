@@ -65,7 +65,7 @@ function roundPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 /* ------------------------------------------------------------------ */
-/* signature gradient (the 4-stop iqversus accent)                     */
+/* signature gradient (the 4-stop original-site accent)                     */
 /* ------------------------------------------------------------------ */
 
 const SIG_STOPS: Array<[number, string]> = [

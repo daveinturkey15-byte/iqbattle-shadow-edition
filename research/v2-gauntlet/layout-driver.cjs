@@ -1,4 +1,4 @@
-/* layout-driver.cjs - READ-ONLY visual audit driver for IQ Versus v2 (rev2)
+/* layout-driver.cjs - READ-ONLY visual audit driver for IQ Battle v2 (rev2)
  * Drives landing->lobby->game d1-6->interlude->end at three viewports.
  */
 'use strict';

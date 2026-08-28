@@ -1,6 +1,6 @@
 /* IQ.Gens['logicA'] — MATRIX LOGIC PACK (W1) for IQ BATTLE.
  * Five classic-matrix archetypes, 3x3 boards, hole always bottom-right,
- * decoys = single-attribute mutations of the true fragment (gen_iqvs pattern).
+ * decoys = single-attribute mutations of the true fragment (gen_iqb pattern).
  *
  * Archetypes (p.meta.arch):
  *   chain    — progression-chain rows: shape morphs one step along a fixed
@@ -111,7 +111,7 @@ function build(arch,d,r){
   }
 
   if(arch==='rotpile'){
-    // iqvs fix: never a bare rotation pile. The mark still quarter-turns in
+    // iqb fix: never a bare rotation pile. The mark still quarter-turns in
     // reading order, but shades co-vary row-by-row (and drift across rows at
     // d>=4), so the answer is bound by TWO channels and never duplicates a
     // visible cell. rs+cs must avoid 0 mod 4, else cell 0 == the truth tile.

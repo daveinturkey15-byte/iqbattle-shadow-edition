@@ -40,7 +40,7 @@
       root.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
-  /* mulberry32 — same PRNG pattern as gen_iqvs.js */
+  /* mulberry32 — same PRNG pattern as gen_iqb.js */
   function mulberry32(a) {
     return function () {
       a |= 0; a = a + 0x6D2B79F5 | 0;

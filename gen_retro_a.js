@@ -18,7 +18,7 @@
  *   bit-mutations / shifts of that pattern.
  *
  * Determinism: everything keyed off mulberry32(opts.seed) (same pattern as
- * gen_iqvs.js). Same seed => deepEqual puzzle. No timers, no motion, no
+ * gen_iqb.js). Same seed => deepEqual puzzle. No timers, no motion, no
  * flashing — pure static puzzle data (IQB_MOTION not applicable here).
  * Host-authoritative: never invents scoring, never touches answer flow.
  */

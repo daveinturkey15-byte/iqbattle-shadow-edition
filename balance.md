@@ -1,4 +1,4 @@
-# IQ VERSUS: SHADOW — Balance Proposal
+# IQ BATTLE: SHADOW — Balance Proposal
 
 Target: a **decent player** (≈70% correct, uses ~45% of the clock) should beat a competent demon field about **half** the time, and every emerald should be a real choice, never an auto-pick.
 

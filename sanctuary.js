@@ -3,7 +3,7 @@
    ------------------------------------------------------------
    PURPOSE
      On good/heaven rounds the whole chrome reverts to the
-     faithful iqversus.com look (Dave's "swap back to the
+     faithful original-site look (Dave's "swap back to the
      original sometimes" beat). Pure CSS toggle: no flashes,
      no motion, no gameplay mutation — fairness-safe by design.
 

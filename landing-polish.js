@@ -1,5 +1,5 @@
 /* ============================================================
-   IQ VERSUS: SHADOW — landing-polish.js (W4 progressive enhancement)
+   IQ BATTLE: SHADOW — landing-polish.js (W4 progressive enhancement)
    ------------------------------------------------------------
    PURPOSE : Pure-enhancement polish layer for the boot-screen landing
              rework. Every feature is individually guarded and degrades

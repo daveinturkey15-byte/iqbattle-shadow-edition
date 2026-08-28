@@ -1,5 +1,5 @@
 /**
- * Glyph primitives — the small marks real iqversus puzzles are built from
+ * Glyph primitives — the small marks real original-site puzzles are built from
  * (see v2/DNA.md): triangle outlines, dots, diamonds, line segments.
  * Rendered with 2D canvas into textures; one hue per board (never per-cell).
  */

@@ -1,5 +1,5 @@
 /* ============================================================================
- * MP SCENE FLOW — multiplayer orchestration for IQ Versus: SHADOW v2.
+ * MP SCENE FLOW — multiplayer orchestration for IQ Battle: SHADOW v2.
  *
  * Layer over src/net/net2.ts implementing the v1 index.html multiplayer flow
  * (mechanic, not code) against the v2 scene architecture:
@@ -256,7 +256,7 @@ export function evaluateElimination(
  * much as a fixed script: depth 1 was ALWAYS family 0, depth 2 always family
  * 1, in every run anyone ever played. Owner, 2026-08-26: "the first few
  * puzzles are always the same again? annoying, should be from a random pool,
- * like the actual iqversus game".
+ * like the actual original game".
  *
  * A bag beats plain random: you see every family once before any repeats, so
  * the run stays varied instead of clumping. The bag index is folded into the

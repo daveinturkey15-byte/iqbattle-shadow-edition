@@ -591,7 +591,7 @@ async function transportScenario(): Promise<void> {
 
   /* ---- resilience: host broker leg dies mid-lobby (idle-host repro) ---- */
   console.log('[resilience] host broker death → bus-only join must succeed');
-  const hostPeer = world.peers.get('iqvs-RACE') ?? world.peers.get('iqvs-RACE2');
+  const hostPeer = world.peers.get('iqb-RACE') ?? world.peers.get('iqb-RACE2');
   check('host peer currently registered with broker', hostPeer != null);
   hostPeer?.simulateBrokerDeath();
 

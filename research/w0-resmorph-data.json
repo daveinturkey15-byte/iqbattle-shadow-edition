@@ -1,9 +1,9 @@
 {
  "meta": {
   "agent": "ResMorph",
-  "task": "W0 deep-capture live iqversus.com puzzle system",
+  "task": "W0 deep-capture live original-site puzzle system",
   "date": "2026-08-24",
-  "site": "https://www.iqversus.com/",
+  "site": "the original site",
   "method": "CDP JSON-RPC over WebSocket to shared headless Chrome (port 52607); page-side JS drivers; OffscreenCanvas alpha-mask decode of blob-PNG tiles; ground truth from post-answer reveal classes",
   "rooms": [
    "ResMorph A1",

@@ -1,4 +1,4 @@
-/* IQ.GenV ("wild") — late-game corruption mode for IQ VERSUS: SHADOW (stage 3 only).
+/* IQ.GenV ("wild") — late-game corruption mode for IQ BATTLE: SHADOW (stage 3 only).
    Surreal puzzles whose rule ALMOST holds, then twists mid-axis (a color step
    reverses at the midpoint, a march stutters every third cell, …). Every puzzle
    still has exactly one defensible answer: the twist is a pure function of

@@ -1,5 +1,5 @@
 /* ============================================================================
- * hell-skin.js — IQ Versus: SHADOW · HELL & HEAVEN visual escalation skin
+ * hell-skin.js — IQ Battle: SHADOW · HELL & HEAVEN visual escalation skin
  * ----------------------------------------------------------------------------
  * PURPOSE: the base chrome stops escalating at .corr-3 (index.html setStage).
  * This module continues the descent BEYOND corruption tier 3, keyed to the

@@ -97,7 +97,7 @@ window.IQ.Content = {
   },
   hostLines: {
     welcome: [
-      "Welcome to IQ Versus: Shadow. He insisted we add 'Shadow'.",
+      "Welcome to IQ Battle: Shadow. He insisted we add 'Shadow'.",
       "Welcome. He's watching. Try to be interesting.",
       "Greetings. The dark one has claimed the commentary booth.",
       "Welcome back. He remembered you. Unfortunately.",

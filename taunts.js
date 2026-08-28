@@ -1,4 +1,4 @@
-/* taunts.js — IQ.Taunts: CONTEXTUAL demon taunts for IQ Versus: Shadow.
+/* taunts.js — IQ.Taunts: CONTEXTUAL demon taunts for IQ Battle: Shadow.
    The shell feeds failure/streak events; demons mock the SPECIFIC mistake.
    Hooks: onWrong(round, kind) | onStreak(n) | onImpossible.
    Renders through IQ.DemonSay.say when present; console-safe no-op otherwise.

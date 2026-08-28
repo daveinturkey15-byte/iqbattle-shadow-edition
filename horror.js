@@ -1,4 +1,4 @@
-/* IQ.Horror — SHADOW-themed atmosphere layer for IQ VERSUS: SHADOW.
+/* IQ.Horror — SHADOW-themed atmosphere layer for IQ BATTLE: SHADOW.
    Pure CSS/DOM overlay (z40, pointer-events:none), zero assets, zero canvas.
    Stage 1: rare edge shadows. Stage 2: screen-breathing, crimson corner
    tendrils, red-eye flashes (~25s), drifting whisper words. Stage 3: topbar

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>IQ Versus | Head-to-Head Abstract Reasoning Puzzles</title>
+<title>IQ Battle | Head-to-Head Abstract Reasoning Puzzles</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23040812'/%3E%3Ctext x='16' y='23' font-family='Oxanium,Arial' font-weight='800' font-size='17' fill='%232d7cff' text-anchor='middle'%3EIQ%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,7 +60,7 @@
       <div class="feat-card"><b>INVITE FRIENDS EASILY</b><span>Host a room and share the code. Friends join in seconds — or face the demons alone.</span></div>
     </div>
     <div class="boot-card">
-      <div class="boot-logo">IQ&nbsp;VERSUS</div>
+      <div class="boot-logo">IQ&nbsp;BATTLE</div>
       <div class="boot-sub">abstract reasoning · corrupted</div>
       <input id="boot-name" maxlength="16" placeholder="Display name" autocomplete="off" style="user-select:text;-webkit-user-select:text">
       <input id="boot-room" maxlength="24" placeholder="Room name (optional)" autocomplete="off" style="user-select:text;-webkit-user-select:text">
@@ -144,7 +144,7 @@
 <script src="./gfx-title.js"></script>
 <script src="./gfx-background.js"></script>
 <script src="./gen_latin.js"></script><script>window.IQ.Gens=window.IQ.Gens||{};window.IQ.Gens.latin=window.IQ.GenV;</script>
-<script src="./gen_iqvs.js"></script><script>window.IQ.Gens.iqvs=window.IQ.GenV;</script>
+<script src="./gen_iqb.js"></script><script>window.IQ.Gens.iqb=window.IQ.GenV;</script>
 <script src="./gen_cycle.js"></script><script>window.IQ.Gens.cycle=window.IQ.GenV;</script>
 <script src="./gen_rotate.js"></script><script>window.IQ.Gens.rotate=window.IQ.GenV;</script>
 <script src="./gen_count.js"></script><script>window.IQ.Gens.count=window.IQ.GenV;</script>
@@ -213,7 +213,7 @@
 <script>
 'use strict';
 /* ============================================================
-   IQ VERSUS — faithful clone that decays into SHADOW
+   IQ BATTLE — faithful clone that decays into SHADOW
    ============================================================ */
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const rnd=(a,b)=>a+Math.random()*(b-a), ri=(a,b)=>Math.floor(a+Math.random()*(b-a+1)), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -470,8 +470,8 @@ function setStage(n){
 function updateTitle(){
  const t=$('#room-title');if(!t)return;
  const base=(G.mp.roomName&&G.mp.code)?(G.mp.roomName+' · '+G.mp.code):(G.mp.code?('Room '+G.mp.code):'Private Room');
- t.textContent=G.stage>=3?'IQ VERSUS: SHADOW':base;
- document.title=(G.stage>=3?'IQ Versus Shadow':'IQ Versus')+' | Abstract Reasoning Puzzles';
+ t.textContent=G.stage>=3?'IQ BATTLE: SHADOW':base;
+ document.title=(G.stage>=3?'IQ Battle Shadow':'IQ Battle')+' | Abstract Reasoning Puzzles';
 }
 function timeline(){
  try{if(window.IQ&&IQ.Shadow&&IQ.Shadow.TIMELINE)return IQ.Shadow.TIMELINE(G.round)}catch(e){}
@@ -670,7 +670,7 @@ function broadcastRound(){
   const def=G.activeDef;
   if(def&&def.frame){const f=def.frame();if(f&&typeof f==='object')extra=f}
   IQ.Net.broadcast(Object.assign(base,extra||{}));
- }catch(e){ try{localStorage.setItem('iqvs-neterr',String(e&&e.message||e))}catch(_e){} }
+ }catch(e){ try{localStorage.setItem('iqb-neterr',String(e&&e.message||e))}catch(_e){} }
 }
 function applyIncomingRound(pl){
  G.awaitingRound=false;G.round=pl.n;G.timerLen=pl.timerLen;G.answered=false;

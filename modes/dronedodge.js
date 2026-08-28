@@ -128,9 +128,9 @@
 
   function makePuzzle(root, ctx) {
     var Gens = root.Gens || {}, table, gname, gen, kinds, p, okShape;
-    table = ctx.tier <= 0 ? ['iqvs', 'iqvs', 'latin', 'cycle']
-      : ctx.tier === 1 ? ['iqvs', 'iqvs', 'latin', 'cycle', 'count']
-      : ['iqvs', 'latin', 'cycle', 'count', 'dual', 'logicA', 'seqPack'];
+    table = ctx.tier <= 0 ? ['iqb', 'iqb', 'latin', 'cycle']
+      : ctx.tier === 1 ? ['iqb', 'iqb', 'latin', 'cycle', 'count']
+      : ['iqb', 'latin', 'cycle', 'count', 'dual', 'logicA', 'seqPack'];
     gname = table[Math.floor(ctx.rng() * table.length)];
     gen = Gens[gname];
     kinds = ctx.tier >= 2 ? ['matrix', 'sequence', 'oddone'] : ['matrix', 'matrix', 'sequence'];

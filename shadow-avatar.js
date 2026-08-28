@@ -1,4 +1,4 @@
-/* IQ.ShadowAvatar — original SVG fan-art persona avatar for IQ VERSUS: SHADOW.
+/* IQ.ShadowAvatar — original SVG fan-art persona avatar for IQ BATTLE: SHADOW.
    Pure-geometry black quill-head silhouette with crimson-streak quills,
    glowing red eyes and a smirk. No copyrighted assets, no external files.
    Owns its injected CSS; honors prefers-reduced-motion (static poses). */

@@ -1,5 +1,5 @@
-/* IQ.Cleanse — "HIP TO BE SQUARE" cleanser rounds for IQ VERSUS: SHADOW.
-   Rare one-round relief valve (stage 2+): forces the bright iqversus palette
+/* IQ.Cleanse — "HIP TO BE SQUARE" cleanser rounds for IQ BATTLE: SHADOW.
+   Rare one-round relief valve (stage 2+): forces the bright baseline palette
    over all corr/act corruption, then snaps back with a glitch. Pure CSS
    self-injection; reduced-motion safe; never throws. */
 (function () {

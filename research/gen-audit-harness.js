@@ -1,6 +1,6 @@
 /* gen-audit-harness.js — QUALITY-PASS audit for IQ.Gens logic/seq/missing packs.
  * Generates SAMPLES_PER_ARCH puzzles per archetype (difficulty sweep 1..5) and
- * mechanically checks the iqversus quality bars:
+ * mechanically checks the original-site quality bars:
  *   (b) matrix hole always bottom-right
  *   (c) 8 options, all distinct, exactly one correct under an INDEPENDENT
  *       solver, every decoy a single-attribute mutation of the truth

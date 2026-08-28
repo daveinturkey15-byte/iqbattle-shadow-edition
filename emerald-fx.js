@@ -1,4 +1,4 @@
-/* IQ.EmeraldFX — chaos-emerald visual layer for IQ VERSUS: SHADOW.
+/* IQ.EmeraldFX — chaos-emerald visual layer for IQ BATTLE: SHADOW.
    One original SVG fan-art emerald (faceted green gem, inner glow), reused for:
      (a) floating emerald orbiting the screen edge at stage >= 2 (tiny rAF),
      (b) interlude relic-card icons upgraded from emoji to the gem,

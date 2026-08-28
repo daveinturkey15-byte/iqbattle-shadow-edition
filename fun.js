@@ -1,4 +1,4 @@
-/* IQ Versus: Shadow — fun.js
+/* IQ Battle: Shadow — fun.js
  * Gameplay-juice overlay. Presentation ONLY: no scoring, no game logic.
  * Loaded after shadow.js. Shell calls window.IQ.Fun.init(hooks) and feeds
  * events; everything degrades silently if this file or any dependency is

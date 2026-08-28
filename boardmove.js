@@ -1,4 +1,4 @@
-/* IQ.BoardMove — stage>=2 board DRIFT for IQ VERSUS: SHADOW.
+/* IQ.BoardMove — stage>=2 board DRIFT for IQ BATTLE: SHADOW.
  * The puzzle frame (#board-frame) and the options grid (#opts-grid) slowly
  * orbit around the screen in counter-phase (grid moves against the frame),
  * so the playfield never sits still. Stage 3 adds violent "lurches" —

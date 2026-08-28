@@ -1,6 +1,6 @@
 /* ============================================================================
  * LMS RUNTIME — the stateful match machine that sits between the pure rules
- * in mpfeat.ts and the effects in main.ts. Last-Man-Standing for IQ Versus:
+ * in mpfeat.ts and the effects in main.ts. Last-Man-Standing for IQ Battle:
  * SHADOW v2.
  *
  * WHY THIS EXISTS: mpfeat.ts is deliberately pure per-call (weapon curves,

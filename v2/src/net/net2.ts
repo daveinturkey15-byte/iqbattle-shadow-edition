@@ -1,5 +1,5 @@
 /* ============================================================================
- * IQ2.NET — dual-transport multiplayer core for IQ Versus: SHADOW v2.
+ * IQ2.NET — dual-transport multiplayer core for IQ Battle: SHADOW v2.
  *
  * TypeScript port of frozen-v1 net.js (repo root), mechanic-for-mechanic, with
  * every WAVE-5 transport hardening that research/net-transport-proof.js drove
@@ -13,7 +13,7 @@
  *     strictly unique per sender, so back-to-back reveal+round bursts can
  *     never collide into a false "already seen".
  *   - PER-WRITER OUTBOX RINGS — the localStorage fallback keeps a ring per
- *     writer ('iqvs-bus-<code>-ob-<uid>-<salt>', 256 slots, >10s pruned on
+ *     writer ('iqb-bus-<code>-ob-<uid>-<salt>', 256 slots, >10s pruned on
  *     write). Only the writer ever mutates its own ring (zero cross-tab
  *     read-modify-write race); readers NEVER delete — N poll-only tabs each
  *     drain the FULL stream.
@@ -212,7 +212,7 @@ export function realBusFactory(code: string, myId: string): BusHandle | null {
 
   if (BCCtor) {
     try {
-      const ch = new BCCtor('iqvs-bus-' + code);
+      const ch = new BCCtor('iqb-bus-' + code);
       let cb: ((f: Frame) => void) | null = null;
       ch.addEventListener('message', (e: MessageEvent) => {
         const d: unknown = e.data;
@@ -246,7 +246,7 @@ export function realBusFactory(code: string, myId: string): BusHandle | null {
   const ls = envLocalStorage();
   const gAdd: unknown = (globalThis as Record<string, unknown>).addEventListener;
   if (!ls || typeof gAdd !== 'function') return null;
-  const key = 'iqvs-bus-' + code;
+  const key = 'iqb-bus-' + code;
   // One ring identity per session: a NEW session gets a fresh salt so old
   // rings are never resumed (their entries age out via OB_TTL regardless).
   const boxId =
@@ -358,7 +358,7 @@ export function realBusFactory(code: string, myId: string): BusHandle | null {
 
 /* ----------------------------- createNet -------------------------------- */
 
-const MAX_ID_RETRIES = 8; // iqvs-CODE, iqvs-CODE2, … before giving up
+const MAX_ID_RETRIES = 8; // iqb-CODE, iqb-CODE2, … before giving up
 const ID_CHARS = /^[A-Z0-9]{3,12}$/;
 const LOG_CAP = 20;
 const WM_HOLE_CAP = 32768; // valve >> any real reorder depth (bursts ~1e3)
@@ -711,7 +711,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
     const openedRoom = await new Promise<{ code: string }>((resolve, reject) => {
       const tryOpen = (): void => {
         attempt++;
-        const id = 'iqvs-' + base + (attempt > 1 ? String(attempt) : '');
+        const id = 'iqb-' + base + (attempt > 1 ? String(attempt) : '');
         const p = new Ctor(id, { debug: 1 });
         peer = p;
         p.on('open', (...args: unknown[]) => {
@@ -792,7 +792,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
   // reconnect() alone cannot fix every failure mode (destroyed peer, stale
   // server-side id registration), so after REOPEN_AFTER_FAILS dead sweeps
   // we rebuild a fresh Peer under the SAME room id — joiners target
-  // 'iqvs-<code>', so the binding must never drift to a suffixed id.
+  // 'iqb-<code>', so the binding must never drift to a suffixed id.
   let keepAliveTimer: NodeJS.Timeout | number | undefined = undefined;
   let kaFails = 0;
   let reopening = false;
@@ -812,7 +812,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
       try {
         const Ctor = await makePeerImpl();
         if (!Ctor || dead || role !== 'host') return;
-        const p = new Ctor('iqvs-' + code, { debug: 1 });
+        const p = new Ctor('iqb-' + code, { debug: 1 });
         peer = p;
         p.on('open', () => logEv('peer-reopened', 'in', true));
         p.on('connection', (...cargs: unknown[]) => {
@@ -975,7 +975,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
           tryN++;
           let conn: DataConnLike;
           try {
-            conn = p.connect('iqvs-' + c, { reliable: true, serialization: 'json' });
+            conn = p.connect('iqb-' + c, { reliable: true, serialization: 'json' });
           } catch {
             scheduleRetry();
             return;

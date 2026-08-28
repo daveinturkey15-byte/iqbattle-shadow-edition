@@ -1,4 +1,4 @@
-# W0 · Horror-Corruption Design Doc — *IQ VERSUS* rots into PANDemonium
+# W0 · Horror-Corruption Design Doc — *IQ BATTLE* rots into PANDemonium
 
 **Author:** HorrorDoc (research + design pass; zero game-code edits)
 **Date:** 2026-08-24
@@ -210,7 +210,7 @@ Ref: DDLC log hijack.
 
 #### T13 · Title-Bar Whisper — **cost S**
 Ref: browser-native fourth wall.
-**Impl:** sequence `document.title`: "IQ Versus" → "IQ Versu­s" (soft hyphen) → "are you still there?" → restore, 900ms apart, once at P3 entry. Favicon: draw the smiley tile on a 32×32 canvas; at P3 redraw hollow-eyed and swap via `link.href = canvas.toDataURL()`. No permissions needed.
+**Impl:** sequence `document.title`: "IQ Battle" → "IQ Versu­s" (soft hyphen) → "are you still there?" → restore, 900ms apart, once at P3 entry. Favicon: draw the smiley tile on a 32×32 canvas; at P3 redraw hollow-eyed and swap via `link.href = canvas.toDataURL()`. No permissions needed.
 
 #### T14 · Scoreboard Possession — **cost M**
 Ref: talking cards / roster corruption.

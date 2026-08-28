@@ -1,4 +1,4 @@
-/* IQ Versus — gfx-board.js
+/* IQ Battle — gfx-board.js
  * Board frame + option tile presentation upgrade. Presentation ONLY:
  * no scoring, no game logic, no reads of puzzle state.
  *  (a) board-frame corner brackets (luxe tech) + stage-tinted glow
