@@ -1102,7 +1102,6 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
         const moves: Array<{ node: Sprite | Text; ox: number; oy: number }> = [];
         for (let slot = 0; slot < order.length; slot++) {
           const idx = order[slot]!;
-          if (idx < 0 || idx > 7) continue;
           const find = (c: Container): Sprite | null => {
             for (const ch of c.children) {
               if (ch instanceof Sprite && (ch as unknown as { label?: string }).label === 'opt' + idx) return ch;
