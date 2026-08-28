@@ -61,21 +61,16 @@ import { whenFontsReady } from './style/panelkit.ts';
 import { installQaHooks, isDevBuild } from './qa.ts';
 
 /* ---------- render/scaling: viewport-exact canvas, letterboxed world ---------- */
+/* The Application and the two world containers are constructed at module
+ * scope, but EVERYTHING that must await (renderer init, webfont race) runs
+ * inside boot() at the end of this file. The built bundle shipped with
+ * top-level awaits and hung forever on them (empty #app, no canvas, no error
+ * thrown), so boot() is the only place main.ts is allowed to await. */
 const app = new Application();
-await app.init({
-  width: Math.max(1, Math.round(window.innerWidth)),
-  height: Math.max(1, Math.round(window.innerHeight)),
-  background: T.bg, antialias: true,
-  resolution: Math.min(3, window.devicePixelRatio || 1),
-  autoDensity: true,
-});
-document.getElementById('app')!.appendChild(app.canvas);
-
 /** Screen-space layer carrying world backdrop art on >16:9 aspect (full-bleed sides). */
 const bleedHolder = new Container();
 /** Logical 1600x900 world; every scene mounts here and fit() scales + centers it. */
 const view = new Container();
-app.stage.addChild(bleedHolder, view);
 
 interface LayoutState { s: number; uw: boolean; lw: number; }
 let layout: LayoutState = { s: 1, uw: false, lw: STAGE_W };
@@ -104,8 +99,6 @@ function fit(): void {
     layout = { s, uw, lw: STAGE_W };
   }
 }
-window.addEventListener('resize', fit);
-fit();
 
 const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3];
 const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell, mountPacman2, mountTetris2, mountBattleship2, mountDoom2, mountPhoenix2, mountGauntlet2, mountFractal2, mountHypercube2, mountSniper2, mountPopGlitter, mountMetal, mountTerminator2, mountFury2, mountSkyFire2];
@@ -1180,31 +1173,59 @@ function activeScoreMul(): number {
   return run.fateScoreMul;
 }
 
-/* Dev-only browser-driver surface (gauntlet gate G4). Stripped from builds. */
-if (isDevBuild()) {
-  installQaHooks({
-    app,
-    view,
-    snapshot: () => {
-      const st = lms?.state() ?? null;
-      return {
-        depth: run?.depth ?? 0,
-        score: run?.score ?? 0,
-        hp: run?.hp ?? 0,
-        role: mpRole,
-        table: st ? st.table.map((r) => r.name + ':' + r.pts) : null,
-        phases: st ? { ...st.phases } : null,
-        over: st?.over ?? false,
-        winner: st?.winnerUid ?? null,
-      };
-    },
+/**
+ * Boot sequence — the ONLY place main.ts is allowed to await.
+ *
+ * Vite dev tolerates top-level await; the production bundle does not. The
+ * built app used to stall forever at module scope with an empty #app, no
+ * <canvas> and no thrown error, because one of these awaits never settled.
+ * Everything that must wait therefore lives in here, invoked last with
+ * `void boot();` — the shipped bundle now has ZERO top-level awaits.
+ */
+async function boot(): Promise<void> {
+  await app.init({
+    width: Math.max(1, Math.round(window.innerWidth)),
+    height: Math.max(1, Math.round(window.innerHeight)),
+    background: T.bg, antialias: true,
+    resolution: Math.min(3, window.devicePixelRatio || 1),
+    autoDensity: true,
   });
+  document.getElementById('app')!.appendChild(app.canvas);
+  app.stage.addChild(bleedHolder, view);
+
+  window.addEventListener('resize', fit);
+  fit();
+
+  /* Dev-only browser-driver surface (gauntlet gate G4). Stripped from builds.
+   * Installed AFTER init on purpose: installQaHooks captures app.canvas at
+   * install time, and the canvas only exists once the renderer is up. */
+  if (isDevBuild()) {
+    installQaHooks({
+      app,
+      view,
+      snapshot: () => {
+        const st = lms?.state() ?? null;
+        return {
+          depth: run?.depth ?? 0,
+          score: run?.score ?? 0,
+          hp: run?.hp ?? 0,
+          role: mpRole,
+          table: st ? st.table.map((r) => r.name + ':' + r.pts) : null,
+          phases: st ? { ...st.phases } : null,
+          over: st?.over ?? false,
+          winner: st?.winnerUid ?? null,
+        };
+      },
+    });
+  }
+
+  /* Bake Text glyphs with the real Oxanium face: wait for the webfont (capped
+   * at 1.5s so a slow CDN never blanks the boot) before the first scene builds. */
+  await Promise.race([
+    whenFontsReady(),
+    new Promise<void>((res) => setTimeout(res, 1500)),
+  ]);
+  toLanding();
 }
 
-/* Bake Text glyphs with the real Oxanium face: wait for the webfont (capped
- * at 1.5s so a slow CDN never blanks the boot) before the first scene builds. */
-await Promise.race([
-  whenFontsReady(),
-  new Promise<void>((res) => setTimeout(res, 1500)),
-]);
-toLanding();
+void boot();
