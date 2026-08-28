@@ -24,6 +24,14 @@ export interface QaSnapshot {
   role: string | null;
   /** LMS table as "name:pts" rows, or null in solo. */
   table: string[] | null;
+  /** Round-modifier ids active on the depth currently on screen, in the order
+   *  they were applied. Every seat in a room must report the SAME list for the
+   *  same depth — that equality is the multiplayer variation-layer contract,
+   *  and it is the cheapest way to see a seed desync from a browser console. */
+  mods: string[];
+  /** The run seed every seat derives its variation layers from. Identical
+   *  across a room, or the seats are not playing the same descent. */
+  seed: number;
   phases: Record<string, string> | null;
   over: boolean;
   winner: string | null;

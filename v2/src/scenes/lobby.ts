@@ -6,8 +6,44 @@ import {
   type PlayerCardHandle,
 } from './shell.ts';
 
-/** DNA lobby: room title '<name> · <CODE>' in the header, player cards,
- * Round Timer input (1-120, default 60), START + LEAVE. */
+/**
+ * The invite code, given its own object on the screen: caption, the code in
+ * accent at display size with the letters spaced so they can be read out
+ * loud, and click-to-copy. Sits in the free band between the header bar and
+ * the roster panel, so it disturbs no existing row.
+ */
+function inviteCodeChip(root: Container, code: string): void {
+  const cw = 460, ch = 62;
+  const cx = (STAGE_W - cw) / 2, cy = 72;
+
+  const chip = panel(root, cx, cy, cw, ch);
+  edgeRect(root, cx, cy, cw, ch, 12);
+  chip.eventMode = 'static';
+  chip.cursor = 'pointer';
+
+  const cap = text(root, 'INVITE CODE', cx + 22, cy + 24, 10, T.muted, true);
+  cap.style.letterSpacing = 2;
+
+  const val = text(root, code, cx + 140, cy + 17, 26, T.accentA, true);
+  val.style.letterSpacing = 8;
+
+  const hint = text(root, 'CLICK TO COPY', cx + cw - 116, cy + 25, 10, T.muted, true);
+  hint.style.letterSpacing = 2;
+
+  chip.on('pointerdown', () => {
+    const nav = (globalThis as { navigator?: { clipboard?: { writeText(t: string): Promise<void> } } }).navigator;
+    /* Clipboard is best-effort: it needs a secure context and a user
+     * gesture, and this is a game, not a form. On refusal the label just
+     * says so rather than throwing into the scene. */
+    void Promise.resolve(nav?.clipboard?.writeText(code))
+      .then(() => { hint.text = 'COPIED'; })
+      .catch(() => { hint.text = 'COPY FAILED'; });
+  });
+}
+
+/** DNA lobby: the room NAME in the header, the INVITE CODE on its own
+ * click-to-copy chip beneath it, player cards, Round Timer input (1-120,
+ * default 60), START + LEAVE. */
 
 export interface LobbyCallbacks {
   /** START pressed; seconds = current Round Timer value (1..120) */
@@ -31,7 +67,13 @@ export function buildLobby(opts: LobbyOpts): Container {
 
   panel(root, 0, 0, STAGE_W, 900);
 
-  headerBar(root, { logo: true, title: opts.roomName + ' · ' + opts.code });
+  /* The header carries the room's NAME only. It used to read
+   * '<name> · <CODE>' as one run-on string, which is how a room called
+   * "Friday Night" and a code like K7QXA ended up looking like one label
+   * nobody could split. The code now has its own captioned chip below, and
+   * is called an INVITE CODE so it shares no word with the room's name. */
+  headerBar(root, { logo: true, title: opts.roomName });
+  inviteCodeChip(root, opts.code);
 
   // central panel
   const pw = 720, ph = 620;
@@ -86,7 +128,7 @@ export function buildLobby(opts: LobbyOpts): Container {
 export function __preview(): Container {
   const scene = buildLobby({
     roomName: 'Friday Night',
-    code: 'K7QX',
+    code: 'K7QXA',
     players: ['OxAlpha', 'Dave', 'shadow awaits'],
     onStart: (seconds) => console.log('[preview] start:', seconds),
     onLeave: () => console.log('[preview] leave'),

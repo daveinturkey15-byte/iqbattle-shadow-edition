@@ -28,7 +28,7 @@ import { createChaos, type ChaosBus } from './fx/chaos.ts';
 import { pickCameos, ROSTER } from './fx/cameos.ts';
 import { BOARD_PANEL, GRID_GAP, puzzleLayout } from './scenes/layouthelper.ts';
 import { goalCardForIndex, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
-import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
+import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, runSeedFromRound, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
 import { hpFor, pointsFor } from './scenes/lms.ts';
 import { createDirector, type LmsDirector } from './scenes/lmsdirector.ts';
 import { buildAttackMenu } from './scenes/attackmenu.ts';
@@ -399,9 +399,21 @@ function mountRemoteRound(e: MpEvent): void {
   const rp = parseStg(stgRef.id);
   if (!rp) return;
   const sd = stgRef.seed >>> 0;
-  if (!run) startRun(myName, 'Room', e.timerLen, sd);
-  run!.seed = sd; /* clients derive every board from the HOST's seed */
+  /* `sd` is the BOARD seed for THIS depth, not the run seed. Storing it as
+   * run.seed (what this used to do) left the client deriving modifiers,
+   * worlds, curses, fate and emerald offers from a seed that changed every
+   * round, while run.plan still came from the host's run seed — so no two
+   * screens in a room agreed on the round's variation layers. Recover the
+   * run seed instead, and keep seed and plan in lockstep. */
+  const runSeed = runSeedFromRound(sd, e.n, rp.kind);
+  if (!run) startRun(myName, 'Room', e.timerLen, runSeed);
+  else if (run.seed !== runSeed) { run.seed = runSeed; run.plan = planArc(runSeed, 2000); }
   const r0 = run!;
+  /* Clear before the depth moves, not inside deal(): between these two the
+   * QA snapshot would otherwise report the NEW depth carrying the PREVIOUS
+   * depth's modifiers, which is exactly the false desync signal the field
+   * exists to rule out. */
+  activeMods = [];
   r0.depth = e.n; r0.timerLen = e.timerLen;
   DBG.mounts++;
   try {
@@ -428,6 +440,10 @@ interface Run {
 /* Staleness is guarded by run IDENTITY (`run !== r`) throughout — a deferred
  * advance or tick from a dead run simply fails that check. */
 let run: Run | null = null;
+/* Which round modifiers the depth on screen is running. Read by the dev QA
+ * snapshot so a driver (or a human with two tabs open) can assert that every
+ * seat in a room is on the same variation layers. */
+let activeMods: string[] = [];
 let shell: Shell | null = null;
 let lastLayer = 0;
 
@@ -525,6 +541,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   if ((soloRules() && r.hp <= 0) || r.depth > r.plan.length) { endRun(); return; }
   lms?.openDepth(r.depth);
   closeAttackMenu();
+  activeMods = []; /* takeover depths run none; never report the last depth's */
   const plan = r.plan[r.depth - 1];
   r.fateScoreMul = 1; /* curses last exactly one depth */
   const root = new Container();
@@ -596,6 +613,14 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
   const chaosRound = (remote ? remote.rp.kind : rp.kind) === 'takeover';
 
+  /* Announce the depth BEFORE anything that can return early. This used to
+   * sit at the bottom of deal(), below the emerald interlude's `return` — so
+   * on every 4th depth the host showed itself a power-up choice and sent the
+   * room nothing at all. Clients sat on the previous screen and only the host
+   * ever got a relic. `rp`, `r.depth` and `r.timerLen` are all final here;
+   * nothing between this point and the old call site touched them. */
+  if (!remote && mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen);
+
   onAct(Math.min(3, Math.floor(plan.layer / 2)));
   if (plan.align !== 'good' && plan.layer > lastLayer && plan.layer >= 2) {
     const spec = layerBanner(overlay, plan.layer);
@@ -640,6 +665,12 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
         toastNow(root, 'THE ' + id.toUpperCase().replace('_', ' ') + ' IS YOURS', T.gold);
         sfx('levelup');
         try { onEmerald(); } catch {}
+        /* Everyone in the room picks their own relic, but only the host paces
+         * the match. A client that advanced itself here would deal a depth the
+         * host never sent — the same class of divergence as the run seed. It
+         * waits for the host's next round frame instead, exactly like it does
+         * after answering a board. */
+        if (mp && mpRole === 'client') return;
         scheduleAdvance(r, r.depth, 900);
       });
       root.addChild(pickRoot);
@@ -657,7 +688,6 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     if (typeof fate.timerDelta === 'number' && fate.timerDelta < 0) r.hp -= 0; // timer handled per-scene
   }
 
-  if (!remote && mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen);
   /* A client with no round frame yet shows the chrome and waits. */
   if (mpRole === 'client' && !remote) { r.curKind = 'puzzle'; r.curAnswer = -1; root.addChild(overlay); startTick(root); show(root); return; }
   const useRp = remote ? remote.rp : rp;
@@ -960,6 +990,7 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
   scene.pivot.set(STAGE_W / 2, STAGE_H / 2);
   scene.position.set(STAGE_W / 2, STAGE_H / 2);
   for (const mod of pickModifiers(mctx, modMax)) {
+    activeMods.push(mod.id);
     const stop = mod.apply(mctx, scene);
     onSceneStop(stop);
     if (mod.id === 'scanline-roll') {
@@ -1211,6 +1242,8 @@ async function boot(): Promise<void> {
           hp: run?.hp ?? 0,
           role: mpRole,
           table: st ? st.table.map((r) => r.name + ':' + r.pts) : null,
+          mods: [...activeMods],
+          seed: run?.seed ?? 0,
           phases: st ? { ...st.phases } : null,
           over: st?.over ?? false,
           winner: st?.winnerUid ?? null,

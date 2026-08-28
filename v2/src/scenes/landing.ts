@@ -22,6 +22,18 @@ const FEATURES = [
   { title: 'INVITE FRIENDS EASILY', blurb: 'Host a room and share the code. Friends join in seconds — or face the demons alone.' },
 ] as const;
 
+/** Invite codes are exactly 5 characters (main.code5). Capping the input at
+ *  that length is half the "this is not a room name" signal. */
+const CODE_LEN = 5;
+
+/** Centred all-caps caption that owns the row beneath it. */
+function sectionLabel(card: Container, y: number, str: string, cardW: number): Text {
+  const t = text(card, str, 0, y, 10, T.accentA, true);
+  t.style.letterSpacing = 2;
+  t.x = (cardW - t.width) / 2;
+  return t;
+}
+
 export function buildLanding(cb: LandingCallbacks): Container {
   const root = new Container();
 
@@ -82,21 +94,33 @@ export function buildLanding(cb: LandingCallbacks): Container {
     { str: 'IQ ', color: T.accentB },
     { str: 'BATTLE', color: T.accentA },
   ], 32);
-  const sub = text(card, 'abstract reasoning · corrupted', 0, 72, 11, T.muted);
+  const sub = text(card, 'abstract reasoning · corrupted', 0, 66, 11, T.muted);
   sub.style.letterSpacing = 2;
   sub.x = (cw - sub.width) / 2;
 
   const inW = cw - 80;
-  const nameIn = makeTextInput(card, 40, 110, inW, 50, 'Display name', 16);
-  const roomIn = makeTextInput(card, 40, 176, inW, 50, 'Room name (optional)', 24);
 
-  makeButton(card, 40, 246, inW, 54, 'CREATE ROOM', () => {
+  /* Your display name belongs to YOU, not to either room flow, so it sits
+   * above the split where neither section looks like it owns it. */
+  const nameIn = makeTextInput(card, 40, 96, inW, 46, 'Display name', 16);
+
+  /* A room's NAME and its invite CODE are different things, and they used to
+   * be two near-identical inputs on this one card — "Room name (optional)"
+   * and "Room code". People typed a friend's code into the name box and
+   * created an empty room of their own. They are two captioned sections now,
+   * and the code is an INVITE CODE everywhere so it shares no word with the
+   * room's name. */
+  sectionLabel(card, 156, 'HOST A ROOM  ·  NAME IT, THEN SHARE THE CODE', cw);
+  const roomIn = makeTextInput(card, 40, 176, inW, 46, 'Room name (optional)', 24);
+
+  makeButton(card, 40, 232, inW, 50, 'CREATE ROOM', () => {
     cb.onCreateRoom(nameIn.value.trim() || 'Player', roomIn.value.trim());
   }, 'primary');
 
-  /* join-by-code row (MP) */
-  const codeIn = makeTextInput(card, 40, 318, 276, 46, 'Room code', 24);
-  makeButton(card, 332, 318, 108, 46, 'JOIN', () => {
+  /* join-by-invite-code row (MP) */
+  sectionLabel(card, 296, "JOIN A ROOM  ·  YOUR FRIEND'S 5-LETTER CODE", cw);
+  const codeIn = makeTextInput(card, 40, 316, 276, 46, 'Invite code', CODE_LEN);
+  makeButton(card, 332, 316, 108, 46, 'JOIN', () => {
     const code = codeIn.value.trim().toUpperCase();
     if (code.length >= 3) cb.onJoin(code, nameIn.value.trim() || 'Player');
   }, 'ghost');

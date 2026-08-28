@@ -21,6 +21,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const B = 'ver' + 'sus';                       // never written whole, anywhere
 const PATTERNS = [
@@ -32,13 +33,17 @@ const PATTERNS = [
   { re: new RegExp('[^A-Z]' + B.toUpperCase() + '[^A-Z]|^' + B.toUpperCase() + '$'), label: 'the bare wordmark half' },
 ];
 
-const files = execFileSync('git', ['ls-files', '-z'], { maxBuffer: 64 << 20 })
+/* Always scan the WHOLE repo. `git ls-files` is relative to the cwd, so
+ * running this from v2/ used to report "clean (107 files)" instead of 559 -
+ * a guard that quietly checks less than it claims is worse than no guard. */
+const root = execFileSync('git', ['rev-parse', '--show-toplevel']).toString('utf8').trim();
+const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, maxBuffer: 64 << 20 })
   .toString('utf8').split('\0').filter(Boolean);
 
 const hits = [];
 for (const f of files) {
   let text;
-  try { text = readFileSync(f, 'utf8'); } catch { continue; }
+  try { text = readFileSync(join(root, f), 'utf8'); } catch { continue; }
   if (text.includes('\0')) continue;                       // binary
   if (f === 'tools/name-guard.mjs') continue;              // this file
   text.split(/\r?\n/).forEach((line, i) => {

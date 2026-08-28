@@ -355,6 +355,23 @@ export function roundPlan(
   };
 }
 
+/**
+ * Inverse of roundPlan's SEED derivation: recovers the run seed from the
+ * per-round board seed a `round` frame carries.
+ *
+ * Why this exists: `round.stg.seed` is the BOARD seed for one depth
+ * (runSeed ^ imul(depth, k)), not the run seed. A client that stores it as
+ * its run seed diverges from the host on everything else derived from the
+ * run seed — round modifiers, worlds, curses, fate, emerald offers — while
+ * its arc plan still comes from the run seed it got in `begin`. That mixed
+ * state is the multiplayer desync. The derivation is a pure XOR, so it
+ * inverts exactly; this is the only supported way back.
+ */
+export function runSeedFromRound(boardSeed: number, depth: number, kind: 'puzzle' | 'takeover'): number {
+  const d = Math.max(1, Math.floor(depth));
+  return (boardSeed ^ Math.imul(d, kind === 'takeover' ? 0x9e37 : 7919)) >>> 0;
+}
+
 /** Inverse of roundPlan's stg encoding (validated). */
 export function parseStg(stg: string): RoundPlan | null {
   const m = /^(pz|tk):(\d+)$/.exec(String(stg ?? ''));
@@ -561,6 +578,28 @@ export class MpSession {
     this.roomLabel = String(rn ?? '').slice(0, 24) || null;
   }
 
+  /** The room's display NAME (never the invite code), or null before the
+   *  meta exchange has delivered it to a joiner. */
+  roomName(): string | null {
+    return this.roomLabel;
+  }
+
+  /**
+   * Ask the host what the room is called.
+   *
+   * The host answers a join by broadcasting `meta` immediately, and
+   * net.join() resolves only after that — so on a quiet room the answer has
+   * already been and gone by the time this session attaches its listeners,
+   * and it is never repeated because nothing else joins. The existing
+   * race-proof only re-asked from the `lobby` handler, which has the same
+   * problem. A joiner must be able to ask from a standing start; that is
+   * this. Cheap, idempotent, and a no-op once the name is known.
+   */
+  requestRoomName(): void {
+    if (this.role !== 'client' || this.roomLabel) return;
+    this.net.send({ t: 'metaReq' });
+  }
+
   rosterNow(): PlayerRec[] {
     return [...this.roster];
   }
@@ -719,7 +758,11 @@ async function buildMpScreen(
     holder.removeChildren();
     holder.addChild(
       buildLobby({
-        roomName,
+        /* A joiner opens on '<host>'s Room' and learns the real name from the
+         * meta frame moments later. The lobby only re-rendered on `lobby`
+         * frames, so that correction never reached the screen and the header
+         * kept a name the host had not chosen. */
+        roomName: mp.roomName() ?? roomName,
         code,
         players: mp.names(),
         onStart: (seconds) => {
@@ -735,7 +778,7 @@ async function buildMpScreen(
   };
   render();
   const stop = mp.subscribe((e) => {
-    if (e.t === 'lobby') render();
+    if (e.t === 'lobby' || e.t === 'meta') render();
   });
   return { ui: holder, stop };
 }
@@ -783,6 +826,7 @@ export const MPJoin = {
     const net = createNet();
     const joined = await net.join(code, name); // BEFORE MpSession — see note above
     const mp = new MpSession(net, 'client', {}, joined.players);
+    mp.requestRoomName();
     // The room displays under the HOST's name (roster seat 0) until the
     // meta/metaReq exchange delivers the real room label.
     const rn = (mp.names()[0] ?? name) + "'s Room";

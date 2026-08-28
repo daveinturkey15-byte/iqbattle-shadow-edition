@@ -24,7 +24,7 @@ import {
   foldScore,
   hueIndexForDepth,
   parseStg,
-  roundPlan,
+  roundPlan, runSeedFromRound,
   srCeiling,
   MpSession,
   type ScoreRec,
@@ -390,6 +390,30 @@ function pureChecks(): void {
     JSON.stringify(roundPlan(SEED, 4, 8, 3, () => false)) ===
       JSON.stringify(roundPlan(SEED, 4, 8, 3, () => false)),
   );
+  /* The client's half of the seed contract. A `round` frame carries the
+   * BOARD seed for one depth, and the client used to store that as its run
+   * seed — so host and client rolled different round modifiers, worlds,
+   * curses, fate events and emerald offers while both believed they were on
+   * the host's seed. runSeedFromRound is the inverse of the derivation
+   * roundPlan ships, and it is asserted against the real roundPlan output
+   * (not a copy of the formula) across both round kinds and a spread of
+   * depths, including the 32-bit wrap the XOR can produce. */
+  let seedRoundTrips = true;
+  for (const s0 of [SEED, 0, 1, 0xffffffff, 0x9e3779b9]) {
+    for (let d = 1; d <= 64; d++) {
+      const pz = roundPlan(s0 >>> 0, d, 8, 3, () => false);
+      const tk = roundPlan(s0 >>> 0, d, 8, 3, () => true);
+      if (runSeedFromRound(pz.seed, d, 'puzzle') !== (s0 >>> 0)) seedRoundTrips = false;
+      if (runSeedFromRound(tk.seed, d, 'takeover') !== (s0 >>> 0)) seedRoundTrips = false;
+    }
+  }
+  check('runSeedFromRound inverts roundPlan for every depth and both kinds', seedRoundTrips);
+  check(
+    'a board seed read as a run seed does NOT survive the round trip (the bug)',
+    runSeedFromRound(roundPlan(SEED, 6, 8, 3, () => false).seed, 6, 'puzzle') === SEED &&
+      roundPlan(SEED, 6, 8, 3, () => false).seed !== SEED,
+  );
+
   const parsed = parseStg(planPz.stg);
   check(
     'parseStg round-trips pz/tk ids and rejects junk',
