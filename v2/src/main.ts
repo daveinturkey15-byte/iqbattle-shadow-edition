@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Text } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text } from 'pixi.js';
 import { T, STAGE_W, STAGE_H } from './theme.ts';
 import { buildGameScene, panel, text } from './scenes/game.ts';
 import { FAMILIES } from './puzzles/families.ts';
@@ -1032,6 +1032,38 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       };
       modFx.push(paint);
       onSceneStop(() => { modFogG?.clear(); });
+    } else if (mod.id === 'piano-keys') {
+      /* P5: piano-keys — main.ts is the only place the pure state touches
+       * Pixi. Reads the static scene.pianoKeys flag (no step: the flag is
+       * identical under motion and static, so no movement is ever reported)
+       * and restyles the ACTUAL option tiles (the Sprites labelled opt0..
+       * opt7 — board grid tiles are excluded by their label, found by
+       * walking the scene) as piano keys: a dark key-stripe
+       * across the top and a light rim, drawn as a child Graphics so the
+       * option art underneath stays readable and the pointerdown handler
+       * (which captures idx in closure) is untouched. The scene is
+       * destroyed with the round, so no separate Pixi teardown is needed. */
+      const st = (scene as unknown as { pianoKeys?: boolean }).pianoKeys;
+      if (st === true) {
+        const opts: Sprite[] = [];
+        const collect = (c: Container): void => {
+          for (const ch of c.children) {
+            if (ch instanceof Sprite) {
+              const lab = (ch as unknown as { label?: string }).label;
+              if (lab !== undefined && lab.startsWith('opt')) opts.push(ch);
+            } else if (ch instanceof Container) collect(ch);
+          }
+        };
+        collect(scene);
+        for (const s of opts) {
+          const g = new Graphics();
+          const w = s.width;
+          const h = s.height;
+          g.rect(0, 0, w, Math.max(8, Math.round(h * 0.2))).fill({ color: 0x101018 });
+          g.rect(0, 0, w, h).stroke({ color: 0xffffff, width: 2 });
+          s.addChild(g);
+        }
+      }
     } else if (mod.id === 'tilt-3d') {
       /* P5: tilt-3d — simplest honest perspective tilt, no real 3D: main.ts
        * is the only place the pure state touches Pixi. The painter advances

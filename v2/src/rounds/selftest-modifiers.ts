@@ -449,6 +449,58 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  /* P5: piano-keys — the gate asserts the state main.ts actually consumes:
+   * the static scene.pianoKeys === true flag (no step — identical under
+   * motion and static). A no-op implementation (never setting the flag)
+   * fails here. */
+  const piano = MODIFIERS.find((m) => m.id === 'piano-keys');
+  check(`piano-keys flag state (${SEED_COUNT} seeds)`, () => {
+    assert(!!piano, 'piano-keys missing from MODIFIERS');
+    if (!piano) return;
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+
+      // Motion variant: the flag is set and the stop is a plain teardown.
+      const mctx: ModCtx = { depth, seed, layer, align, motion: true };
+      const mStub = createStub(1, 1, 150, 250);
+      const mStop = piano.apply(mctx, mStub);
+      assert(mStub.pianoKeys === true, `[piano-keys seed=${seed}] motion apply must set scene.pianoKeys === true (main.ts restyles the option tiles from it)`);
+      assert(mStop.step === undefined, `[piano-keys seed=${seed}] static flag must NOT expose step (no reported movement)`);
+
+      // Determinism: a second apply at the same seed yields the same state.
+      const mStub2 = createStub(1, 1, 150, 250);
+      const mStop2 = piano.apply(mctx, mStub2);
+      assert(sameState(mStub, mStub2), `[piano-keys seed=${seed}] non-deterministic apply (motion=true)`);
+
+      // Teardown: deletes the field (it was absent before apply).
+      mStop();
+      assert(mStub.pianoKeys === undefined, `[piano-keys seed=${seed}] teardown did not delete scene.pianoKeys (motion=true)`);
+      mStop2();
+      assert(mStub2.pianoKeys === undefined, `[piano-keys seed=${seed}] teardown2 did not delete scene.pianoKeys (motion=true)`);
+
+      // Static variant: identical flag, identical teardown, NO step.
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = piano.apply(sctx, sStub);
+      assert(sStub.pianoKeys === true, `[piano-keys seed=${seed}] static apply must set scene.pianoKeys === true`);
+      assert(sStop.step === undefined, `[piano-keys seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+      sStop();
+      assert(sStub.pianoKeys === undefined, `[piano-keys seed=${seed}] teardown did not delete scene.pianoKeys (motion=false)`);
+
+      // Teardown must RESTORE a pre-existing flag, not just delete it.
+      const preStub: BoardTarget = createStub(1, 1, 150, 250);
+      preStub.pianoKeys = false;
+      const pStop = piano.apply(sctx, preStub);
+      const pFlag = (): boolean | undefined => preStub.pianoKeys;
+      assert(pFlag() === true, `[piano-keys seed=${seed}] apply must override a preset flag to true`);
+      pStop();
+      assert(pFlag() === false, `[piano-keys seed=${seed}] teardown over a preset flag must restore the original value`);
+    }
+  });
+
   check(`pickModifiers determinism and max bound over ${SEED_COUNT} seeds`, () => {
     for (let i = 0; i < SEED_COUNT; i++) {
       const seed = (i * 1103515245 + 12345) >>> 0;
