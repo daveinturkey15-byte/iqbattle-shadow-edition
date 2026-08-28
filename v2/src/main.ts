@@ -26,7 +26,7 @@ import { playReveal, revealMotionEnabled } from './fx/reveal.ts';
 import { pickModifiers, type ModCtx } from './rounds/modifiers.ts';
 import { createChaos, type ChaosBus } from './fx/chaos.ts';
 import { pickCameos, ROSTER } from './fx/cameos.ts';
-import { BOARD_PANEL, puzzleLayout } from './scenes/layouthelper.ts';
+import { BOARD_PANEL, GRID_GAP, puzzleLayout } from './scenes/layouthelper.ts';
 import { goalCardForIndex, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
 import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
 import { hpFor, pointsFor } from './scenes/lms.ts';
@@ -1116,8 +1116,8 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
           const sp = find(scene);
           if (!sp) continue;
           moves.push({ node: sp, ox: sp.x, oy: sp.y });
-          sp.x = sl.ox + (slot % 4) * (sl.optSize + 14);
-          sp.y = sl.oy + Math.floor(slot / 4) * (sl.optSize + 14);
+          sp.x = sl.ox + (slot % 4) * (sl.optSize + GRID_GAP);
+          sp.y = sl.oy + Math.floor(slot / 4) * (sl.optSize + GRID_GAP);
           for (const ch of sp.parent ? sp.parent.children : []) {
             if (ch instanceof Text && ch.label === `optlabel${idx}`) {
               moves.push({ node: ch, ox: ch.x, oy: ch.y });
