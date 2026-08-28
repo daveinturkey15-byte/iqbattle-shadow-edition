@@ -15,6 +15,16 @@
  *     r < 0.21                       -> fa:pyro-entrance
  *     r < 0.23                       -> fa:static-curse
  *     r < 0.25                       -> fa:echo
+ *     r < 0.27                       -> fa:slam-drop
+ *     r < 0.29                       -> fa:frost-bite
+ *     r < 0.31                       -> fa:mirror-taunt
+ *     r < 0.33                       -> fa:hearth
+ *     r < 0.35                       -> fa:rot-curse
+ *     r < 0.37                       -> fa:wrong-bell
+ *     r < 0.39                       -> fa:venom-curse
+ *     r < 0.41                       -> fa:slow-clap
+ *     r < 0.43                       -> fa:spotter
+ *     r < 0.45                       -> fa:dust-storm
  *   neutral:
  *     r < 0.08                       -> fa:brit-drizzle
  *     r < 0.10                       -> fa:fog
@@ -23,6 +33,16 @@
  *     r < 0.16                       -> fa:taunt-neutral
  *     r < 0.18                       -> fa:reversal-neutral
  *     r < 0.20                       -> fa:aurora
+ *     r < 0.22                       -> fa:snowfall
+ *     r < 0.24                       -> fa:coffee
+ *     r < 0.26                       -> fa:mist
+ *     r < 0.28                       -> fa:humming
+ *     r < 0.30                       -> fa:sundown
+ *     r < 0.32                       -> fa:mint-tonic
+ *     r < 0.34                       -> fa:loud-crowd
+ *     r < 0.36                       -> fa:ember-rain
+ *     r < 0.38                       -> fa:starfall
+ *     r < 0.40                       -> fa:luck-drip
  *   good                             : always null (blessings own good rounds)
  *
  *   SLAM ENTRANCE (WWE-parody) .... hostile rounds open with an entrance
@@ -53,6 +73,14 @@
  *   TAUNT-NEUTRAL .... a neutral taunt, cosmetic.
  *   REVERSAL-NEUTRAL .... brief inversion, mechanical.
  *   AURORA .... the sky dances, cosmetic.
+ *   P6 BATCH (all cosmetic, cue-only — zero engine changes; appended so every
+ *   existing slice keeps its exact r-range):
+ *   SLAM DROP / MIRROR TAUNT / WRONG-BELL / SLOW CLAP .... hostile theatre.
+ *   FROST BITE / ROT CURSE / VENOM CURSE / DUST STORM .... hostile curses.
+ *   HEARTH / SPOTTER .... hostile-round calm corners.
+ *   SNOWFALL / MIST / SUNDOWN / EMBER RAIN / STARFALL .... neutral weather.
+ *   COFFEE / MINT TONIC / LUCK DRIP .... neutral blessings.
+ *   HUMMING / LOUD CROWD .... neutral taunts.
  *
  * Ids are prefixed 'fa:' — guaranteed disjoint from fate.ts's
  * { nuke, midas, eclipse, toll, carnival_box, comet, poltergeist, lollipop,
@@ -99,6 +127,28 @@ export const W_FA_BLESS = 0.02;
 export const W_FA_TAUNT_N = 0.02;
 export const W_FA_REVERSAL_N = 0.02;
 export const W_FA_AURORA = 0.02;
+/** P6 batch — hostile windows (appended; existing slices unchanged). */
+export const W_FA_SLAM_DROP = 0.02;
+export const W_FA_FROST = 0.02;
+export const W_FA_MIRROR = 0.02;
+export const W_FA_HEARTH = 0.02;
+export const W_FA_ROT = 0.02;
+export const W_FA_BELL = 0.02;
+export const W_FA_VENOM = 0.02;
+export const W_FA_SLOW_CLAP = 0.02;
+export const W_FA_SPOTTER = 0.02;
+export const W_FA_DUST = 0.02;
+/** P6 batch — neutral windows (appended; existing slices unchanged). */
+export const W_FA_SNOWFALL = 0.02;
+export const W_FA_COFFEE = 0.02;
+export const W_FA_MIST = 0.02;
+export const W_FA_HUM = 0.02;
+export const W_FA_SUNDOWN = 0.02;
+export const W_FA_MINT = 0.02;
+export const W_FA_CROWD = 0.02;
+export const W_FA_EMBER_RAIN = 0.02;
+export const W_FA_STARFALL = 0.02;
+export const W_FA_LUCK = 0.02;
 
 /** Distinct stream salt — deliberately unlike FATE_SALT / CP_SALT. */
 const FA_SALT = 0xfa1a7;
@@ -164,7 +214,8 @@ const WEATHER_LINES: readonly string[] = [
 /* Shipped event roster (pure data — the gate validates THIS, not copies) */
 /* ------------------------------------------------------------------ */
 /*
- * The 16 flavor-a events, exported as data exactly like fate.ts's FATES,
+ * The 36 flavor-a events (16 original + 20 P6 batch), exported as data
+ * exactly like fate.ts's FATES,
  * flavor-b.ts's COUNTRIES and cursepack.ts's CURSES/BLESSINGS.
  * maybeFlavorA() selects from this roster; selftest-fate.ts imports it.
  * Entrance banners show roster persona #1; the engine swaps in the seeded
@@ -300,6 +351,127 @@ export const FA_EVENTS: readonly FlavorMod[] = [
     overlayMs: 7000,
     cue: { flash: { color: 0x44ffaa, ms: 180 }, embers: 20 },
   },
+  /* --- P6 batch: 10 hostile + 10 neutral, all cosmetic + cue-only --- */
+  {
+    id: 'fa:slam-drop',
+    kind: 'taunt',
+    bannerText: '💥 SLAM DROP — THE FLOOR REMEMBERS (COSMETIC)',
+    cue: { shake: { intensity: 0.7, ms: 400 }, embers: 10 },
+  },
+  {
+    id: 'fa:frost-bite',
+    kind: 'curse',
+    bannerText: '🧊 FROST BITE — THE PIXELS FREEZE (COSMETIC)',
+    cue: { flash: { color: 0x88ccff, ms: 120 }, scanlines: true },
+  },
+  {
+    id: 'fa:mirror-taunt',
+    kind: 'taunt',
+    bannerText: '🪞 MIRROR TAUNT: "THAT WOULD\'VE BEEN MINE."',
+    cue: { glitch: 250 },
+  },
+  {
+    id: 'fa:hearth',
+    kind: 'sanctuary',
+    bannerText: '🕯 QUIET CORNER — A LAMP TURNS ON (COSMETIC)',
+    cue: { flash: { color: 0xffcc66, ms: 200 } },
+  },
+  {
+    id: 'fa:rot-curse',
+    kind: 'curse',
+    bannerText: '🌀 ROT CURSE — THE EDGES MELT (COSMETIC)',
+    cue: { melt: 0.35, shake: { intensity: 0.3, ms: 300 } },
+  },
+  {
+    id: 'fa:wrong-bell',
+    kind: 'taunt',
+    bannerText: '🔔 WRONG-BELL — THE CROWD HONKES (COSMETIC)',
+    cue: { glitch: 350, shake: { intensity: 0.2, ms: 200 } },
+  },
+  {
+    id: 'fa:venom-curse',
+    kind: 'curse',
+    bannerText: '🐍 VENOM CURSE — GREEN STATIC CREEPS IN (COSMETIC)',
+    cue: { scanlines: true, embers: 12 },
+  },
+  {
+    id: 'fa:slow-clap',
+    kind: 'taunt',
+    bannerText: '👏 SLOW CLAPS FROM THE BALCONY (COSMETIC)',
+    cue: { glitch: 200 },
+  },
+  {
+    id: 'fa:spotter',
+    kind: 'sanctuary',
+    bannerText: '🏋 SPOTTER MODE — SOMEONE HAS YOUR BACK (COSMETIC)',
+    cue: { flash: { color: 0x66ffcc, ms: 150 }, embers: 6 },
+  },
+  {
+    id: 'fa:dust-storm',
+    kind: 'curse',
+    bannerText: '🌪 DUST STORM — THE HUD BUFFS UP (COSMETIC)',
+    cue: { shake: { intensity: 0.5, ms: 450 }, melt: 0.25 },
+  },
+  {
+    id: 'fa:snowfall',
+    kind: 'weather',
+    bannerText: '❄ SNOWFALL — THE PIXELS DRIFT (COSMETIC)',
+    cue: { embers: 10, flash: { color: 0xffffff, ms: 100 } },
+  },
+  {
+    id: 'fa:coffee',
+    kind: 'blessing',
+    bannerText: '☕ A COFFEE APPEARS ON THE DESK (COSMETIC)',
+    cue: { flash: { color: 0xffaa66, ms: 140 } },
+  },
+  {
+    id: 'fa:mist',
+    kind: 'weather',
+    bannerText: '🌫 MIST — EVERYTHING GOES SOFT (COSMETIC)',
+    cue: { scanlines: true },
+  },
+  {
+    id: 'fa:humming',
+    kind: 'taunt',
+    bannerText: '🎵 SOMEONE HUMS THE THEME ALONG (COSMETIC)',
+    cue: { glitch: 180 },
+  },
+  {
+    id: 'fa:sundown',
+    kind: 'weather',
+    bannerText: '🌇 SUNDOWN HAZE — COLORS WARM UP (COSMETIC)',
+    cue: { flash: { color: 0xff8844, ms: 180 }, embers: 8 },
+  },
+  {
+    id: 'fa:mint-tonic',
+    kind: 'blessing',
+    bannerText: '🌿 MINT TONIC — THE MIND SHARPENS (COSMETIC)',
+    cue: { flash: { color: 0x88ff88, ms: 120 }, embers: 5 },
+  },
+  {
+    id: 'fa:loud-crowd',
+    kind: 'taunt',
+    bannerText: '📣 THE CROWD GUESSES OUT LOUD (COSMETIC)',
+    cue: { glitch: 300, shake: { intensity: 0.15, ms: 250 } },
+  },
+  {
+    id: 'fa:ember-rain',
+    kind: 'weather',
+    bannerText: '🔥 EMBER RAIN — THE SKY IS IN A MOOD (COSMETIC)',
+    cue: { embers: 32, flash: { color: 0xff6622, ms: 160 } },
+  },
+  {
+    id: 'fa:starfall',
+    kind: 'weather',
+    bannerText: '✨ STARFALL — THE CEILING GOES QUIET (COSMETIC)',
+    cue: { embers: 18, flash: { color: 0xccccff, ms: 200 } },
+  },
+  {
+    id: 'fa:luck-drip',
+    kind: 'blessing',
+    bannerText: '🍀 LUCK DRIP — A SMALL FORTUNE DRIFTS BY',
+    cue: { flash: { color: 0x44ff44, ms: 130 }, embers: 9 },
+  },
 ];
 
 /** Window -> roster index (hostile slices, in roll order). */
@@ -313,6 +485,16 @@ const FA_HOSTILE: readonly (readonly [w: number, i: number])[] = [
   [W_FA_PYRO, 6],     // fa:pyro-entrance
   [W_FA_STATIC, 7],   // fa:static-curse
   [W_FA_ECHO, 8],     // fa:echo
+  [W_FA_SLAM_DROP, 16], // fa:slam-drop
+  [W_FA_FROST, 17],     // fa:frost-bite
+  [W_FA_MIRROR, 18],    // fa:mirror-taunt
+  [W_FA_HEARTH, 19],    // fa:hearth
+  [W_FA_ROT, 20],       // fa:rot-curse
+  [W_FA_BELL, 21],      // fa:wrong-bell
+  [W_FA_VENOM, 22],     // fa:venom-curse
+  [W_FA_SLOW_CLAP, 23], // fa:slow-clap
+  [W_FA_SPOTTER, 24],   // fa:spotter
+  [W_FA_DUST, 25],      // fa:dust-storm
 ];
 
 /** Window -> roster index (neutral slices, in roll order). */
@@ -324,6 +506,16 @@ const FA_NEUTRAL: readonly (readonly [w: number, i: number])[] = [
   [W_FA_TAUNT_N, 13], // fa:taunt-neutral
   [W_FA_REVERSAL_N, 14], // fa:reversal-neutral
   [W_FA_AURORA, 15],  // fa:aurora
+  [W_FA_SNOWFALL, 26], // fa:snowfall
+  [W_FA_COFFEE, 27],   // fa:coffee
+  [W_FA_MIST, 28],     // fa:mist
+  [W_FA_HUM, 29],      // fa:humming
+  [W_FA_SUNDOWN, 30],  // fa:sundown
+  [W_FA_MINT, 31],     // fa:mint-tonic
+  [W_FA_CROWD, 32],    // fa:loud-crowd
+  [W_FA_EMBER_RAIN, 33], // fa:ember-rain
+  [W_FA_STARFALL, 34], // fa:starfall
+  [W_FA_LUCK, 35],     // fa:luck-drip
 ];
 
 /** Roster events that template in a seeded persona / weather line. */
@@ -350,8 +542,12 @@ function materialize(ev: FlavorMod, rng: () => number): FlavorMod {
 /**
  * One roll per round start. Returns null when nothing fires.
  * - depth < 3:    always null (rounds 1-2 stay baseline parity).
- * - bad/chaotic:  entrance, tape, taunt, reversal, sanctuary, glitch, pyro, static, echo slices.
- * - neutral:      weather, fog, thunder, blessing, taunt, reversal, aurora windows.
+ * - bad/chaotic:  entrance, tape, taunt, reversal, sanctuary, glitch, pyro, static, echo,
+ *                then P6: slam-drop, frost, mirror, hearth, rot, bell, venom, slow-clap,
+ *                spotter, dust windows.
+ * - neutral:      weather, fog, thunder, blessing, taunt, reversal, aurora, then P6:
+ *                snowfall, coffee, mist, humming, sundown, mint, crowd, ember-rain,
+ *                starfall, luck windows.
  * - good:         quiet (blessings own it).
  */
 export function maybeFlavorA(ctx: FateCtx): FlavorMod | null {
@@ -459,9 +655,16 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   call = 0;
   m = maybeFlavorA({ seed: 1, depth: 3, align: 'bad', rng: fixed(W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO + W_FA_STATIC + W_FA_ECHO - 0.0001) });
   if (!m || m.id !== 'fa:echo') failures.push(`echo slice high-inside missed: ${JSON.stringify(m)}`);
+  // P6 batch: seam between old hostile tail and new hostile head
+  call = 0;
+  m = maybeFlavorA({ seed: 1, depth: 3, align: 'bad', rng: fixed(W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO + W_FA_STATIC + W_FA_ECHO) });
+  if (!m || m.id !== 'fa:slam-drop') failures.push(`slam-drop slice start wrong: ${JSON.stringify(m)}`);
+  call = 0;
+  m = maybeFlavorA({ seed: 1, depth: 3, align: 'bad', rng: fixed(W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO + W_FA_STATIC + W_FA_ECHO + W_FA_SLAM_DROP + W_FA_FROST + W_FA_MIRROR + W_FA_HEARTH + W_FA_ROT + W_FA_BELL + W_FA_VENOM + W_FA_SLOW_CLAP + W_FA_SPOTTER + W_FA_DUST - 0.0001) });
+  if (!m || m.id !== 'fa:dust-storm') failures.push(`dust-storm slice high-inside missed: ${JSON.stringify(m)}`);
   // past all hostile windows -> quiet hostile round
   call = 0;
-  m = maybeFlavorA({ seed: 1, depth: 3, align: 'bad', rng: fixed(W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO + W_FA_STATIC + W_FA_ECHO + 0.0001) });
+  m = maybeFlavorA({ seed: 1, depth: 3, align: 'bad', rng: fixed(W_FA_ENTRANCE + W_FA_TAPE + W_FA_TAUNT + W_FA_REVERSAL + W_FA_SANCTUARY + W_FA_GLITCH + W_FA_PYRO + W_FA_STATIC + W_FA_ECHO + W_FA_SLAM_DROP + W_FA_FROST + W_FA_MIRROR + W_FA_HEARTH + W_FA_ROT + W_FA_BELL + W_FA_VENOM + W_FA_SLOW_CLAP + W_FA_SPOTTER + W_FA_DUST + 0.0001) });
   if (m !== null) failures.push(`quiet hostile round fired: ${JSON.stringify(m)}`);
 
   // neutral: weather window
@@ -511,9 +714,16 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   call = 0;
   m = maybeFlavorA({ seed: 1, depth: 3, align: 'neutral', rng: fixed(W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N + W_FA_REVERSAL_N + W_FA_AURORA - 0.0001) });
   if (!m || m.id !== 'fa:aurora') failures.push(`aurora slice high-inside missed: ${JSON.stringify(m)}`);
+  // P6 batch: seam between old neutral tail and new neutral head
+  call = 0;
+  m = maybeFlavorA({ seed: 1, depth: 3, align: 'neutral', rng: fixed(W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N + W_FA_REVERSAL_N + W_FA_AURORA) });
+  if (!m || m.id !== 'fa:snowfall') failures.push(`snowfall slice start wrong: ${JSON.stringify(m)}`);
+  call = 0;
+  m = maybeFlavorA({ seed: 1, depth: 3, align: 'neutral', rng: fixed(W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N + W_FA_REVERSAL_N + W_FA_AURORA + W_FA_SNOWFALL + W_FA_COFFEE + W_FA_MIST + W_FA_HUM + W_FA_SUNDOWN + W_FA_MINT + W_FA_CROWD + W_FA_EMBER_RAIN + W_FA_STARFALL + W_FA_LUCK - 0.0001) });
+  if (!m || m.id !== 'fa:luck-drip') failures.push(`luck-drip slice high-inside missed: ${JSON.stringify(m)}`);
   // past all neutral windows -> quiet neutral round
   call = 0;
-  m = maybeFlavorA({ seed: 1, depth: 3, align: 'neutral', rng: fixed(W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N + W_FA_REVERSAL_N + W_FA_AURORA + 0.0001) });
+  m = maybeFlavorA({ seed: 1, depth: 3, align: 'neutral', rng: fixed(W_FA_WEATHER + W_FA_FOG + W_FA_THUNDER + W_FA_BLESS + W_FA_TAUNT_N + W_FA_REVERSAL_N + W_FA_AURORA + W_FA_SNOWFALL + W_FA_COFFEE + W_FA_MIST + W_FA_HUM + W_FA_SUNDOWN + W_FA_MINT + W_FA_CROWD + W_FA_EMBER_RAIN + W_FA_STARFALL + W_FA_LUCK + 0.0001) });
   if (m !== null) failures.push(`quiet neutral round fired: ${JSON.stringify(m)}`);
   // weather must NOT fire on good or hostile even inside the window
   for (const a of ['good', 'bad', 'chaotic'] as const) {
@@ -577,6 +787,16 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const pPyro = (hostileHits['fa:pyro-entrance'] ?? 0) / N;
   const pStatic = (hostileHits['fa:static-curse'] ?? 0) / N;
   const pEcho = (hostileHits['fa:echo'] ?? 0) / N;
+  const pSlamDrop = (hostileHits['fa:slam-drop'] ?? 0) / N;
+  const pFrost = (hostileHits['fa:frost-bite'] ?? 0) / N;
+  const pMirror = (hostileHits['fa:mirror-taunt'] ?? 0) / N;
+  const pHearth = (hostileHits['fa:hearth'] ?? 0) / N;
+  const pRot = (hostileHits['fa:rot-curse'] ?? 0) / N;
+  const pBell = (hostileHits['fa:wrong-bell'] ?? 0) / N;
+  const pVenom = (hostileHits['fa:venom-curse'] ?? 0) / N;
+  const pClap = (hostileHits['fa:slow-clap'] ?? 0) / N;
+  const pSpotter = (hostileHits['fa:spotter'] ?? 0) / N;
+  const pDust = (hostileHits['fa:dust-storm'] ?? 0) / N;
   if (Math.abs(pEnt - W_FA_ENTRANCE) > 0.008) failures.push(`entrance rate ${pEnt.toFixed(4)} != 0.06±0.008`);
   if (Math.abs(pTape - W_FA_TAPE) > 0.008) failures.push(`tape rate ${pTape.toFixed(4)} != 0.05±0.008`);
   if (Math.abs(pTaunt - W_FA_TAUNT) > 0.008) failures.push(`taunt rate ${pTaunt.toFixed(4)} != 0.02±0.008`);
@@ -586,6 +806,16 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   if (Math.abs(pPyro - W_FA_PYRO) > 0.008) failures.push(`pyro rate ${pPyro.toFixed(4)} != 0.02±0.008`);
   if (Math.abs(pStatic - W_FA_STATIC) > 0.008) failures.push(`static rate ${pStatic.toFixed(4)} != 0.02±0.008`);
   if (Math.abs(pEcho - W_FA_ECHO) > 0.008) failures.push(`echo rate ${pEcho.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pSlamDrop - W_FA_SLAM_DROP) > 0.008) failures.push(`slam-drop rate ${pSlamDrop.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pFrost - W_FA_FROST) > 0.008) failures.push(`frost-bite rate ${pFrost.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pMirror - W_FA_MIRROR) > 0.008) failures.push(`mirror-taunt rate ${pMirror.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pHearth - W_FA_HEARTH) > 0.008) failures.push(`hearth rate ${pHearth.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pRot - W_FA_ROT) > 0.008) failures.push(`rot-curse rate ${pRot.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pBell - W_FA_BELL) > 0.008) failures.push(`wrong-bell rate ${pBell.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pVenom - W_FA_VENOM) > 0.008) failures.push(`venom-curse rate ${pVenom.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pClap - W_FA_SLOW_CLAP) > 0.008) failures.push(`slow-clap rate ${pClap.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pSpotter - W_FA_SPOTTER) > 0.008) failures.push(`spotter rate ${pSpotter.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pDust - W_FA_DUST) > 0.008) failures.push(`dust-storm rate ${pDust.toFixed(4)} != 0.02±0.008`);
   // Rate checks for neutral windows
   const pWx = (neutralHits['fa:brit-drizzle'] ?? 0) / N;
   const pFog = (neutralHits['fa:fog'] ?? 0) / N;
@@ -594,6 +824,16 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const pTauntN = (neutralHits['fa:taunt-neutral'] ?? 0) / N;
   const pReversalN = (neutralHits['fa:reversal-neutral'] ?? 0) / N;
   const pAurora = (neutralHits['fa:aurora'] ?? 0) / N;
+  const pSnow = (neutralHits['fa:snowfall'] ?? 0) / N;
+  const pCoffee = (neutralHits['fa:coffee'] ?? 0) / N;
+  const pMist = (neutralHits['fa:mist'] ?? 0) / N;
+  const pHum = (neutralHits['fa:humming'] ?? 0) / N;
+  const pSundown = (neutralHits['fa:sundown'] ?? 0) / N;
+  const pMint = (neutralHits['fa:mint-tonic'] ?? 0) / N;
+  const pCrowd = (neutralHits['fa:loud-crowd'] ?? 0) / N;
+  const pEmberRain = (neutralHits['fa:ember-rain'] ?? 0) / N;
+  const pStarfall = (neutralHits['fa:starfall'] ?? 0) / N;
+  const pLuck = (neutralHits['fa:luck-drip'] ?? 0) / N;
   if (Math.abs(pWx - W_FA_WEATHER) > 0.008) failures.push(`weather rate ${pWx.toFixed(4)} != 0.08±0.008`);
   if (Math.abs(pFog - W_FA_FOG) > 0.008) failures.push(`fog rate ${pFog.toFixed(4)} != 0.02±0.008`);
   if (Math.abs(pThunder - W_FA_THUNDER) > 0.008) failures.push(`thunder rate ${pThunder.toFixed(4)} != 0.02±0.008`);
@@ -601,6 +841,16 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   if (Math.abs(pTauntN - W_FA_TAUNT_N) > 0.008) failures.push(`taunt-neutral rate ${pTauntN.toFixed(4)} != 0.02±0.008`);
   if (Math.abs(pReversalN - W_FA_REVERSAL_N) > 0.008) failures.push(`reversal-neutral rate ${pReversalN.toFixed(4)} != 0.02±0.008`);
   if (Math.abs(pAurora - W_FA_AURORA) > 0.008) failures.push(`aurora rate ${pAurora.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pSnow - W_FA_SNOWFALL) > 0.008) failures.push(`snowfall rate ${pSnow.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pCoffee - W_FA_COFFEE) > 0.008) failures.push(`coffee rate ${pCoffee.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pMist - W_FA_MIST) > 0.008) failures.push(`mist rate ${pMist.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pHum - W_FA_HUM) > 0.008) failures.push(`humming rate ${pHum.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pSundown - W_FA_SUNDOWN) > 0.008) failures.push(`sundown rate ${pSundown.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pMint - W_FA_MINT) > 0.008) failures.push(`mint-tonic rate ${pMint.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pCrowd - W_FA_CROWD) > 0.008) failures.push(`loud-crowd rate ${pCrowd.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pEmberRain - W_FA_EMBER_RAIN) > 0.008) failures.push(`ember-rain rate ${pEmberRain.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pStarfall - W_FA_STARFALL) > 0.008) failures.push(`starfall rate ${pStarfall.toFixed(4)} != 0.02±0.008`);
+  if (Math.abs(pLuck - W_FA_LUCK) > 0.008) failures.push(`luck-drip rate ${pLuck.toFixed(4)} != 0.02±0.008`);
   if (entPersonas.size !== ROSTER.length) failures.push(`only ${entPersonas.size}/${ROSTER.length} personas observed`);
   if (wxLines.size !== WEATHER_LINES.length) failures.push(`only ${wxLines.size}/${WEATHER_LINES.length} weather lines observed`);
 
@@ -651,6 +901,26 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     'fa:taunt-neutral': true,
     'fa:reversal-neutral': true,
     'fa:aurora': true,
+    'fa:slam-drop': true,
+    'fa:frost-bite': true,
+    'fa:mirror-taunt': true,
+    'fa:hearth': true,
+    'fa:rot-curse': true,
+    'fa:wrong-bell': true,
+    'fa:venom-curse': true,
+    'fa:slow-clap': true,
+    'fa:spotter': true,
+    'fa:dust-storm': true,
+    'fa:snowfall': true,
+    'fa:coffee': true,
+    'fa:mist': true,
+    'fa:humming': true,
+    'fa:sundown': true,
+    'fa:mint-tonic': true,
+    'fa:loud-crowd': true,
+    'fa:ember-rain': true,
+    'fa:starfall': true,
+    'fa:luck-drip': true,
   };
   for (const id of seenIds) {
     if (!ownIds[id]) failures.push(`unexpected id produced: ${id}`);

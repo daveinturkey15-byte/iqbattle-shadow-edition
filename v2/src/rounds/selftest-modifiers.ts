@@ -54,7 +54,7 @@ function sameState(a: BoardTarget, b: BoardTarget): boolean {
   const sa = a.scanline;
   const sb = b.scanline;
   if ((sa === undefined) !== (sb === undefined)) return false;
-  if (sa && sb && (sa.y !== sb.y || sa.bandH !== sb.bandH || sa.alpha !== sb.alpha)) return false;
+  if (sa && sb && (sa.f !== sb.f || sa.bandH !== sb.bandH || sa.alpha !== sb.alpha)) return false;
   const ta = a.tilt;
   const tb = b.tilt;
   if ((ta === undefined) !== (tb === undefined)) return false;
@@ -176,6 +176,74 @@ export function selfTest(): { ok: boolean; failures: string[] } {
       }
     });
   }
+
+  /* P5: scanline-roll — the gate asserts the state main.ts actually paints:
+   * scene.scanline = { f, bandH, alpha }. A no-op implementation (never
+   * setting the field) fails here. */
+  const sl = MODIFIERS.find((m) => m.id === 'scanline-roll');
+  check(`scanline-roll painted state (${SEED_COUNT} seeds)`, () => {
+    assert(!!sl, 'scanline-roll missing from MODIFIERS');
+    if (!sl) return;
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+      const ctx: ModCtx = { depth, seed, layer, align, motion: true };
+
+      const stubA = createStub(1, 1, 150, 250);
+      const stopA = sl.apply(ctx, stubA);
+      assert(stopA.step !== undefined, `[scanline-roll seed=${seed}] motion stop must expose step(tMs) for the scene tick`);
+
+      const a0 = stubA.scanline;
+      if (!a0) {
+        assert(false, `[scanline-roll seed=${seed}] motion apply must set scene.scanline (main.ts paints from it)`);
+        continue;
+      }
+      assert(a0.alpha >= 0.2 && a0.alpha <= 0.4, `[scanline-roll seed=${seed}] alpha out of 0.2–0.4 cap (got ${a0.alpha})`);
+      assert(a0.bandH >= 24 && a0.bandH <= 48, `[scanline-roll seed=${seed}] bandH out of 24–48 (got ${a0.bandH})`);
+      assert(a0.f > 0 && a0.f < 1, `[scanline-roll seed=${seed}] band centre f outside 0..1 (got ${a0.f})`);
+
+      // Determinism: a second apply at the same seed yields the same state.
+      const stubB = createStub(1, 1, 150, 250);
+      const stopB = sl.apply(ctx, stubB);
+      assert(sameState(stubA, stubB), `[scanline-roll seed=${seed}] non-deterministic apply (motion=true)`);
+
+      // The state must actually move under step(tMs) — this is what makes the
+      // band roll on screen. Sample the same clock the scene tick uses.
+      let sawMovement = false;
+      for (const t of [250, 500, 750, 1000, 1500, 2000, 4000]) {
+        stopA.step!(t);
+        const cur = stubA.scanline!;
+        if (cur.f !== a0.f || cur.bandH !== a0.bandH || cur.alpha !== a0.alpha) sawMovement = true;
+        assert(cur.f > 0 && cur.f < 1, `[scanline-roll seed=${seed}] f left 0..1 at t=${t} (got ${cur.f})`);
+      }
+      assert(sawMovement, `[scanline-roll seed=${seed}] band never moved across step(250..4000)`);
+      // Alpha and bandH are constants for the round: only f may move.
+      assert(stubA.scanline!.bandH === a0.bandH && stubA.scanline!.alpha === a0.alpha,
+        `[scanline-roll seed=${seed}] bandH/alpha drifted during the round`);
+
+      // Teardown: deletes the field (it was absent before apply).
+      stopA();
+      assert(stubA.scanline === undefined, `[scanline-roll seed=${seed}] teardown did not delete scene.scanline (motion=true)`);
+      stopB();
+      assert(stubB.scanline === undefined, `[scanline-roll seed=${seed}] teardownB did not delete scene.scanline (motion=true)`);
+
+      // Static variant: pinned band, NO step (no reported movement), still valid.
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = sl.apply(sctx, sStub);
+      const sState = sStub.scanline;
+      assert(!!sState, `[scanline-roll seed=${seed}] static apply must set scene.scanline`);
+      assert(sState !== undefined && sState.alpha >= 0.2 && sState.alpha <= 0.4,
+        `[scanline-roll seed=${seed}] static alpha out of cap (got ${sState?.alpha})`);
+      assert(sState !== undefined && sState.f > 0 && sState.f < 1,
+        `[scanline-roll seed=${seed}] static f outside 0..1 (got ${sState?.f})`);
+      assert(sStop.step === undefined, `[scanline-roll seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+      sStop();
+      assert(sStub.scanline === undefined, `[scanline-roll seed=${seed}] teardown did not delete scene.scanline (motion=false)`);
+    }
+  });
 
   check(`pickModifiers determinism and max bound over ${SEED_COUNT} seeds`, () => {
     for (let i = 0; i < SEED_COUNT; i++) {

@@ -46,8 +46,12 @@ export interface BoardTarget {
   fog?: { alpha: number; x: number; y: number; r: number };
   /** Ink-splatter occlusion (alpha decays to 0 as it wipes away). */
   ink?: { alpha: number; x: number; y: number; r: number };
-  /** Scanline-roll band (partial height, alpha ≤ 0.4). */
-  scanline?: { y: number; bandH: number; alpha: number };
+  /**
+   * Scanline-roll band. f = band centre as a fraction of board-panel height
+   * (0 = top, 1 = bottom); main.ts maps it onto the board column so the band
+   * always stays inside the panel. Alpha ≤ 0.4 → board always ≥ 60% visible.
+   */
+  scanline?: { f: number; bandH: number; alpha: number };
   /** Tilt-3d perspective pitch (radians). */
   tilt?: { pitch: number };
   /** Piano-keys restyle flag for the option tiles. */
@@ -507,20 +511,20 @@ const scanlineRollModifier: RoundModifier = {
     const target = resolveBoardTarget(scene);
     if (!target) return () => {};
 
-    const origScanline: { y: number; bandH: number; alpha: number } | undefined =
+    const origScanline: { f: number; bandH: number; alpha: number } | undefined =
       target.scanline ? { ...target.scanline } : undefined;
 
     const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x2c58f1a3)) >>> 0);
     const alpha = 0.2 + rng() * 0.2; // 0.2–0.4 → board always ≥ 60% visible
     const bandH = 24 + rng() * 24;
-    const travel = 120 + rng() * 80; // vertical travel range
+    const travelF = 0.25 + rng() * 0.2; // centre sweeps 0.5±(0.25..0.45) of panel height
     const periodMs = 3000 + rng() * 2000;
     const phase = rng() * Math.PI * 2;
 
     const setAt = (tMs: number): void => {
       const a = (2 * Math.PI * tMs) / periodMs + phase;
       target.scanline = {
-        y: travel * Math.sin(a),
+        f: 0.5 + travelF * Math.sin(a),
         bandH,
         alpha,
       };
@@ -530,16 +534,16 @@ const scanlineRollModifier: RoundModifier = {
       setAt(0);
     } else {
       // Static variant: band pinned at its seeded t=0 position, identical rules.
-      target.scanline = { y: travel * Math.sin(phase), bandH, alpha };
+      target.scanline = { f: 0.5 + travelF * Math.sin(phase), bandH, alpha };
     }
 
     const stop: ModifierStop = () => {
       if (origScanline === undefined) delete target.scanline;
       else target.scanline = { ...origScanline };
     };
-    stop.step = (tMs: number): void => {
-      setAt(tMs);
-    };
+    // motion=false ⇒ no reported movement, same rail as the chaos bus: the
+    // band stays pinned at its seeded position.
+    if (ctx.motion) stop.step = (tMs: number): void => { setAt(tMs); };
     return stop;
   },
 };

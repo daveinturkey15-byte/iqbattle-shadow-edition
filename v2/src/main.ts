@@ -552,9 +552,13 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   /* Partial inversion via DIFFERENCE blend: it inverts whatever is already
    * drawn (the board); banners are drawn after it, so they stay clean. */
   chaosInvertG.blendMode = 'difference';
-  /* Into the overlay (parented LAST in deal) so the juice sits above the
-   * board but under the banners, which are added to the overlay afterwards. */
-  overlay.addChild(chaosFlash, chaosScan, chaosMeltG, chaosEmberG, chaosGlitchG, chaosInvertG);
+  /* P5: modifier scanline band — painted from the pure scanline-roll state
+   * (same split as the chaos bus: modifiers.ts holds the numbers, the tick
+   * paints them). Parented before the banners so it can never cover text. */
+  modScanG = new Graphics();
+  overlay.addChild(chaosFlash, chaosScan, modScanG, chaosMeltG, chaosEmberG, chaosGlitchG, chaosInvertG);
+  modFx = [];
+  modTickMs = 0;
   if (chaos) chaos.intensity(Math.min(1, plan.layer / 7)); /* corruption deepens with the descent */
   /* P4: round boundary — persistent cue state lasts exactly one round. melt is
    * a persistent bus value and cueScanlines is the flag the tick ORs into the
@@ -682,6 +686,12 @@ let chaosMeltG: Graphics | null = null;
 let chaosEmberG: Graphics | null = null;
 let chaosGlitchG: Graphics | null = null;
 let chaosInvertG: Graphics | null = null;
+let modScanG: Graphics | null = null;
+/* P5: per-round modifier effect drivers. Each entry is a pure-ish painter
+ * (tMs) => void built in dealPuzzle from a modifier's state; the run tick
+ * drives them on the same 250 ms clock. Rebuilt every deal. */
+let modFx: Array<(tMs: number) => void> = [];
+let modTickMs = 0;
 /* P4: true while a fate cue asked for scanlines this round. The tick ORs it
  * into the layer>=4 condition so a cue's scanlines survive the per-tick sync.
  * Reset at the top of every deal (round boundary). */
@@ -725,6 +735,7 @@ function performCue(cue: {
 function clearJuice(): void {
   chaosFlash?.clear();
   chaosScan?.clear();
+  modScanG?.clear();
   chaosMeltG?.clear();
   chaosEmberG?.clear();
   chaosGlitchG?.clear();
@@ -740,6 +751,11 @@ function startTick(root: Container): void {
     /* P2: drive the chaos bus from the run tick and paint its state. The
      * ambient trigger rolls once per second from (runSeed, depth, second) —
      * no local randomness, so host and clients corrupt in step. */
+    /* P5: drive modifier effects from the same 250 ms clock. modFx paints the
+     * band/occlusion Graphics from the pure modifier state; modTickMs is the
+     * accumulated clock those effects' step(tMs) was designed around. */
+    modTickMs += 250;
+    for (const fx of modFx) { try { fx(modTickMs); } catch { /* juice must never kill a round */ } }
     if (chaos) {
       chaos.tick(250);
       const st = chaos.state();
@@ -947,6 +963,27 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
   for (const mod of pickModifiers(mctx, modMax)) {
     const stop = mod.apply(mctx, scene);
     onSceneStop(stop);
+    if (mod.id === 'scanline-roll') {
+      /* P5: scanline-roll — main.ts is the only place the pure state touches
+       * Pixi. The painter advances the pure clock (stop.step) and paints the
+       * band from scene.scanline, scoped to the board column exactly like the
+       * chaos juice. Teardown deletes scene.scanline, the band disappears,
+       * and the scene teardown below wipes the Graphics. Static mode has no
+       * step, so the band stays pinned — no movement reported. */
+      const paint = (tMs: number): void => {
+        if (stop.step) stop.step(tMs);
+        const g = modScanG;
+        if (!g) return;
+        g.clear();
+        const st = (scene as unknown as { scanline?: { f: number; bandH: number; alpha: number } }).scanline;
+        if (st) {
+          const y = BOARD_PANEL.y + st.f * BOARD_PANEL.h;
+          g.rect(BOARD_PANEL.x, y - st.bandH / 2, BOARD_PANEL.w, st.bandH).fill({ color: 0xffffff, alpha: st.alpha });
+        }
+      };
+      modFx.push(paint);
+      onSceneStop(() => { modScanG?.clear(); });
+    }
   }
 
   /* P3: cameo silhouettes — pure function of (runSeed, depth), budgeted per
