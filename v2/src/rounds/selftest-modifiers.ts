@@ -245,6 +245,73 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  /* P5: ink-splatter — the gate asserts the state main.ts actually paints:
+   * scene.ink = { alpha, x, y, r }. A no-op implementation (never setting the
+   * field) fails here. */
+  const ink = MODIFIERS.find((m) => m.id === 'ink-splatter');
+  check(`ink-splatter painted state (${SEED_COUNT} seeds)`, () => {
+    assert(!!ink, 'ink-splatter missing from MODIFIERS');
+    if (!ink) return;
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+      const ctx: ModCtx = { depth, seed, layer, align, motion: true };
+
+      const stubA = createStub(1, 1, 150, 250);
+      const stopA = ink.apply(ctx, stubA);
+      assert(stopA.step !== undefined, `[ink-splatter seed=${seed}] motion stop must expose step(tMs) for the scene tick`);
+
+      const a0 = stubA.ink;
+      if (!a0) {
+        assert(false, `[ink-splatter seed=${seed}] motion apply must set scene.ink (main.ts paints from it)`);
+        continue;
+      }
+      assert(a0.alpha >= 0.2 && a0.alpha <= 0.4, `[ink-splatter seed=${seed}] alpha out of 0.2–0.4 cap (got ${a0.alpha})`);
+      assert(a0.r >= 70 && a0.r <= 120, `[ink-splatter seed=${seed}] radius out of 70–120 (got ${a0.r})`);
+      assert(Math.abs(a0.x) <= 70, `[ink-splatter seed=${seed}] x offset out of ±70 (got ${a0.x})`);
+      assert(Math.abs(a0.y) <= 45, `[ink-splatter seed=${seed}] y offset out of ±45 (got ${a0.y})`);
+
+      // Determinism: a second apply at the same seed yields the same state.
+      const stubB = createStub(1, 1, 150, 250);
+      const stopB = ink.apply(ctx, stubB);
+      assert(sameState(stubA, stubB), `[ink-splatter seed=${seed}] non-deterministic apply (motion=true)`);
+
+      // The state must actually change under step(tMs) — this is what makes
+      // the blot wipe away on screen. Sample the same clock the scene tick
+      // uses. Alpha must decay toward 0; x, y, r are constants for the round.
+      let sawWipe = false;
+      for (const t of [250, 500, 750, 1000, 1500, 2000, 4000]) {
+        stopA.step!(t);
+        const cur = stubA.ink!;
+        if (cur.alpha !== a0.alpha) sawWipe = true;
+        assert(cur.alpha >= 0 && cur.alpha <= 0.4, `[ink-splatter seed=${seed}] alpha out of cap at t=${t} (got ${cur.alpha})`);
+        assert(cur.x === a0.x && cur.y === a0.y && cur.r === a0.r,
+          `[ink-splatter seed=${seed}] x/y/r drifted during the wipe at t=${t}`);
+      }
+      assert(sawWipe, `[ink-splatter seed=${seed}] alpha never wiped across step(250..4000)`);
+
+      // Teardown: deletes the field (it was absent before apply).
+      stopA();
+      assert(stubA.ink === undefined, `[ink-splatter seed=${seed}] teardown did not delete scene.ink (motion=true)`);
+      stopB();
+      assert(stubB.ink === undefined, `[ink-splatter seed=${seed}] teardownB did not delete scene.ink (motion=true)`);
+
+      // Static variant: pinned mid-wipe blot, NO step (no reported movement).
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = ink.apply(sctx, sStub);
+      const sState = sStub.ink;
+      assert(!!sState, `[ink-splatter seed=${seed}] static apply must set scene.ink`);
+      assert(sState !== undefined && sState.alpha >= 0.1 && sState.alpha <= 0.2,
+        `[ink-splatter seed=${seed}] static alpha out of mid-wipe 0.1–0.2 (got ${sState?.alpha})`);
+      assert(sStop.step === undefined, `[ink-splatter seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+      sStop();
+      assert(sStub.ink === undefined, `[ink-splatter seed=${seed}] teardown did not delete scene.ink (motion=false)`);
+    }
+  });
+
   check(`pickModifiers determinism and max bound over ${SEED_COUNT} seeds`, () => {
     for (let i = 0; i < SEED_COUNT; i++) {
       const seed = (i * 1103515245 + 12345) >>> 0;

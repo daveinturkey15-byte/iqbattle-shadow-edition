@@ -328,9 +328,9 @@ const lurchModifier: RoundModifier = {
       target.x = origX;
       target.y = origY;
     };
-    stop.step = (tMs: number): void => {
-      setAt(tMs);
-    };
+    // motion=false ⇒ no reported movement, same rail as the chaos bus: the
+    // splatter stays pinned at its seeded mid-wipe alpha.
+    if (ctx.motion) stop.step = (tMs: number): void => { setAt(tMs); };
     return stop;
   },
 };
@@ -489,9 +489,9 @@ const inkSplatterModifier: RoundModifier = {
       if (origInk === undefined) delete target.ink;
       else target.ink = { ...origInk };
     };
-    stop.step = (tMs: number): void => {
-      setAt(tMs);
-    };
+    // motion=false ⇒ no reported movement, same rail as the chaos bus: the
+    // splatter stays pinned at its seeded mid-wipe alpha.
+    if (ctx.motion) stop.step = (tMs: number): void => { setAt(tMs); };
     return stop;
   },
 };
