@@ -385,6 +385,70 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  /* P5: tilt-3d — the gate asserts the state main.ts actually applies:
+   * scene.tilt = { pitch }. main.ts turns pitch (radians) into scale.y =
+   * cos(pitch) and skew.y = -pitch on the scene container. A no-op
+   * implementation (never setting the field) fails here. */
+  const tilt = MODIFIERS.find((m) => m.id === 'tilt-3d');
+  check(`tilt-3d painted state (${SEED_COUNT} seeds)`, () => {
+    assert(!!tilt, 'tilt-3d missing from MODIFIERS');
+    if (!tilt) return;
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+      const ctx: ModCtx = { depth, seed, layer, align, motion: true };
+
+      const stubA = createStub(1, 1, 150, 250);
+      const stopA = tilt.apply(ctx, stubA);
+      assert(stopA.step !== undefined, `[tilt-3d seed=${seed}] motion stop must expose step(tMs) for the scene tick`);
+
+      const a0 = stubA.tilt;
+      if (!a0) {
+        assert(false, `[tilt-3d seed=${seed}] motion apply must set scene.tilt (main.ts applies scale/skew from it)`);
+        continue;
+      }
+      // base 0.15–0.30 rad ± swing 0.05–0.10 → pitch ∈ [0.05, 0.40]
+      assert(a0.pitch >= 0.05 && a0.pitch <= 0.40, `[tilt-3d seed=${seed}] pitch out of 0.05–0.40 rad (got ${a0.pitch})`);
+
+      // Determinism: a second apply at the same seed yields the same state.
+      const stubB = createStub(1, 1, 150, 250);
+      const stopB = tilt.apply(ctx, stubB);
+      assert(sameState(stubA, stubB), `[tilt-3d seed=${seed}] non-deterministic apply (motion=true)`);
+
+      // The pitch must actually oscillate under step(tMs) — this is what makes
+      // the board visibly lean on screen.
+      let sawOsc = false;
+      for (const t of [250, 500, 750, 1000, 1500, 2000, 4000]) {
+        stopA.step!(t);
+        const cur = stubA.tilt!;
+        if (cur.pitch !== a0.pitch) sawOsc = true;
+        assert(cur.pitch >= 0.05 && cur.pitch <= 0.40, `[tilt-3d seed=${seed}] pitch out of 0.05–0.40 at t=${t} (got ${cur.pitch})`);
+      }
+      assert(sawOsc, `[tilt-3d seed=${seed}] pitch never oscillated across step(250..4000)`);
+
+      // Teardown: deletes the field (it was absent before apply).
+      stopA();
+      assert(stubA.tilt === undefined, `[tilt-3d seed=${seed}] teardown did not delete scene.tilt (motion=true)`);
+      stopB();
+      assert(stubB.tilt === undefined, `[tilt-3d seed=${seed}] teardownB did not delete scene.tilt (motion=true)`);
+
+      // Static variant: pinned at the seeded base pitch, NO step.
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = tilt.apply(sctx, sStub);
+      const sState = sStub.tilt;
+      assert(!!sState, `[tilt-3d seed=${seed}] static apply must set scene.tilt`);
+      // Static pins the board at the base pitch: 0.15–0.30 rad.
+      assert(sState !== undefined && sState.pitch >= 0.15 && sState.pitch <= 0.30,
+        `[tilt-3d seed=${seed}] static pitch out of base 0.15–0.30 (got ${sState?.pitch})`);
+      assert(sStop.step === undefined, `[tilt-3d seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+      sStop();
+      assert(sStub.tilt === undefined, `[tilt-3d seed=${seed}] teardown did not delete scene.tilt (motion=false)`);
+    }
+  });
+
   check(`pickModifiers determinism and max bound over ${SEED_COUNT} seeds`, () => {
     for (let i = 0; i < SEED_COUNT; i++) {
       const seed = (i * 1103515245 + 12345) >>> 0;

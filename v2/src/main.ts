@@ -1032,6 +1032,28 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       };
       modFx.push(paint);
       onSceneStop(() => { modFogG?.clear(); });
+    } else if (mod.id === 'tilt-3d') {
+      /* P5: tilt-3d — simplest honest perspective tilt, no real 3D: main.ts
+       * is the only place the pure state touches Pixi. The painter advances
+       * the pure clock (stop.step, absent in static mode) and reads
+       * scene.tilt = { pitch } (radians). It squashes the scene vertically —
+       * scale.y = cos(pitch) ∈ [0.92, 0.99] — and skews it by pitch around
+       * the stage-centre pivot already set up above, so the board leans
+       * without leaving the 1600x900 stage. Teardown restores the exact
+       * original transform. */
+      const origScaleX = scene.scale.x;
+      const origScaleY = scene.scale.y;
+      const paint = (tMs: number): void => {
+        if (stop.step) stop.step(tMs);
+        const st = (scene as unknown as { tilt?: { pitch: number } }).tilt;
+        if (st) {
+          scene.scale.y = Math.cos(st.pitch);
+          scene.skew.y = -st.pitch;
+        }
+      };
+      modFx.push(paint);
+      paint(0); // apply immediately; don't wait for the first 250 ms tick
+      onSceneStop(() => { scene.scale.x = origScaleX; scene.scale.y = origScaleY; scene.skew.y = 0; });
     }
   }
 

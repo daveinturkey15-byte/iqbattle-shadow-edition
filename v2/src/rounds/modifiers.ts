@@ -613,9 +613,9 @@ const tilt3dModifier: RoundModifier = {
       if (origTilt === undefined) delete target.tilt;
       else target.tilt = { ...origTilt };
     };
-    stop.step = (tMs: number): void => {
-      setAt(tMs);
-    };
+    // motion=false ⇒ no reported movement, same rail as the chaos bus: the
+    // board stays pinned at its seeded base pitch.
+    if (ctx.motion) stop.step = (tMs: number): void => { setAt(tMs); };
     return stop;
   },
 };
