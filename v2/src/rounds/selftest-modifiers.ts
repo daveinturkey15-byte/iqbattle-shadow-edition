@@ -312,6 +312,79 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  /* P5: fog-bank — the gate asserts the state main.ts actually paints:
+   * scene.fog = { alpha, x, y, r }. A no-op implementation (never setting the
+   * field) fails here. */
+  const fog = MODIFIERS.find((m) => m.id === 'fog-bank');
+  check(`fog-bank painted state (${SEED_COUNT} seeds)`, () => {
+    assert(!!fog, 'fog-bank missing from MODIFIERS');
+    if (!fog) return;
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+      const ctx: ModCtx = { depth, seed, layer, align, motion: true };
+
+      const stubA = createStub(1, 1, 150, 250);
+      const stopA = fog.apply(ctx, stubA);
+      assert(stopA.step !== undefined, `[fog-bank seed=${seed}] motion stop must expose step(tMs) for the scene tick`);
+
+      const a0 = stubA.fog;
+      if (!a0) {
+        assert(false, `[fog-bank seed=${seed}] motion apply must set scene.fog (main.ts paints from it)`);
+        continue;
+      }
+      assert(a0.alpha >= 0.2 && a0.alpha <= 0.4, `[fog-bank seed=${seed}] alpha out of 0.2–0.4 cap (got ${a0.alpha})`);
+      assert(a0.r >= 90 && a0.r <= 150, `[fog-bank seed=${seed}] radius out of 90–150 (got ${a0.r})`);
+      // drift centre ±80/±50 plus drift radius 30–60 → x ∈ ±140, y ∈ ±110
+      assert(Math.abs(a0.x) <= 140, `[fog-bank seed=${seed}] x offset out of ±140 (got ${a0.x})`);
+      assert(Math.abs(a0.y) <= 110, `[fog-bank seed=${seed}] y offset out of ±110 (got ${a0.y})`);
+
+      // Determinism: a second apply at the same seed yields the same state.
+      const stubB = createStub(1, 1, 150, 250);
+      const stopB = fog.apply(ctx, stubB);
+      assert(sameState(stubA, stubB), `[fog-bank seed=${seed}] non-deterministic apply (motion=true)`);
+
+      // The state must actually drift under step(tMs) — this is what makes the
+      // bank roll on screen. Alpha and r are constants for the round; x/y move.
+      let sawDrift = false;
+      for (const t of [250, 500, 750, 1000, 1500, 2000, 4000]) {
+        stopA.step!(t);
+        const cur = stubA.fog!;
+        if (cur.x !== a0.x || cur.y !== a0.y) sawDrift = true;
+        assert(cur.alpha >= 0.2 && cur.alpha <= 0.4, `[fog-bank seed=${seed}] alpha out of cap at t=${t} (got ${cur.alpha})`);
+        assert(cur.r === a0.r, `[fog-bank seed=${seed}] radius drifted during the round at t=${t}`);
+      }
+      assert(sawDrift, `[fog-bank seed=${seed}] fog bank never drifted across step(250..4000)`);
+
+      // Teardown: deletes the field (it was absent before apply).
+      stopA();
+      assert(stubA.fog === undefined, `[fog-bank seed=${seed}] teardown did not delete scene.fog (motion=true)`);
+      stopB();
+      assert(stubB.fog === undefined, `[fog-bank seed=${seed}] teardownB did not delete scene.fog (motion=true)`);
+
+      // Static variant: pinned bank at its seeded centre, NO step.
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = fog.apply(sctx, sStub);
+      const sState = sStub.fog;
+      assert(!!sState, `[fog-bank seed=${seed}] static apply must set scene.fog`);
+      assert(sState !== undefined && sState.alpha >= 0.2 && sState.alpha <= 0.4,
+        `[fog-bank seed=${seed}] static alpha out of cap (got ${sState?.alpha})`);
+      assert(sState !== undefined && sState.r >= 90 && sState.r <= 150,
+        `[fog-bank seed=${seed}] static radius out of 90–150 (got ${sState?.r})`);
+      // Static pins the bank at its seeded centre: cx ∈ ±80, cy ∈ ±50.
+      assert(sState !== undefined && Math.abs(sState.x) <= 80,
+        `[fog-bank seed=${seed}] static x outside seeded centre ±80 (got ${sState?.x})`);
+      assert(sState !== undefined && Math.abs(sState.y) <= 50,
+        `[fog-bank seed=${seed}] static y outside seeded centre ±50 (got ${sState?.y})`);
+      assert(sStop.step === undefined, `[fog-bank seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+      sStop();
+      assert(sStub.fog === undefined, `[fog-bank seed=${seed}] teardown did not delete scene.fog (motion=false)`);
+    }
+  });
+
   check(`pickModifiers determinism and max bound over ${SEED_COUNT} seeds`, () => {
     for (let i = 0; i < SEED_COUNT; i++) {
       const seed = (i * 1103515245 + 12345) >>> 0;

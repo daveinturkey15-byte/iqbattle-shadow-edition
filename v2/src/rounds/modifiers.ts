@@ -441,9 +441,9 @@ const fogBankModifier: RoundModifier = {
       if (origFog === undefined) delete target.fog;
       else target.fog = { ...origFog };
     };
-    stop.step = (tMs: number): void => {
-      setAt(tMs);
-    };
+    // motion=false ⇒ no reported movement, same rail as the chaos bus: the
+    // bank stays pinned at its seeded centre.
+    if (ctx.motion) stop.step = (tMs: number): void => { setAt(tMs); };
     return stop;
   },
 };

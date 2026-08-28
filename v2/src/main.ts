@@ -557,7 +557,8 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
    * paints them). Parented before the banners so it can never cover text. */
   modScanG = new Graphics();
   modInkG = new Graphics();
-  overlay.addChild(chaosFlash, chaosScan, modScanG, modInkG, chaosMeltG, chaosEmberG, chaosGlitchG, chaosInvertG);
+  modFogG = new Graphics();
+  overlay.addChild(chaosFlash, chaosScan, modScanG, modInkG, modFogG, chaosMeltG, chaosEmberG, chaosGlitchG, chaosInvertG);
   modFx = [];
   modTickMs = 0;
   if (chaos) chaos.intensity(Math.min(1, plan.layer / 7)); /* corruption deepens with the descent */
@@ -689,6 +690,7 @@ let chaosGlitchG: Graphics | null = null;
 let chaosInvertG: Graphics | null = null;
 let modScanG: Graphics | null = null;
 let modInkG: Graphics | null = null;
+let modFogG: Graphics | null = null;
 /* P5: per-round modifier effect drivers. Each entry is a pure-ish painter
  * (tMs) => void built in dealPuzzle from a modifier's state; the run tick
  * drives them on the same 250 ms clock. Rebuilt every deal. */
@@ -739,6 +741,7 @@ function clearJuice(): void {
   chaosScan?.clear();
   modScanG?.clear();
   modInkG?.clear();
+  modFogG?.clear();
   chaosMeltG?.clear();
   chaosEmberG?.clear();
   chaosGlitchG?.clear();
@@ -1007,6 +1010,28 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       };
       modFx.push(paint);
       onSceneStop(() => { modInkG?.clear(); });
+    } else if (mod.id === 'fog-bank') {
+      /* P5: fog-bank — same split as ink-splatter: main.ts is the only place
+       * the pure state touches Pixi. The painter advances the pure clock
+       * (stop.step, absent in static mode) and paints the drifting bank from
+       * scene.fog: centre-relative x/y offsets, radius r, alpha ≤ 0.4 so the
+       * board stays ≥ 60% visible. Parented in the overlay after the ink so
+       * it can never cover banners. Static mode has no step, so the bank
+       * stays pinned at its seeded centre — no movement reported. */
+      const paint = (tMs: number): void => {
+        if (stop.step) stop.step(tMs);
+        const g = modFogG;
+        if (!g) return;
+        g.clear();
+        const st = (scene as unknown as { fog?: { alpha: number; x: number; y: number; r: number } }).fog;
+        if (st) {
+          const cx = BOARD_PANEL.x + BOARD_PANEL.w / 2 + st.x;
+          const cy = BOARD_PANEL.y + BOARD_PANEL.h / 2 + st.y;
+          g.circle(cx, cy, st.r).fill({ color: 0x9fb4cc, alpha: st.alpha });
+        }
+      };
+      modFx.push(paint);
+      onSceneStop(() => { modFogG?.clear(); });
     }
   }
 
