@@ -501,6 +501,75 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  /* option-shuffle: a no-op implementation (never setting optionOrder)
+   * fails here. main.ts moves the option tiles' positions from this
+   * permutation, so it must be a valid permutation of 0..7, deterministic,
+   * step-free in both motion modes, torn down, and the banner must say the
+   * options moved. */
+  const shuf = MODIFIERS.find((m) => m.id === 'option-shuffle');
+  check(`option-shuffle permutation state (${SEED_COUNT} seeds)`, () => {
+    assert(!!shuf, 'option-shuffle missing from MODIFIERS');
+    if (!shuf) return;
+    assert(shuf.banner === 'OPTIONS HAVE MOVED', 'option-shuffle banner must say the options moved');
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+
+      // Motion variant: a valid permutation of 0..7, NO step.
+      const mctx: ModCtx = { depth, seed, layer, align, motion: true };
+      const mStub = createStub(1, 1, 150, 250);
+      const mStop = shuf.apply(mctx, mStub);
+      const mOrder = (): number[] | undefined => mStub.optionOrder;
+      const mo = mOrder();
+      assert(mo !== undefined, `[option-shuffle seed=${seed}] motion apply must set scene.optionOrder (main.ts moves tiles from it)`);
+      if (mo) {
+        assert(mo.length === 8, `[option-shuffle seed=${seed}] optionOrder must permute all 8 options, got ${mo.length}`);
+        const sorted = [...mo].sort((a, b) => a - b);
+        for (let k = 0; k < 8; k++) {
+          assert(sorted[k] === k, `[option-shuffle seed=${seed}] optionOrder is not a permutation of 0..7: ${mo.join(',')}`);
+        }
+      }
+      assert(mStop.step === undefined, `[option-shuffle seed=${seed}] static permutation must NOT expose step (no reported movement)`);
+
+      // Determinism: a second apply at the same seed yields the same order.
+      const mStub2 = createStub(1, 1, 150, 250);
+      const mStop2 = shuf.apply(mctx, mStub2);
+      assert(sameState(mStub, mStub2), `[option-shuffle seed=${seed}] non-deterministic apply (motion=true)`);
+
+      // Static variant: identical permutation, NO step. (Compared BEFORE any
+      // teardown, since teardown deletes the field.)
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = shuf.apply(sctx, sStub);
+      const sOrder = (): number[] | undefined => sStub.optionOrder;
+      assert(sOrder() !== undefined, `[option-shuffle seed=${seed}] static apply must set scene.optionOrder`);
+      const so = sOrder();
+      const mo2 = (): number[] | undefined => mStub2.optionOrder;
+      const mo2v = mo2();
+      assert(so !== undefined && mo2v !== undefined && so.join(',') === mo2v.join(','), `[option-shuffle seed=${seed}] motion and static permutations differ for the same seed`);
+      assert(sStop.step === undefined, `[option-shuffle seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+
+      // Teardown: deletes the field (it was absent before apply).
+      mStop();
+      assert(mOrder() === undefined, `[option-shuffle seed=${seed}] teardown did not delete scene.optionOrder (motion=true)`);
+      mStop2();
+      sStop();
+      assert(sOrder() === undefined, `[option-shuffle seed=${seed}] teardown did not delete scene.optionOrder (motion=false)`);
+
+      // Teardown must RESTORE a pre-existing order, not just delete it.
+      const preStub: BoardTarget = createStub(1, 1, 150, 250);
+      preStub.optionOrder = [7, 6, 5, 4, 3, 2, 1, 0];
+      const pStop = shuf.apply(sctx, preStub);
+      const pOrder = (): number[] | undefined => preStub.optionOrder;
+      assert(pOrder() !== undefined && pOrder()!.length === 8, `[option-shuffle seed=${seed}] apply must override a preset order`);
+      pStop();
+      const restored = pOrder();
+      assert(restored !== undefined && restored.join(',') === '7,6,5,4,3,2,1,0', `[option-shuffle seed=${seed}] teardown over a preset order must restore the original value`);
+    }
+  });
+
   check(`pickModifiers determinism and max bound over ${SEED_COUNT} seeds`, () => {
     for (let i = 0; i < SEED_COUNT; i++) {
       const seed = (i * 1103515245 + 12345) >>> 0;

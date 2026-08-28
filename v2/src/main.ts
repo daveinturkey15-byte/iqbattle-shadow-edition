@@ -1086,6 +1086,48 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       modFx.push(paint);
       paint(0); // apply immediately; don't wait for the first 250 ms tick
       onSceneStop(() => { scene.scale.x = origScaleX; scene.scale.y = origScaleY; scene.skew.y = 0; });
+    } else if (mod.id === 'option-shuffle') {
+      /* P5: option-shuffle — main.ts is the only place the pure state touches
+       * Pixi. Reads the static scene.optionOrder (a seeded permutation of
+       * 0..7, identical under motion and static — no step is ever exposed,
+       * so no movement is ever reported) and moves each option Sprite
+       * opt<idx> (and its optlabel<idx> number) to the permuted grid slot.
+       * Only POSITIONS change: the pointerdown closure still captures idx,
+       * so which option is correct is untouched. The banner tells the player
+       * the options moved. Teardown restores the exact original x/y. */
+      const order = (scene as unknown as { optionOrder?: number[] }).optionOrder;
+      if (order !== undefined) {
+        toastNow(overlay, mod.banner ?? 'OPTIONS HAVE MOVED', T.gold);
+        const sl = puzzleLayout(p.cols, p.rows);
+        const moves: Array<{ node: Sprite | Text; ox: number; oy: number }> = [];
+        for (let slot = 0; slot < order.length; slot++) {
+          const idx = order[slot]!;
+          if (idx < 0 || idx > 7) continue;
+          const find = (c: Container): Sprite | null => {
+            for (const ch of c.children) {
+              if (ch instanceof Sprite && (ch as unknown as { label?: string }).label === 'opt' + idx) return ch;
+              if (ch instanceof Container) {
+                const r = find(ch);
+                if (r) return r;
+              }
+            }
+            return null;
+          };
+          const sp = find(scene);
+          if (!sp) continue;
+          moves.push({ node: sp, ox: sp.x, oy: sp.y });
+          sp.x = sl.ox + (slot % 4) * (sl.optSize + 14);
+          sp.y = sl.oy + Math.floor(slot / 4) * (sl.optSize + 14);
+          for (const ch of sp.parent ? sp.parent.children : []) {
+            if (ch instanceof Text && ch.label === `optlabel${idx}`) {
+              moves.push({ node: ch, ox: ch.x, oy: ch.y });
+              ch.x = sp.x + 6;
+              ch.y = sp.y + sl.optSize - 22;
+            }
+          }
+        }
+        onSceneStop(() => { for (const m of moves) { m.node.x = m.ox; m.node.y = m.oy; } });
+      }
     }
   }
 
