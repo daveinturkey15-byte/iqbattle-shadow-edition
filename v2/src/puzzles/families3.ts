@@ -53,14 +53,15 @@ function foldDelta(d: number, m: number): number {
 }
 
 /* ========================================================================
- * DOT MATRIX ROTATE — live round-1 DNA: 3×3 of dot-cluster arcs on an
- * 8-slot ring. The arc's start slot rotates 90° (2 slots) per column AND
- * the cluster gains one dot per row. Options mutate exactly one attribute:
- * phase, count, chirality, spacing, or one dot's place.
+ * DOT MATRIX ROTATE — live round-1 DNA: 3x3 of dot-cluster arcs on an
+ * 8-slot ring. The arc's start slot rotates 90 degrees (2 slots) per column
+ * AND the cluster gains one dot per row. Ramp 1..12: longer arcs, free
+ * rotation sign and prepend/append growth at high diff, decoy window slides
+ * from coarse (count/180deg) to fine (1-slot / single-dot nudge).
  * ====================================================================== */
 
 const DM_SLOTS = 8;
-const DM_ROT = 2;          // slots per 90° column step
+const DM_ROT = 2;          // slots per 90-degree column step
 const DM_RADIUS = 30;
 
 function dmPos(slot: number, radius = DM_RADIUS): { x: number; y: number } {
@@ -104,33 +105,58 @@ export const dotMatrixRotate: Family = {
   id: 'dot-matrix-rotate',
   generate(seed, diff, hue): Puzzle {
     const r = rngFrom(seed);
-    const base = diff >= 5 ? 4 : diff >= 3 ? 3 : 2;
+    const D = Math.max(1, Math.min(12, Math.floor(diff)));
+    // ramp: arc length grows 2 -> 3 -> 4 (clamped so answer n <= 6)
+    const base = D <= 2 ? 2 : D <= 5 ? 3 : 4;
     const head0 = Math.floor(r() * DM_SLOTS);
+    const dirDraw = r();
+    const growDraw = r();
+    // ramp: low diff always clockwise + append; high diff randomises sign/growth
+    const dir = D >= 7 ? (dirDraw < 0.5 ? 1 : -1) : 1;
+    const grow = D >= 5 ? (growDraw < 0.5 ? 0 : -1) : 0;
+    const headAt = (row: number, col: number): number => mod8(head0 + dir * DM_ROT * col + grow * row);
+    const nAt = (row: number): number => base + row;
     const cells: Prim[][] = [];
     for (let i = 0; i < 8; i++) {
       const row = Math.floor(i / 3), col = i % 3;
-      cells.push(dmGlyph(head0 + DM_ROT * col, base + row));
+      cells.push(dmGlyph(headAt(row, col), nAt(row)));
     }
-    const aHead = mod8(head0 + DM_ROT * 2), aN = base + 2;
-    const answer = dmGlyph(aHead, aN);
+    const aHead = headAt(2, 2), aN = nAt(2);
     // mirrored (chirality-flipped) arc head
     const mHead = mod8(-(aHead + aN - 1));
     const gapDots: Prim[] = [...dmGlyph(aHead, aN - 1), { k: 'dot', ...dmPos(mod8(aHead - 2)), r: 4.4 }];
-    const stretchOk = 2 * aN <= DM_SLOTS;
-    const { opts, answerIdx } = finalize(
-      answer,
-      [
-        dmGlyph(mod8(aHead + DM_ROT), aN),                       // phase +90°
-        dmGlyph(mod8(aHead - DM_ROT), aN),                       // phase −90°
-        dmGlyph(aHead, aN - 1),                                  // one dot short
-        dmGlyph(aHead, aN + 1),                                  // one dot extra
-        dmGlyph(mHead, aN),                                      // mirrored arc
-        stretchOk ? dmGlyph(aHead, aN, 2) : dmGlyph(mod8(aHead + 1), aN), // stretched / half-step
-        gapDots,                                                 // tail dot relocated
-      ],
-      [1, 2, 3, 4, 5, 6].map(k => dmGlyph(mod8(aHead + k), aN)),
-      seed ^ 0x3a11,
-    );
+    const tailShift: Prim[] = [...dmGlyph(aHead, aN - 1), { k: 'dot', ...dmPos(mod8(aHead + aN)), r: 4.4 }];
+    const headShift: Prim[] = [{ k: 'dot', ...dmPos(mod8(aHead - 1)), r: 4.4 }, ...dmGlyph(mod8(aHead + 1), aN - 1)];
+    const extraCount = aN + 1 <= 6 ? dmGlyph(aHead, aN + 1) : dmGlyph(mod8(aHead + 4), aN);
+    const stretchCand = (2 * aN <= DM_SLOTS) ? dmGlyph(aHead, aN, 2) : dmGlyph(mod8(aHead + 3), aN);
+    // master decoy ladder ordered coarse -> fine (one attribute each)
+    const master: Prim[][] = [
+      dmGlyph(aHead, aN - 1),                    // 0 short count (easy)
+      extraCount,                                // 1 extra count
+      dmGlyph(mod8(aHead + 4), aN),              // 2 opposite 180deg
+      dmGlyph(mod8(aHead + DM_ROT), aN),         // 3 phase +90deg
+      dmGlyph(mod8(aHead - DM_ROT), aN),         // 4 phase -90deg
+      dmGlyph(mHead, aN),                        // 5 mirrored arc
+      stretchCand,                               // 6 stretched / far phase
+      gapDots,                                   // 7 tail relocated by 2
+      dmGlyph(mod8(aHead + 1), aN),              // 8 phase +1 slot (fine)
+      dmGlyph(mod8(aHead - 1), aN),              // 9 phase -1 slot
+      tailShift,                                 // 10 tail nudged by 1 (finest)
+      headShift,                                 // 11 head nudged by 1
+    ];
+    const start = Math.floor((D - 1) * (master.length - 7) / 11);
+    const decoys = master.slice(start, start + 7);
+    const filler: Prim[][] = [
+      ...[1, 2, 3, 4, 5, 6, 7].map(k => dmGlyph(mod8(aHead + k), aN)),
+      dmGlyph(mod8(aHead + 1), aN - 1),
+      dmGlyph(mod8(aHead - 1), aN - 1),
+      aN + 1 <= 6 ? dmGlyph(mod8(aHead + 1), aN + 1) : dmGlyph(mod8(aHead + 2), aN - 1),
+      tailShift,
+      headShift,
+      gapDots,
+    ];
+    const answer = dmGlyph(aHead, aN);
+    const { opts, answerIdx } = finalize(answer, decoys, filler, seed ^ 0x3a11);
     return {
       family: 'dot-matrix-rotate', cols: 3, rows: 3,
       cells, holeIndex: 8, options: opts, answer: answerIdx,
@@ -182,18 +208,18 @@ export const dotMatrixRotate: Family = {
 };
 
 /* ========================================================================
- * LINE REFLECTION — real original-site mirror family: a 2×2 of line-segment
- * figures on a 3×3 point lattice. The right column mirrors the left
+ * LINE REFLECTION — real original-site mirror family: a 2x2 of line-segment
+ * figures on a 3x3 point lattice. The right column mirrors the left
  * horizontally (across the figure's vertical center axis); the bottom row
- * mirrors the top vertically. Hole = double mirror = 180° rotation of the
- * base figure. Options mutate exactly one attribute: a missing/extra mirror,
- * a segment, or the wrong mirror axis.
+ * mirrors the top vertically. Hole = double mirror = 180-degree rotation of
+ * the base figure. Ramp 1..12: more segments (2..7, clamped) and decoy
+ * window from missing-mirror coarse to single-segment fine.
  * ====================================================================== */
 
 const LR_PTS = [28, 50, 72];
 type LRPt = { x: number; y: number };
 
-/** All king-adjacent undirected edges of the 3×3 lattice, canonical form. */
+/** All king-adjacent undirected edges of the 3x3 lattice, canonical form. */
 const LR_EDGES: string[] = (() => {
   const out: string[] = [];
   const key = (a: LRPt, b: LRPt): string =>
@@ -249,7 +275,9 @@ export const lineReflection: Family = {
   id: 'line-reflection',
   generate(seed, diff, hue): Puzzle {
     const r = rngFrom(seed);
-    const want = 2 + (diff >= 3 ? 1 : 0) + (diff >= 5 ? 1 : 0);
+    const D = Math.max(1, Math.min(12, Math.floor(diff)));
+    // ramp: segment count climbs 2..7 then clamps (still 1..24 marks)
+    const want = Math.min(7, 2 + Math.floor((D - 1) / 2));
     let base: Prim[] = [];
     // deterministic rejection sampling: base must break every mirror symmetry
     for (let attempt = 0; attempt < 64; attempt++) {
@@ -260,33 +288,42 @@ export const lineReflection: Family = {
       const g = glyphKey(cand);
       if (h !== g && v !== g && hv !== g) { base = cand; break; }
     }
+    if (!base.length) base = lrPrims(LR_EDGES.slice(0, want));
     const ans = lrH(lrV(base));
     const ansSet = lrKeys(ans)!;
-    // one extra edge not in the answer, for the "extra segment" decoy
-    const extra = LR_EDGES.find(e => !ansSet.has(e))!;
-    const dropKey = [...ansSet][ansSet.size - 1];
-    const minusOne = [...ansSet].filter(e => e !== dropKey);
-    const plusOne = [...ansSet, extra];
-    const { opts, answerIdx } = finalize(
-      ans,
-      [
-        base,          // missing both mirrors
-        lrH(base),     // visible top-right: horizontal mirror only
-        lrV(base),     // visible bottom-left: vertical mirror only
-        lrPrims(minusOne),  // one segment short
-        lrPrims(plusOne),   // one segment extra
-        lrT(ans),      // wrong axis: main-diagonal mirror
-        lrA(ans),      // wrong axis: anti-diagonal mirror
-      ],
-      [
-        lrMap(ans, p => ({ x: 100 - p.y, y: p.x })),             // rot90° cw
-        lrMap(ans, p => ({ x: p.y, y: 100 - p.x })),             // rot270° cw
-        // per-edge single-segment mutations: drop / add each lattice edge once
-        ...[...ansSet].map(e => lrPrims([...ansSet].filter(x => x !== e))),
-        ...LR_EDGES.filter(e => !ansSet.has(e)).map(e => lrPrims([...ansSet, e])),
-      ],
-      seed ^ 0x5eed,
-    );
+    const sortedAns = [...ansSet].sort();
+    const outside = LR_EDGES.filter(e => !ansSet.has(e)).sort();
+    const dropVariants: Prim[][] = sortedAns.map(e => lrPrims([...ansSet].filter(x => x !== e)));
+    const addVariants: Prim[][] = outside.map(e => lrPrims([...ansSet, e]));
+    // master ladder coarse -> fine: missing mirrors, wrong axes, rotations, then 1-segment edits
+    const master: Prim[][] = [
+      base,
+      lrH(base),
+      lrV(base),
+      lrT(ans),
+      lrA(ans),
+      lrMap(ans, p => ({ x: p.y, y: 100 - p.x })),
+      lrMap(ans, p => ({ x: 100 - p.y, y: p.x })),
+      ...dropVariants,
+      ...addVariants,
+    ];
+    const start = master.length > 7 ? Math.floor((D - 1) * (master.length - 7) / 11) : 0;
+    const decoys = master.slice(start, start + 7);
+    // seeded fallback ladder: remaining single edits then double edits
+    const filler: Prim[][] = [
+      ...dropVariants,
+      ...addVariants,
+      ...sortedAns.slice(0, Math.min(3, sortedAns.length)).map(e => {
+        const rest = new Set([...ansSet].filter(x => x !== e));
+        const add = outside[0];
+        if (add !== undefined) rest.add(add);
+        return lrPrims(rest);
+      }),
+      lrT(ans),
+      lrA(ans),
+      base,
+    ];
+    const { opts, answerIdx } = finalize(ans, decoys, filler, seed ^ 0x5eed);
     return {
       family: 'line-reflection', cols: 2, rows: 2,
       cells: [base, lrH(base), lrV(base)], holeIndex: 3,
@@ -308,11 +345,11 @@ export const lineReflection: Family = {
 };
 
 /* ========================================================================
- * COUNT POSITIONS — marks occupy spots on a 3×3 lattice inside each cell.
+ * COUNT POSITIONS — marks occupy spots on a 3x3 lattice inside each cell.
  * The COUNT is constant everywhere; the occupied-position SET advances one
  * lattice-step (row-major wrap) per column, with each row starting at a
- * different phase. Options shift too far/not enough, add/remove a mark, or
- * reflect/transpose the set.
+ * different phase. Ramp 1..12: count 2..5 (clamped) and decoys from
+ * count-different coarse to single-relocation fine.
  * ====================================================================== */
 
 const CP_COORDS = [26, 50, 74];
@@ -351,7 +388,9 @@ export const countPositions: Family = {
   id: 'count-positions',
   generate(seed, diff, hue): Puzzle {
     const r = rngFrom(seed);
-    const K = diff >= 4 ? 4 : 3;
+    const D = Math.max(1, Math.min(12, Math.floor(diff)));
+    // ramp: mark count 2..5 then clamps (evenly spaced diamonds, no overlap)
+    const K = Math.min(5, 2 + Math.floor((D - 1) / 3));
     const S0 = new Set<number>();
     while (S0.size < K) S0.add(Math.floor(r() * 9));
     const rowPhase = r() < 0.5 ? 3 : 2;
@@ -361,34 +400,48 @@ export const countPositions: Family = {
     const ans = cpInc(setAt(2, 1), 1);
     const free: number[] = [];
     for (let i = 0; i < 9; i++) if (!ans.has(i)) free.push(i);
-    const swapOut = [...ans][1];
+    const sortedAns = [...ans].sort((a, b) => a - b);
+    const swapOut = sortedAns[1 % sortedAns.length];
     const swapped = new Set([...ans].filter(v => v !== swapOut));
     swapped.add(free[0]);
     const mirrored = new Set([...ans].map(i => Math.floor(i / 3) * 3 + (2 - (i % 3))));
     const transposed = new Set([...ans].map(i => (i % 3) * 3 + Math.floor(i / 3)));
-    const { opts, answerIdx } = finalize(
-      cpGlyph(ans),
-      [
-        cpGlyph(cpInc(ans, 1)),          // over-shifted one step
-        cpGlyph(cpInc(ans, -1)),         // under-shifted
-        cpGlyph(new Set([...ans].slice(0, ans.size - 1))),  // a mark missing
-        cpGlyph(new Set([...ans, free[0]])),                // a mark extra
-        cpGlyph(mirrored),               // left-right reflected set
-        cpGlyph(transposed),             // transposed set
-        cpGlyph(swapped),                // one mark relocated
-      ],
-      [
-        ...[2, 3, 4, 5].map(k => cpGlyph(cpInc(ans, k))),
-        // per-mark relocation: drop each mark, backfill with the lowest free spot
-        ...[...ans].sort((a, b) => a - b).map(e => {
-          const rest = new Set([...ans].filter(v => v !== e));
-          const f = [0, 1, 2, 3, 4, 5, 6, 7, 8].find(i => i !== e && !rest.has(i))!;
-          rest.add(f);
-          return cpGlyph(rest);
-        }),
-      ],
-      seed ^ 0x70a5,
-    );
+    const missing = new Set(sortedAns.slice(0, ans.size - 1));
+    const extra = new Set([...ans, free[0]]);
+    // per-mark relocation variants (drop each mark, backfill lowest free): finest
+    const relocations: Prim[][] = sortedAns.map(e => {
+      const rest = new Set([...ans].filter(v => v !== e));
+      const f = [0, 1, 2, 3, 4, 5, 6, 7, 8].find(i => i !== e && !rest.has(i))!;
+      rest.add(f);
+      return cpGlyph(rest);
+    });
+    // master coarse -> fine: count differs, far shifts, global transforms, near shifts, relocations
+    const master: Prim[][] = [
+      cpGlyph(missing),
+      cpGlyph(extra),
+      cpGlyph(cpInc(ans, 4)),
+      cpGlyph(cpInc(ans, 3)),
+      cpGlyph(cpInc(ans, 2)),
+      cpGlyph(mirrored),
+      cpGlyph(transposed),
+      cpGlyph(cpInc(ans, -1)),
+      cpGlyph(cpInc(ans, 1)),
+      cpGlyph(swapped),
+      ...relocations,
+    ];
+    const start = Math.floor((D - 1) * (master.length - 7) / 11);
+    const decoys = master.slice(start, start + 7);
+    const filler: Prim[][] = [
+      ...[2, 3, 4, 5].map(k => cpGlyph(cpInc(ans, k))),
+      cpGlyph(cpInc(ans, -1)),
+      cpGlyph(cpInc(ans, 1)),
+      ...relocations,
+      cpGlyph(mirrored),
+      cpGlyph(transposed),
+      cpGlyph(missing),
+      cpGlyph(extra),
+    ];
+    const { opts, answerIdx } = finalize(cpGlyph(ans), decoys, filler, seed ^ 0x70a5);
     return {
       family: 'count-positions', cols: 3, rows: 3,
       cells, holeIndex: 8, options: opts, answer: answerIdx,
@@ -420,8 +473,9 @@ export const countPositions: Family = {
 /* ========================================================================
  * SIZE LADDER — a single centered equilateral-triangle outline per cell.
  * Its SIZE steps up an arithmetic ladder per column while its ROTATION
- * turns 90° per row (the triangle's 120° symmetry makes each rung look
- * distinct). Options move along exactly one axis: size rung or angle.
+ * turns 90 degrees per row (the triangle's 120-degree symmetry makes each
+ * rung look distinct). Ramp 1..12: rung width narrows 10..4 (finer size
+ * discrimination, clamped) and angle decoys close in 90..15 degrees.
  * ====================================================================== */
 
 /** Equilateral triangle outline centered at (50,50); circumradius `size`,
@@ -441,7 +495,7 @@ function slTri(size: number, deg: number): Prim[] {
 
 interface SlObs { size: number; ang: number }
 
-/** Re-derive (size, orientation mod 120°) from a rendered triangle. */
+/** Re-derive (size, orientation mod 120-degrees) from a rendered triangle. */
 function slParse(cell: Prim[]): SlObs | null {
   if (cell.length !== 3 || cell.some(p => p.k !== 'line')) return null;
   const pts: { x: number; y: number }[] = [];
@@ -468,9 +522,12 @@ export const sizeLadder: Family = {
   id: 'size-ladder',
   generate(seed, diff, hue): Puzzle {
     const r = rngFrom(seed);
+    const D = Math.max(1, Math.min(12, Math.floor(diff)));
     const deg0 = Math.floor(r() * 24) * 15;
     const s0 = 12 + 2 * Math.floor(r() * 3);   // 12 / 14 / 16
-    const cStep = diff >= 4 ? 8 : 7;           // clarity: rung width ≥ 7 units so adjacent options read apart
+    // ramp: rung width narrows with difficulty (finer discrimination), clamped
+    const STEPS = [10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 4];
+    const cStep = STEPS[D - 1];
     const sizeAt = (_row: number, col: number) => s0 + col * cStep;
     const degAt = (row: number, _col: number) => deg0 + row * 90;
     const cells: Prim[][] = [];
@@ -479,21 +536,40 @@ export const sizeLadder: Family = {
       cells.push(slTri(sizeAt(row, col), degAt(row, col)));
     }
     const sAns = sizeAt(2, 2), aAns = degAt(2, 2);
-    const thirdSize = sAns + 2 * cStep <= 36 ? sAns + 2 * cStep : sAns - 2 * cStep;
-    const { opts, answerIdx } = finalize(
-      slTri(sAns, aAns),
-      [
-        slTri(sAns + cStep, aAns),           // one rung too big
-        slTri(sAns - cStep, aAns),           // one rung too small
-        slTri(thirdSize, aAns),              // two rungs off (clamped inward)
-        slTri(sAns, aAns + 30),
-        slTri(sAns, aAns + 60),
-        slTri(sAns, aAns + 90),
-        slTri(sAns, aAns + 24),              // half-step twist (24°, was 15°)
-      ],
-      [slTri(sAns, aAns + 45), slTri(sAns, aAns - 24)],
-      seed ^ 0x1add,
-    );
+    const big2 = sAns + 2 * cStep <= 38 ? sAns + 2 * cStep : 36;
+    const small2 = sAns - 2 * cStep >= 10 ? sAns - 2 * cStep : 10;
+    const halfBig = sAns + cStep / 2 <= 38 ? sAns + cStep / 2 : sAns - cStep / 2;
+    const halfSmall = sAns - cStep / 2 >= 8 ? sAns - cStep / 2 : sAns + cStep / 2;
+    // master coarse -> fine: far sizes, one-rung sizes, far angles, near angles, half-rungs
+    const master: Prim[][] = [
+      slTri(big2, aAns),
+      slTri(small2, aAns),
+      slTri(sAns + cStep, aAns),
+      slTri(sAns - cStep, aAns),
+      slTri(sAns, aAns + 90),
+      slTri(sAns, aAns + 60),
+      slTri(sAns, aAns + 45),
+      slTri(sAns, aAns + 30),
+      slTri(sAns, aAns + 24),
+      slTri(sAns, aAns + 15),
+      slTri(halfBig, aAns),
+      slTri(halfSmall, aAns),
+    ];
+    const start = Math.floor((D - 1) * (master.length - 7) / 11);
+    const decoys = master.slice(start, start + 7);
+    const filler: Prim[][] = [
+      slTri(sAns, aAns + 45),
+      slTri(sAns, aAns - 24),
+      slTri(sAns, aAns - 15),
+      slTri(sAns, aAns - 30),
+      slTri(sAns, aAns + 12),
+      slTri(sAns + cStep, aAns),
+      slTri(sAns - cStep, aAns),
+      slTri(halfBig, aAns),
+      slTri(big2, aAns),
+      slTri(small2, aAns),
+    ];
+    const { opts, answerIdx } = finalize(slTri(sAns, aAns), decoys, filler, seed ^ 0x1add);
     return {
       family: 'size-ladder', cols: 3, rows: 3,
       cells, holeIndex: 8, options: opts, answer: answerIdx,
@@ -520,7 +596,7 @@ export const sizeLadder: Family = {
     const r1 = slAngDiff(at(1, 0).ang, at(2, 0).ang);
     if (Math.abs(r0 - r1) > 2 || Math.abs(r0) < 5) return -1;
     // hole sits in the BOTTOM ROW: size climbs one more column rung, rotation
-    // stays at row 2's orientation (the 90°/row step is already fully visible).
+    // stays at row 2's orientation (the 90-degree/row step is already fully visible).
     const expSize = at(2, 1).size + s01;
     const expAng = at(2, 1).ang;
     const hits: number[] = [];
@@ -546,8 +622,8 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   const all = FAMILIES3;
   const hue = '#d4a017';
   for (const fam of all) {
-    for (let diff = 1; diff <= 5; diff++) {
-      for (let sample = 0; sample < 300; sample++) {
+    for (let diff = 1; diff <= 12; diff++) {
+      for (let sample = 0; sample < 30; sample++) {
         const seed = ((sample + 1) * 2654435761 ^ (diff * 40503)) >>> 0;
         const where = `${fam.id} seed=${seed} diff=${diff}`;
         const p = fam.generate(seed, diff, hue);
