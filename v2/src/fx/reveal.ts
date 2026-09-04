@@ -399,9 +399,14 @@ class PixiLayer implements FxLayer {
   }
 
   offset(x: number, y: number): void {
+    if ((this.root as { destroyed?: boolean }).destroyed) return;
     this.root.x = x;
     this.root.y = y;
-    if (this.target != null) {
+    /* Same reason the node adapter is guarded: the shake target is a live
+     * scene container, and in a room the round underneath can be torn down
+     * before the effect finishes. Writing to a destroyed target throws inside
+     * the ticker and takes the frame loop — and therefore the match — with it. */
+    if (this.target != null && !(this.target as { destroyed?: boolean }).destroyed) {
       if (this.targetBase == null) this.targetBase = { x: this.target.x, y: this.target.y };
       this.target.x = this.targetBase.x + x;
       this.target.y = this.targetBase.y + y;
@@ -411,19 +416,35 @@ class PixiLayer implements FxLayer {
   dispose(): void {
     if (this.dead) return;
     this.dead = true;
-    if (this.target != null && this.targetBase != null) {
+    if (this.target != null && this.targetBase != null && !(this.target as { destroyed?: boolean }).destroyed) {
       this.target.x = this.targetBase.x;
       this.target.y = this.targetBase.y;
     }
-    this.root.removeChildren();
-    this.parent.removeChild(this.root);
+    if (!(this.root as { destroyed?: boolean }).destroyed) {
+      this.root.removeChildren();
+      if (!(this.parent as { destroyed?: boolean }).destroyed) this.parent.removeChild(this.root);
+    }
   }
 
-  private node(d: { x: number; y: number; alpha: number; destroy(opts?: { texture?: boolean }): void; parent: Container | null }): FxNode {
+  private node(d: { x: number; y: number; alpha: number; destroyed?: boolean; destroy(opts?: { texture?: boolean }): void; parent: Container | null }): FxNode {
+    /* A reveal effect outlives its scene. The effect runs on the shared ticker
+     * for its own duration, but the round underneath can end first — and in a
+     * room it usually does, because the host advances on the director's
+     * schedule rather than waiting for one seat's animation. Writing .x to a
+     * destroyed Pixi node throws (its transform is null), which killed the
+     * ticker and with it the whole match: the first real two-browser test
+     * never got past depth 0 while every loopback test passed, because
+     * loopback never destroys a live scene mid-effect.
+     *
+     * Every write is guarded, and remove() is idempotent. The effect finishes
+     * silently against a node that is already gone instead of taking the
+     * frame loop down with it. */
+    const gone = (): boolean => d.destroyed === true;
     return {
-      move: (nx, ny) => { d.x = nx; d.y = ny; },
-      alpha: (a) => { d.alpha = a; },
+      move: (nx, ny) => { if (gone()) return; d.x = nx; d.y = ny; },
+      alpha: (a) => { if (gone()) return; d.alpha = a; },
       remove: () => {
+        if (gone()) return;
         if (d.parent) (d.parent as unknown as { removeChild(c: unknown): void }).removeChild(d);
         d.destroy();
       },
