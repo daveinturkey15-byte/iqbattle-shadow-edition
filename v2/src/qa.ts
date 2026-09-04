@@ -29,6 +29,8 @@ export interface QaSnapshot {
    *  same depth — that equality is the multiplayer variation-layer contract,
    *  and it is the cheapest way to see a seed desync from a browser console. */
   mods: string[];
+  /** Dev-only: index of the correct option on the board on screen, or -1. */
+  answer: number;
   /** The run seed every seat derives its variation layers from. Identical
    *  across a room, or the seats are not playing the same descent. */
   seed: number;

@@ -1320,6 +1320,14 @@ async function boot(): Promise<void> {
           role: mpRole,
           table: st ? st.table.map((r) => r.name + ':' + r.pts) : null,
           mods: [...activeMods],
+          /* Dev-only: the index of the correct option on the board currently
+           * on screen (-1 on a takeover or before a deal). The browser gate
+           * needs it to descend far enough to REACH the deep-layer content —
+           * guessing at 1-in-8 with a -12 hp miss never gets past layer 1. It
+           * is read from the same run state the game answers against, so a
+           * probe that uses it still clicks through the real pointer path.
+           * qa.ts is installed only under `vite dev`, so this never ships. */
+          answer: run?.curAnswer ?? -1,
           seed: run?.seed ?? 0,
           phases: st ? { ...st.phases } : null,
           over: st?.over ?? false,
