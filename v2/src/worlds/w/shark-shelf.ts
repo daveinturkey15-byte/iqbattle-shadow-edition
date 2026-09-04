@@ -1,0 +1,150 @@
+import { hash, wash, softBlob, wrap, type WorldDef } from './kit.ts';
+
+export const WORLD: WorldDef = {
+  id: 'shark-shelf',
+  align: 'bad',
+  draw(c: CanvasRenderingContext2D, w: number, h: number, t: number): void {
+    void wash;
+    void softBlob;
+    void wrap;
+    const u = Math.min(w, h);
+    const bg = c.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, '#173f5c');
+    bg.addColorStop(0.18, '#0e2a44');
+    bg.addColorStop(0.45, '#081827');
+    bg.addColorStop(0.72, '#040b14');
+    bg.addColorStop(1, '#010204');
+    c.fillStyle = bg;
+    c.fillRect(0, 0, w, h);
+    const top = c.createLinearGradient(0, 0, 0, h * 0.3);
+    top.addColorStop(0, 'rgba(140,205,230,0.38)');
+    top.addColorStop(0.55, 'rgba(90,150,180,0.10)');
+    top.addColorStop(1, 'rgba(90,150,180,0)');
+    c.fillStyle = top;
+    c.fillRect(0, 0, w, h * 0.3);
+    for (let i = 0; i < 7; i++) {
+      const r1 = hash(500 + i);
+      const r2 = hash(560 + i);
+      const bx = r1 * w;
+      const edge = Math.abs(bx - w * 0.5) / (w * 0.5);
+      const sway = Math.sin((t / 6800) * Math.PI * 2 + r2 * 6.283) * w * 0.03;
+      const sw = (0.035 + r2 * 0.055) * w;
+      c.save();
+      c.translate(bx + sway, 0);
+      c.rotate(0.16 + r1 * 0.16);
+      c.globalAlpha = 0.02 + edge * 0.075;
+      c.fillStyle = '#7fc4dd';
+      c.fillRect(-sw * 0.5, -h * 0.06, sw, h * 0.68);
+      c.restore();
+    }
+    for (let i = 0; i < 14; i++) {
+      const r1 = hash(1000 + i);
+      const r2 = hash(1120 + i);
+      const y = h * 0.015 + r1 * h * 0.19;
+      const per = 4600 + r2 * 3800;
+      const ph = (t / per) * Math.PI * 2 + r1 * 6.283;
+      const cx = w * 0.5 + Math.sin(ph * 0.6 + r2 * 5.2) * w * 0.44;
+      const rx = (0.07 + r2 * 0.17) * w;
+      const ry = 2 + r1 * 5;
+      const edge = Math.abs(cx - w * 0.5) / (w * 0.5);
+      c.save();
+      c.globalAlpha = 0.05 + edge * 0.15;
+      c.strokeStyle = '#bfe6f2';
+      c.lineWidth = 1 + r1 * 1.6;
+      c.beginPath();
+      c.ellipse(cx, y + Math.sin(ph) * 4, rx, ry, 0, 0, Math.PI * 2);
+      c.stroke();
+      c.restore();
+    }
+    c.save();
+    c.globalAlpha = 1;
+    c.fillStyle = '#04090f';
+    c.beginPath();
+    c.moveTo(0, h);
+    c.lineTo(0, h * 0.84);
+    c.bezierCurveTo(w * 0.2, h * 0.79, w * 0.32, h * 0.94, w * 0.55, h * 0.89);
+    c.bezierCurveTo(w * 0.74, h * 0.85, w * 0.86, h * 0.95, w, h * 0.88);
+    c.lineTo(w, h);
+    c.closePath();
+    c.fill();
+    c.restore();
+    const period = 26000;
+    const prog = (t % period) / period;
+    const sx = -w * 0.35 + prog * w * 1.7;
+    const sy = h * 0.47 + Math.sin((t / 7200) * Math.PI * 2) * h * 0.028 + hash(9000) * h * 0.04;
+    const bl = u * 0.34;
+    c.save();
+    c.translate(sx, sy);
+    c.globalAlpha = 0.2;
+    c.fillStyle = '#93a5b5';
+    c.beginPath();
+    c.ellipse(0, 0, bl, bl * 0.22, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.moveTo(bl * 0.82, 0);
+    c.lineTo(bl * 1.28, -bl * 0.32);
+    c.lineTo(bl * 1.18, 0);
+    c.lineTo(bl * 1.28, bl * 0.32);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(-bl * 0.05, -bl * 0.18);
+    c.lineTo(bl * 0.18, -bl * 0.52);
+    c.lineTo(bl * 0.28, -bl * 0.16);
+    c.closePath();
+    c.fill();
+    c.globalAlpha = 0.14;
+    c.beginPath();
+    c.moveTo(-bl * 0.1, bl * 0.12);
+    c.lineTo(bl * 0.22, bl * 0.48);
+    c.lineTo(bl * 0.3, bl * 0.1);
+    c.closePath();
+    c.fill();
+    c.restore();
+    for (let i = 0; i < 58; i++) {
+      const r1 = hash(2000 + i * 2);
+      const r2 = hash(2001 + i * 2);
+      const r3 = hash(3100 + i);
+      const bx = r1 * w;
+      const by = h * 0.12 + r2 * h * 0.78;
+      const per = 3400 + r3 * 4600;
+      const ph = (t / per) * Math.PI * 2 + r1 * 6.283;
+      const px = bx + Math.sin(ph) * 14;
+      const py = by + Math.cos(ph * 0.8 + r2 * 4) * 12;
+      const edge = Math.abs(bx - w * 0.5) / (w * 0.5);
+      const rad = 0.6 + r3 * 1.8;
+      c.globalAlpha = 0.05 + edge * 0.22 + r3 * 0.08;
+      c.fillStyle = '#cfe8f0';
+      c.beginPath();
+      c.arc(px, py, rad, 0, Math.PI * 2);
+      c.fill();
+    }
+    for (let i = 0; i < 22; i++) {
+      const r1 = hash(4200 + i * 2);
+      const r2 = hash(4201 + i * 2);
+      const bx = r1 * w;
+      const by = h * 0.3 + r2 * h * 0.62;
+      const per = 5200 + r1 * 3600;
+      const ph = (t / per) * Math.PI * 2 + r2 * 6.283;
+      const px = bx + Math.sin(ph) * 10;
+      const py = by + Math.cos(ph) * 16;
+      const edge = Math.abs(bx - w * 0.5) / (w * 0.5);
+      c.save();
+      c.globalAlpha = 0.04 + edge * 0.16;
+      c.strokeStyle = '#9fd0e2';
+      c.lineWidth = 1;
+      c.beginPath();
+      c.arc(px, py, 2 + r1 * 5, 0, Math.PI * 2);
+      c.stroke();
+      c.restore();
+    }
+    const vg = c.createRadialGradient(w * 0.5, h * 0.48, u * 0.08, w * 0.5, h * 0.48, u * 0.78);
+    vg.addColorStop(0, 'rgba(2,7,13,0.8)');
+    vg.addColorStop(0.55, 'rgba(2,7,13,0.46)');
+    vg.addColorStop(1, 'rgba(2,7,13,0)');
+    c.globalAlpha = 1;
+    c.fillStyle = vg;
+    c.fillRect(0, 0, w, h);
+    c.globalAlpha = 1;
+  },
+};

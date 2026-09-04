@@ -21,6 +21,7 @@
  * ==========================================================================*/
 
 import { register, byId } from './registry.ts';
+import './w/index.ts'; /* P5: registers the 22 named-setting worlds */
 import { STAGE_W, STAGE_H } from '../theme.ts';
 
 const TAU = Math.PI * 2;

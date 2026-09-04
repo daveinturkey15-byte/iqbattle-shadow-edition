@@ -37,7 +37,41 @@ function fmt(v: unknown): string {
   }
 }
 
+
+/* The real CanvasRenderingContext2D surface a world may touch. Anything else
+ * throws — see the note in the stub's get trap. */
+const CTX_METHODS = new Set<string>([
+  'save', 'restore', 'scale', 'rotate', 'translate', 'transform', 'setTransform', 'resetTransform',
+  'clearRect', 'fillRect', 'strokeRect', 'beginPath', 'closePath', 'moveTo', 'lineTo',
+  'bezierCurveTo', 'quadraticCurveTo', 'arc', 'arcTo', 'ellipse', 'rect', 'roundRect',
+  'fill', 'stroke', 'clip', 'isPointInPath', 'createLinearGradient', 'createRadialGradient',
+  'createConicGradient', 'measureText', 'fillText', 'strokeText', 'setLineDash', 'getLineDash',
+  'ops',
+]);
+
+/* A colour built out of undefined/NaN parses as nothing on a real canvas and
+ * throws. Catching it here is the whole point of the stub being strict. */
+function assertColor(where: string, v: unknown): void {
+  if (typeof v !== 'string') {
+    throw new Error(`${where}: colour must be a string, got ${fmt(v)}`);
+  }
+  if (/undefined|NaN|null/.test(v)) {
+    throw new Error(`${where}: unparseable colour "${v}"`);
+  }
+}
+
 interface StubCtx { ops(): string[] }
+
+/** Draw a world onto a fresh strict stub, turning any throw into a message. */
+export function tryDraw(wd: { id: string; draw: (c: CanvasRenderingContext2D, w: number, h: number, t: number) => void }, t: number): { ok: true; ops: string[] } | { ok: false; why: string } {
+  const ctx = makeStubCtx();
+  try {
+    wd.draw(ctx, 1600, 900, t);
+    return { ok: true, ops: ctx.ops() };
+  } catch (e) {
+    return { ok: false, why: `${wd.id}: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
 
 function makeStubCtx(): CanvasRenderingContext2D & StubCtx {
   const ops: string[] = [];
@@ -47,16 +81,32 @@ function makeStubCtx(): CanvasRenderingContext2D & StubCtx {
       const prop = String(rawProp);
       if (prop === 'ops') return (): string[] => ops;
       if (props.has(prop)) return props.get(prop);
+      /* The stub used to answer to ANY property with a recording function, so
+       * a world could call a method that does not exist on a real canvas — or
+       * build a colour string out of undefined — and the gate would record it
+       * happily and pass. Thirteen bulk-authored worlds shipped that way and
+       * every one threw the moment a real CanvasRenderingContext2D saw them.
+       * A stub that accepts more than the real thing is not a test. */
+      if (!CTX_METHODS.has(prop)) {
+        throw new Error(`ctx.${prop} is not a CanvasRenderingContext2D member`);
+      }
       return (...args: unknown[]): unknown => {
         ops.push(`m:${prop}(${args.map(fmt).join(',')})`);
         if (/Gradient$/.test(prop)) {
-          return { addColorStop: (o: number, col: unknown): void => { ops.push(`m:addColorStop(${fmt(o)},${fmt(col)})`); } };
+          return { addColorStop: (o: number, col: unknown): void => {
+            assertColor(`addColorStop`, col);
+            ops.push(`m:addColorStop(${fmt(o)},${fmt(col)})`);
+          } };
         }
         return undefined;
       };
     },
     set(_t, rawProp, v): boolean {
       const prop = String(rawProp);
+      if (prop === 'fillStyle' || prop === 'strokeStyle') assertColor(prop, v);
+      if (prop === 'globalAlpha' && (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1)) {
+        throw new Error(`globalAlpha set to ${fmt(v)}`);
+      }
       props.set(prop, v);
       ops.push(`p:${prop}=${fmt(v)}`);
       return true;
@@ -104,7 +154,21 @@ function check(name: string, ok: boolean, detail?: string): void {
 console.log('== iqbattle v2 · worlds/backdrops self-test ==');
 
 const all = list();
-check('12 worlds registered', all.length === 12, `got ${all.length}`);
+/* This asserted the literal 12 — a snapshot of the roster, which is the same
+ * hardcoded-roster trap that has now bitten this project four times. What
+ * matters is that the roster never shrinks and every alignment stays stocked. */
+{
+  const broken: string[] = [];
+  for (const wd of list()) {
+    for (const t of [0, 1000, 10000]) {
+      const r = tryDraw(wd, t);
+      if (!r.ok) { broken.push(r.why); break; }
+    }
+  }
+  check('every world survives a real-shaped canvas ctx', broken.length === 0, broken.slice(0, 6).join(' | '));
+}
+
+check('roster has not shrunk below the P5 wave', all.length >= 34, `got ${all.length}`);
 check('unique ids', new Set(all.map((d) => d.id)).size === all.length);
 
 for (const a of ALIGNS as readonly Align[]) {
@@ -196,11 +260,43 @@ check('every backdrop is genuinely f(t)', timeVaries, tvDetail);
   check('applyBackdrop cleanup immediately callable + idempotent', ok);
 }
 
+/* --- cross-world distinctness -------------------------------------------
+ * 22 of these worlds were authored in one bulk wave. The failure mode that
+ * matters there is not a crash, it is two worlds that paint the same thing.
+ * Two worlds whose op stream is byte-identical at the same t are the same
+ * world wearing two names. */
+{
+  const streams = new Map<string, string>();
+  let dupes = 0;
+  let firstDupe = '';
+  for (const wd of list()) {
+    const ctx = makeStubCtx();
+    wd.draw(ctx, 1600, 900, 1000);
+    const key = ctx.ops().join('|');
+    const prev = streams.get(key);
+    if (prev !== undefined) {
+      dupes++;
+      if (!firstDupe) firstDupe = `${wd.id} paints exactly what ${prev} paints`;
+    } else {
+      streams.set(key, wd.id);
+    }
+  }
+  check('every world paints something distinct', dupes === 0, firstDupe);
+  /* A world that draws almost nothing is the other bulk-authoring failure. */
+  let thin = '';
+  for (const wd of list()) {
+    const ctx = makeStubCtx();
+    wd.draw(ctx, 1600, 900, 1000);
+    if (ctx.ops().length < 12) { thin = `${wd.id} issued only ${ctx.ops().length} ops`; break; }
+  }
+  check('no world is a near-empty frame', thin === '', thin);
+}
+
 /* ------------------------------- runner ---------------------------------- */
 
 if (failures > 0) {
   console.error('\nSELFTEST FAILED — ' + failures + ' failing check(s)');
   process.exit(1);
 }
-console.log('\nSELFTEST PASSED — 12 worlds, full align coverage, pure f(t), seeded pick');
+console.log('\nSELFTEST PASSED — worlds distinct + non-empty, full align coverage, pure f(t), seeded pick');
 process.exit(0);

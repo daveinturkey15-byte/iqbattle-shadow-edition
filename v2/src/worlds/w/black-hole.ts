@@ -1,0 +1,156 @@
+import { hash, wash, softBlob, wrap, type WorldDef } from './kit.ts';
+
+export const WORLD: WorldDef = {
+  id: 'black-hole',
+  align: 'chaotic',
+  draw(c: CanvasRenderingContext2D, w: number, h: number, t: number): void {
+    const cx = w * 0.5;
+    const cy = h * 0.52;
+    const R = Math.min(w, h) * 0.34;
+    const discR = Math.max(w * 0.48, R * 1.9);
+    const squash = 0.24;
+    wash(c, w, h, '#070c1a', '#010204');
+    softBlob(c, w * 0.04, h * 0.1, w * 0.24, h * 0.28, '66,86,160', 0.2);
+    softBlob(c, w * 0.96, h * 0.14, w * 0.26, h * 0.3, '170,104,58', 0.16);
+    softBlob(c, w * 0.08, h * 0.92, w * 0.26, h * 0.26, '84,52,140', 0.16);
+    softBlob(c, w * 0.93, h * 0.88, w * 0.24, h * 0.24, '44,110,130', 0.14);
+    softBlob(c, cx, cy, discR * 0.9, R * 0.7, '255,140,60', 0.07);
+    for (let i = 0; i < 130; i++) {
+      const sx = hash(i * 3 + 11) * w;
+      const sy = hash(i * 3 + 12) * h;
+      const sz = hash(i * 3 + 13);
+      const dx = (sx - cx) / (w * 0.5);
+      const dy = (sy - cy) / (h * 0.5);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const edge = Math.min(1, Math.max(0, (dist - 0.35) * 1.2));
+      const period = 2400 + sz * 4200;
+      const tw = 0.55 + 0.45 * Math.sin((t * 2 * Math.PI) / period + sz * 6.28);
+      const a = (0.08 + sz * 0.5) * (0.25 + 0.75 * edge) * tw;
+      if (a < 0.02) continue;
+      c.globalAlpha = a;
+      c.fillStyle = sz > 0.8 ? '#cfe0ff' : '#9fb2d8';
+      const s = sz > 0.9 ? 2 : 1;
+      c.fillRect(sx, sy, s, s);
+    }
+    c.globalAlpha = 1;
+    c.save();
+    c.translate(cx, cy);
+    c.scale(1, squash);
+    const glow = c.createRadialGradient(0, 0, R * 0.2, 0, 0, discR);
+    glow.addColorStop(0, 'rgba(0,0,0,0)');
+    glow.addColorStop(0.38, 'rgba(255,148,64,0.20)');
+    glow.addColorStop(0.62, 'rgba(180,110,70,0.08)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = glow;
+    c.beginPath();
+    c.arc(0, 0, discR, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+    c.save();
+    c.translate(cx, cy);
+    c.scale(1, squash);
+    for (let k = 0; k < 6; k++) {
+      const f = k / 5;
+      const rr = R * 0.58 + f * (discR - R * 0.58);
+      const wob = Math.sin(rr * 0.015 + t * 0.00035 + k * 1.3) * R * 0.04;
+      c.beginPath();
+      c.ellipse(0, wob, rr, rr, 0, Math.PI, Math.PI * 2);
+      const g = Math.round(150 + (1 - f) * 90);
+      const b = Math.round(90 + (1 - f) * 60);
+      c.strokeStyle = 'rgba(255,' + g + ',' + b + ',' + (0.28 - f * 0.18).toFixed(3) + ')';
+      c.lineWidth = R * 0.055 * (1 - f * 0.5) + 1;
+      c.stroke();
+    }
+    c.restore();
+    const breathe = Math.sin((t * 2 * Math.PI) / 7000) * R * 0.02;
+    c.save();
+    c.translate(cx, cy);
+    c.scale(1, 0.9);
+    c.beginPath();
+    c.ellipse(0, -R * 0.18 + breathe * 0.3, R * 0.78, R * 0.3, 0, Math.PI * 1.12, Math.PI * 1.88);
+    c.strokeStyle = 'rgba(255,196,120,0.38)';
+    c.lineWidth = Math.max(1, R * 0.028);
+    c.stroke();
+    c.beginPath();
+    c.ellipse(0, -R * 0.1 - breathe * 0.3, R * 0.86, R * 0.34, 0, Math.PI * 0.08, Math.PI * 0.92);
+    c.strokeStyle = 'rgba(200,140,90,0.18)';
+    c.lineWidth = Math.max(1, R * 0.022);
+    c.stroke();
+    c.restore();
+    const shimmer = 0.55 + 0.2 * Math.sin((t * 2 * Math.PI) / 3200);
+    c.beginPath();
+    c.arc(cx, cy, R * 0.52 + breathe * 0.2, 0, Math.PI * 2);
+    c.strokeStyle = 'rgba(255,220,170,' + shimmer.toFixed(3) + ')';
+    c.lineWidth = Math.max(1.2, R * 0.018);
+    c.stroke();
+    c.beginPath();
+    c.arc(cx, cy, R * 0.5, 0, Math.PI * 2);
+    c.fillStyle = '#000000';
+    c.fill();
+    c.beginPath();
+    c.arc(cx, cy, R * 0.5, 0, Math.PI * 2);
+    c.strokeStyle = 'rgba(80,40,24,0.55)';
+    c.lineWidth = 1.5;
+    c.stroke();
+    const span = Math.max(1, discR - R * 0.58);
+    for (let i = 0; i < 90; i++) {
+      const h1 = hash(600 + i * 4 + 1);
+      const h2 = hash(600 + i * 4 + 2);
+      const h3 = hash(600 + i * 4 + 3);
+      const h4 = hash(600 + i * 4 + 4);
+      const baseR = R * 0.58 + h1 * span;
+      const orbitPeriod = 3600 + (baseR / R) * 5200 + h4 * 1500;
+      const ang = h2 * Math.PI * 2 + (t * 2 * Math.PI) / orbitPeriod;
+      const fallSpeed = 0.008 * (0.5 + h3 * 0.8) * (0.6 + R / (baseR + 1));
+      const rrNow = R * 0.58 + wrap(h1 * span - t * fallSpeed, span);
+      const warpY = Math.sin((rrNow - R) * 0.02 + t * 0.0004 + h2 * 6.28) * R * 0.06 * (R / (rrNow + R * 0.3));
+      const x = cx + Math.cos(ang) * rrNow;
+      const y = cy + Math.sin(ang) * rrNow * squash + warpY;
+      const gate = Math.min(1, Math.abs(x - cx) / (w * 0.2));
+      const dop = 0.55 + 0.9 * ((x - cx) / (discR * 2) + 0.5);
+      const a = Math.min(0.85, (0.18 + h4 * 0.55) * (0.18 + 0.82 * gate) * dop);
+      if (a < 0.02) continue;
+      const len = 5 + h3 * 13 * (0.5 + R / (rrNow + R));
+      const wid = 1 + h4 * 1.6;
+      const gg = Math.round(140 + h3 * 90);
+      c.globalAlpha = a;
+      c.fillStyle = 'rgb(255,' + gg + ',90)';
+      c.save();
+      c.translate(x, y);
+      c.rotate(Math.atan2(Math.cos(ang) * squash, -Math.sin(ang)));
+      c.fillRect(-len / 2, -wid / 2, len, wid);
+      c.restore();
+    }
+    c.globalAlpha = 1;
+    for (let j = 0; j < 22; j++) {
+      const m1 = hash(900 + j * 2 + 1);
+      const m2 = hash(900 + j * 2 + 2);
+      const mx = wrap(m1 * w + t * 0.006 * (0.3 + m1), w);
+      const my = wrap(m2 * h + t * 0.004 * (0.3 + m2), h);
+      const mdx = (mx - cx) / (w * 0.5);
+      const mdy = (my - cy) / (h * 0.5);
+      const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
+      if (mdist < 0.45) continue;
+      const mp = 2800 + m1 * 3600;
+      const ma = (0.1 + m2 * 0.2) * (0.6 + 0.4 * Math.sin((t * 2 * Math.PI) / mp + m1 * 6.28));
+      c.globalAlpha = ma;
+      c.fillStyle = '#8fa4cc';
+      c.beginPath();
+      c.arc(mx, my, 0.8 + m2 * 1.2, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.globalAlpha = 1;
+    c.save();
+    c.translate(cx, cy);
+    c.scale(1, 0.5);
+    const veil = c.createRadialGradient(0, 0, 0, 0, 0, w * 0.22);
+    veil.addColorStop(0, 'rgba(1,2,8,0.55)');
+    veil.addColorStop(1, 'rgba(1,2,8,0)');
+    c.fillStyle = veil;
+    c.beginPath();
+    c.arc(0, 0, w * 0.22, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+    c.globalAlpha = 1;
+  },
+};
