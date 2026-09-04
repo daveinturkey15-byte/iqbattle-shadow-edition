@@ -49,11 +49,25 @@ const CTX_METHODS = new Set<string>([
   'ops',
 ]);
 
+/* Readable/writable properties. Reading one a world never set is legal (a real
+ * ctx has defaults), so the get trap returns the default rather than throwing;
+ * only genuinely unknown names are a defect. */
+const CTX_PROPS: Readonly<Record<string, unknown>> = {
+  globalAlpha: 1, globalCompositeOperation: 'source-over', fillStyle: '#000000',
+  strokeStyle: '#000000', lineWidth: 1, lineCap: 'butt', lineJoin: 'miter',
+  miterLimit: 10, lineDashOffset: 0, font: '10px sans-serif', textAlign: 'start',
+  textBaseline: 'alphabetic', direction: 'inherit', imageSmoothingEnabled: true,
+  filter: 'none', shadowBlur: 0, shadowColor: 'rgba(0,0,0,0)', shadowOffsetX: 0, shadowOffsetY: 0,
+};
+
 /* A colour built out of undefined/NaN parses as nothing on a real canvas and
  * throws. Catching it here is the whole point of the stub being strict. */
 function assertColor(where: string, v: unknown): void {
+  /* A gradient object is a perfectly legal fillStyle/strokeStyle — only a
+   * STRING colour can be malformed, so only strings are checked here. */
+  if (v !== null && typeof v === 'object' && 'addColorStop' in (v as object)) return;
   if (typeof v !== 'string') {
-    throw new Error(`${where}: colour must be a string, got ${fmt(v)}`);
+    throw new Error(`${where}: colour must be a string or gradient, got ${fmt(v)}`);
   }
   if (/undefined|NaN|null/.test(v)) {
     throw new Error(`${where}: unparseable colour "${v}"`);
@@ -87,6 +101,7 @@ function makeStubCtx(): CanvasRenderingContext2D & StubCtx {
        * happily and pass. Thirteen bulk-authored worlds shipped that way and
        * every one threw the moment a real CanvasRenderingContext2D saw them.
        * A stub that accepts more than the real thing is not a test. */
+      if (prop in CTX_PROPS) return CTX_PROPS[prop];
       if (!CTX_METHODS.has(prop)) {
         throw new Error(`ctx.${prop} is not a CanvasRenderingContext2D member`);
       }
