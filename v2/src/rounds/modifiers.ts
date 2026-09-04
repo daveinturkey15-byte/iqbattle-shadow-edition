@@ -58,6 +58,14 @@ export interface BoardTarget {
   pianoKeys?: boolean;
   /** Inverted-controls flag. */
   inverted?: boolean;
+  /**
+   * Inverted-controls INPUT MAP, the pure state main.ts actually installs:
+   * clicking the tile in slot `i` selects option `invertMap[i]`. It is a
+   * permutation, so every option stays reachable — the board is unchanged and
+   * which option is CORRECT is unchanged; only the route to it is mirrored.
+   * The flag above says "this round is inverted"; this array says how.
+   */
+  invertMap?: number[];
   /** Option-shuffle permutation of the 8 option slots. */
   optionOrder?: number[];
 }
@@ -350,11 +358,27 @@ const invertedControlsModifier: RoundModifier = {
 
     const origInverted: boolean | undefined =
       typeof target.inverted === 'boolean' ? target.inverted : undefined;
+    const origMap: number[] | undefined =
+      Array.isArray(target.invertMap) ? [...target.invertMap] : undefined;
+
+    /* The 8 option slots are a 4x2 grid. Reversing the whole run — slot i
+     * selects option 7-i — mirrors the grid in BOTH axes, which is the
+     * strongest, most readable inversion available and is still a
+     * permutation: every option remains reachable from exactly one slot, so
+     * the round can never become unsolvable. Identical under motion and
+     * static (no step is exposed): this is an input mapping, not an
+     * animation, so the reduced-motion variant is the same round. */
+    const map: number[] = [];
+    for (let i = 0; i < 8; i++) map.push(7 - i);
+
     target.inverted = true;
+    target.invertMap = map;
 
     return () => {
       if (origInverted === undefined) delete target.inverted;
       else target.inverted = origInverted;
+      if (origMap === undefined) delete target.invertMap;
+      else target.invertMap = origMap;
     };
   },
 };

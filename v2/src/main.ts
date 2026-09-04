@@ -22,6 +22,7 @@ import { emeraldPick, buildInterlude } from './scenes/interlude.ts';
 import { applyBackdrop } from './worlds/backdrops.ts';
 import { pick as pickWorld } from './worlds/registry.ts';
 import { maybeCurse } from './fate/cursepack.ts';
+import { maybePack } from './fate/packs/registry.ts';
 import { playReveal, revealMotionEnabled } from './fx/reveal.ts';
 import { pickModifiers, type ModCtx } from './rounds/modifiers.ts';
 import { createChaos, type ChaosBus } from './fx/chaos.ts';
@@ -642,6 +643,18 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     if (fa) { performCue(fa.cue); if (fa.bannerText) toastNow(overlay, fa.bannerText, T.gold); }
     const fb = maybeFlavorB({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFB2B3 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
     if (fb) { performCue(fb.cue); if (fb.bannerText) toastNow(overlay, fb.bannerText, T.muted); }
+    /* P4 breadth: the pack layer (16 packs, one weighted picker). Its riders
+     * are deliberately only the two this engine really applies — hpDelta and
+     * scoreMul — so a pack event can never read mechanical and do nothing.
+     * scoreMul MULTIPLIES into fateScoreMul so a curse in the same round is
+     * not silently overwritten; fateScoreMul is reset to 1 each depth. */
+    const pk = maybePack({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0x9C4A1 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
+    if (pk) {
+      if (typeof pk.hpDelta === 'number') r.hp = Math.max(0, Math.min(100, r.hp + pk.hpDelta));
+      if (typeof pk.scoreMul === 'number' && pk.scoreMul > 0) r.fateScoreMul *= pk.scoreMul;
+      performCue(pk.cue);
+      if (pk.bannerText) toastNow(overlay, pk.bannerText, T.gold);
+    }
   } catch { /* flavor optional */ }
   setDreadLayer(plan.align === 'good' ? 0 : plan.layer);
   if (plan.align !== r.prevAlign && r.prevAlign !== null) sting(plan.align === 'good' ? 'heal' : 'pain');
@@ -1150,6 +1163,70 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
           }
         }
         onSceneStop(() => { for (const m of moves) { m.node.x = m.ox; m.node.y = m.oy; } });
+      }
+    } else if (mod.id === 'inverted-controls') {
+      /* P5: inverted-controls — the last of the twelve that was still a silent
+       * no-op. main.ts is the only place the pure state touches Pixi. It reads
+       * scene.invertMap (a permutation: clicking slot i selects option
+       * invertMap[i]) and re-routes the INPUT without touching the board:
+       *
+       *   - the option Sprite goes eventMode 'passive' — it stops being
+       *     hit-testable itself, but its children still are;
+       *   - a nearly-invisible proxy is added AS A CHILD of that sprite, so it
+       *     follows the tile if option-shuffle moves it later in the same
+       *     round (both modifiers can roll together);
+       *   - the proxy emits 'pointerdown' on the MAPPED sprite, whose handler
+       *     closes over its own idx — so the answer that gets scored, the tile
+       *     that flashes green or red, and the single-fire guard are all the
+       *     game's own, unmodified.
+       *
+       * Which option is correct never changes; the board never changes; every
+       * option stays reachable from exactly one slot. The banner announces it
+       * (P1 rail 5) because a control change the player cannot see is not a
+       * modifier, it is a bug. Teardown restores eventMode and removes the
+       * proxies. Identical under motion and static — an input mapping is not
+       * an animation. */
+      const map = (scene as unknown as { invertMap?: number[] }).invertMap;
+      if (map !== undefined) {
+        toastNow(overlay, mod.banner ?? 'CONTROLS INVERTED', T.bad);
+        const opts = new Map<number, Sprite>();
+        const collect = (c: Container): void => {
+          for (const ch of c.children) {
+            if (ch instanceof Sprite) {
+              const lab = (ch as unknown as { label?: string }).label;
+              const m = lab !== undefined ? /^opt(\d+)$/.exec(lab) : null;
+              if (m) opts.set(Number(m[1]), ch);
+            } else if (ch instanceof Container) collect(ch);
+          }
+        };
+        collect(scene);
+        const restore: Array<() => void> = [];
+        const proxies: Graphics[] = [];
+        for (const [slot, sp] of opts) {
+          const dest = opts.get(map[slot] ?? slot);
+          if (!dest) continue;
+          const prevMode = sp.eventMode;
+          const prevCursor = sp.cursor;
+          sp.eventMode = 'passive';
+          restore.push(() => { sp.eventMode = prevMode; sp.cursor = prevCursor; });
+          const proxy = new Graphics();
+          /* A hit target needs geometry; alpha 0.004 is invisible on screen
+           * and still hit-tests. */
+          proxy.rect(0, 0, sp.width, sp.height).fill({ color: 0xffffff, alpha: 0.004 });
+          proxy.eventMode = 'static';
+          proxy.cursor = 'pointer';
+          /* game.ts's option handler takes no arguments, so the event object
+           * Pixi's typings insist on is genuinely unused — hence the cast
+           * rather than forging a FederatedPointerEvent. */
+          const fire = (dest as unknown as { emit: (ev: string) => void });
+          proxy.on('pointerdown', () => { fire.emit('pointerdown'); });
+          sp.addChild(proxy);
+          proxies.push(proxy);
+        }
+        onSceneStop(() => {
+          for (const f of restore) f();
+          for (const p2 of proxies) { p2.parent?.removeChild(p2); p2.destroy(); }
+        });
       }
     }
   }

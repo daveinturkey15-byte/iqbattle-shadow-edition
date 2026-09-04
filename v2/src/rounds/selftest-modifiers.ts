@@ -33,6 +33,7 @@ function cloneStub(s: BoardTarget): BoardTarget {
     tilt: s.tilt ? { ...s.tilt } : undefined,
     pianoKeys: s.pianoKeys,
     inverted: s.inverted,
+    invertMap: s.invertMap ? [...s.invertMap] : undefined,
     optionOrder: s.optionOrder ? [...s.optionOrder] : undefined,
   };
 }
@@ -43,6 +44,10 @@ function sameState(a: BoardTarget, b: BoardTarget): boolean {
   if (a.rotation !== b.rotation) return false;
   if (a.pianoKeys !== b.pianoKeys) return false;
   if (a.inverted !== b.inverted) return false;
+  const ma = a.invertMap;
+  const mb = b.invertMap;
+  if ((ma === undefined) !== (mb === undefined)) return false;
+  if (ma && mb && (ma.length !== mb.length || ma.some((v, i) => v !== mb[i]))) return false;
   const fa = a.fog;
   const fb = b.fog;
   if ((fa === undefined) !== (fb === undefined)) return false;
