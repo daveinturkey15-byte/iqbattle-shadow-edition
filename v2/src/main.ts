@@ -23,6 +23,17 @@ import { applyBackdrop } from './worlds/backdrops.ts';
 import { pick as pickWorld } from './worlds/registry.ts';
 import { maybeCurse } from './fate/cursepack.ts';
 import { maybePack } from './fate/packs/registry.ts';
+import { mountVolume } from './scenes/volume.ts';
+/* P7 wave: the seven stages the spec still had unbuilt. Order here, in
+ * TAKEOVERS and in onboard.TAKEOVER_STAGE_IDS must agree — the onboard
+ * selftest enforces it, and both have drifted before. */
+import { mountLanternGuard } from './scenes/takeovers/lanternguard.ts';
+import { mountPiano } from './scenes/takeovers/pianokeys.ts';
+import { mountLamp } from './scenes/takeovers/lamp.ts';
+import { mountPod } from './scenes/takeovers/pod.ts';
+import { mountShelfEdge } from './scenes/takeovers/shelfedge.ts';
+import { mountOrb } from './scenes/takeovers/orb.ts';
+import { mountGreenWar } from './scenes/takeovers/greenwar.ts';
 import { playReveal, revealMotionEnabled } from './fx/reveal.ts';
 import { pickModifiers, type ModCtx } from './rounds/modifiers.ts';
 import { createChaos, type ChaosBus } from './fx/chaos.ts';
@@ -102,7 +113,8 @@ function fit(): void {
 }
 
 const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3];
-const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell, mountPacman2, mountTetris2, mountBattleship2, mountDoom2, mountPhoenix2, mountGauntlet2, mountFractal2, mountHypercube2, mountSniper2, mountPopGlitter, mountMetal, mountTerminator2, mountFury2, mountSkyFire2];
+const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell, mountPacman2, mountTetris2, mountBattleship2, mountDoom2, mountPhoenix2, mountGauntlet2, mountFractal2, mountHypercube2, mountSniper2, mountPopGlitter, mountMetal, mountTerminator2, mountFury2, mountSkyFire2,
+  mountLanternGuard, mountPiano, mountLamp, mountPod, mountShelfEdge, mountOrb, mountGreenWar];
 
 function code5(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -933,7 +945,8 @@ function dealTakeover(root: Container, idx: number, planSeed: number, overlay: C
     },
   });
 }
-const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL', 'GLUTTON 2', 'THE WELL 2', 'SALVOS 2', 'CORRIDOR 2', 'SEED RITUAL', 'FOUR RIDERS', 'DEEP ZOOM', '606D', 'OVERWATCH', 'CHART TOPPER', 'FORGE SET', 'THE HUNT', 'FURY ROADRUN', 'SKY FIRE'];
+const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL', 'GLUTTON 2', 'THE WELL 2', 'SALVOS 2', 'CORRIDOR 2', 'SEED RITUAL', 'FOUR RIDERS', 'DEEP ZOOM', '606D', 'OVERWATCH', 'CHART TOPPER', 'FORGE SET', 'THE HUNT', 'FURY ROADRUN', 'SKY FIRE',
+  'LANTERN GUARD', 'THE RECITAL', 'THE LAMP', 'THE POD', 'SHELF EDGE', 'MISTER ORB', 'THE GREEN WAR'];
 
 function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: number, overlay: Container): void {
   const r = run!;
@@ -987,7 +1000,9 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
     score: () => r.score,
     players: sidebarPlayers,
     locked: () => !!lms && !lms.mayAnswer(),
-  });
+  }, overlay); /* sidebar into the OVERLAY — see buildGameScene's `chrome` param:
+                * the modifiers transform `scene`, and the player rail must not
+                * turn sideways with the board. */
   root.addChild(scene);
 
   /* P1: round modifiers — pure function of (runSeed, depth) so host and every
@@ -1228,6 +1243,22 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
           for (const p2 of proxies) { p2.parent?.removeChild(p2); p2.destroy(); }
         });
       }
+    } else if (stop.step) {
+      /* Generic driver for every modifier whose whole effect is its pure
+       * step(tMs) writing straight to the container transform: mirror-flip,
+       * board-drift, breathing, lurch. The branches above exist because those
+       * modifiers ALSO need main.ts to paint Graphics from their state; these
+       * four need nothing but the clock.
+       *
+       * Without this they were pinned at their t=0 frame forever. mirror-flip
+       * and board-drift only moved because they ran their own setInterval —
+       * removing that timer (FOLLOWUPS.md) would have frozen them outright —
+       * and breathing and lurch have been silently static all along, a quieter
+       * instance of the same stub drift that left seven modifiers dead.
+       * Static/reduced-motion exposes no step, so this pushes nothing and the
+       * state stays pinned, exactly as the other branches behave. */
+      const step = stop.step;
+      modFx.push((tMs: number) => { step(tMs); });
     }
   }
 
@@ -1300,6 +1331,10 @@ async function boot(): Promise<void> {
   });
   document.getElementById('app')!.appendChild(app.canvas);
   app.stage.addChild(bleedHolder, view);
+  /* Always-present volume control. Parented to the persistent `view`, NOT a
+   * scene root or the per-round overlay — those are destroyed every depth, and
+   * the owner asked for a slider that is always there. */
+  mountVolume(view);
 
   window.addEventListener('resize', fit);
   fit();

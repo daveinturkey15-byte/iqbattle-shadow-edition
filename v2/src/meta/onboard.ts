@@ -86,6 +86,49 @@ export const PORT_STAGE_IDS = [
 /* ------------------------------------------------------------------ */
 
 const CARDS: Readonly<Record<string, GoalCard>> = Object.freeze({
+  /* --- P7 wave: the seven stages the spec still had unbuilt --- */
+  'lantern-guard': {
+    stageId: 'lantern-guard',
+    title: 'LANTERN GUARD',
+    goal: 'DRAFTS COME FOR YOUR FLAME. SHUTTER THE SIDE THEY BLOW FROM, AND FEED THE LANTERN BY ANSWERING THE BOARD.',
+    controls: 'MOVE TO AIM THE SHUTTER · ARROWS / WASD · CLICK OR KEYS 1–6',
+  },
+  'piano-round': {
+    stageId: 'piano-round',
+    title: 'THE RECITAL',
+    goal: 'WATCH THE PHRASE, PLAY IT BACK ON THE KEYBOARD, THEN FINISH ON THE KEY WEARING THE MARK COUNT THE HOUSE ASKS FOR.',
+    controls: 'CLICK / TAP A KEY · KEYS 1–8 · A S D F G H J K · ESC NEUTRAL',
+  },
+  lamp: {
+    stageId: 'lamp',
+    title: 'THE LAMP',
+    goal: 'THE LAMP SELLS EVERY DOOR. EACH WISH PRINTS ITS PRICE IN TIME, BLOOD OR GOLD. THE MARK YOU NEED IS RARELY BEHIND THE CHEAP ONE.',
+    controls: 'CLICK A WISH TO GRANT (Q/W/E) · CLICK A TILE OR KEYS 1–6',
+  },
+  pod: {
+    stageId: 'pod',
+    title: 'THE POD',
+    goal: 'STAY INSIDE THE POD AND THEY FERRY THE MARKS UP TO YOU AND HEAL YOU WHILE THEY DO IT. BREAK AWAY AND YOU ARE FASTER, ALONE, AND COUNTED.',
+    controls: 'MOVE TO SWIM · WASD / ARROWS · CLICK A SURFACED TILE OR KEYS 1–6',
+  },
+  'shelf-edge': {
+    stageId: 'shelf-edge',
+    title: 'SHELF EDGE',
+    goal: 'SOMETHING CIRCLES AT THE EDGE OF SIGHT AND CLOSES WHILE YOU DITHER. COMMIT: A FAST WRONG GUESS COSTS LESS THAN A SLOW RIGHT ONE.',
+    controls: 'CLICK / TAP · KEYS 1–4 · ESC BAILS NEUTRAL',
+  },
+  'the-orb': {
+    stageId: 'the-orb',
+    title: 'MISTER ORB',
+    goal: 'HE IS NEUTRAL FOR NOW. ANSWER FIVE MARKS. THE FIRST ONE YOU GET WRONG TURNS HIM, AND THE SECOND ONE ENDS YOU.',
+    controls: 'CLICK / TAP · KEYS 1–4 · ESC BAILS NEUTRAL',
+  },
+  'green-war': {
+    stageId: 'green-war',
+    title: 'THE GREEN WAR',
+    goal: 'A FLARE SHOWS THE MARK. THE RAIN HIDES THE TREE LINE. HOLD THE MARK IN YOUR HEAD UNTIL A LULL LETS YOU ANSWER.',
+    controls: 'CLICK / TAP · KEYS 1–8 · ESC BAILS NEUTRAL',
+  },
   /* --- the 11 mounted (v1 goalText/controls where v1 had them) --- */
   'red-light': {
     stageId: 'red-light',
@@ -255,6 +298,8 @@ export const TAKEOVER_STAGE_IDS = [
   'the-well', 'pacman2', 'tetris2', 'battleship2', 'doom2',
   'phoenix2', 'gauntlet2', 'fractal2', 'hypercube2', 'sniper2',
   'popglitter2', 'metal2', 'terminator2', 'fury2', 'skyfire2',
+  /* P7 wave — order MUST match main.TAKEOVERS exactly (selftest-enforced). */
+  'lantern-guard', 'piano-round', 'lamp', 'pod', 'shelf-edge', 'the-orb', 'green-war',
 ] as const;
 
 /** Goal card for the takeover main.ts mounts at TAKEOVERS[idx]. */
@@ -362,8 +407,14 @@ export function selfTest(): SelfTestResult {
     }
     if (card.stageId !== id) failures.push(`${id}: stageId mismatch`);
   }
-  if (TAKEOVER_STAGE_IDS.length !== 25) {
-    failures.push(`takeover id count ${TAKEOVER_STAGE_IDS.length} != 25 (main.ts TAKEOVERS)`);
+  /* This used to assert the literal 25 — a snapshot of the roster, not the
+   * contract, so it went red the moment a stage was added and told you nothing
+   * about whether main.ts agreed. What actually matters is that every mounted
+   * takeover has a card and the two orders line up, which the loops either
+   * side of this already prove. All that is left worth asserting is that the
+   * roster never SHRINKS silently: stages are only ever added here. */
+  if (TAKEOVER_STAGE_IDS.length < 25) {
+    failures.push(`takeover roster shrank to ${TAKEOVER_STAGE_IDS.length} (was 25 at the P7 wave)`);
   }
   if (new Set(TAKEOVER_STAGE_IDS).size !== TAKEOVER_STAGE_IDS.length) {
     failures.push('duplicate id in TAKEOVER_STAGE_IDS');

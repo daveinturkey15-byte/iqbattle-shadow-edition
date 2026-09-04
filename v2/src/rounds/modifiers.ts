@@ -113,14 +113,17 @@ function resolveBoardTarget(scene: unknown): BoardTarget | null {
 }
 
 /**
- * Mirror Flip: horizontally inverts the board container (scale.x = -1).
- * Teardown cleanly restores previous scale and position.
+ * Mirror Flip: horizontally inverts the board container (scale.x = -1) with a
+ * slow seeded wobble around the flipped scale. Time arrives only via the
+ * exposed pure step(tMs); the scene frame-loop drives it. Static mode pins the
+ * plain flip (identical rules, no motion). Teardown restores the exact
+ * previous scale and position.
  */
 const mirrorFlipModifier: RoundModifier = {
   id: 'mirror-flip',
   banner: 'MIRROR FLIP',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
-  apply: (ctx: ModCtx, scene: unknown): (() => void) => {
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
     if (!target) return () => {};
 
@@ -130,47 +133,47 @@ const mirrorFlipModifier: RoundModifier = {
     const origY = target.y;
 
     const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x45d9f3b)) >>> 0);
-    target.scale.x = origScaleX > 0 ? -origScaleX : -1;
+    const flippedX = origScaleX > 0 ? -origScaleX : -1;
+    const wobbleSpeed = 0.5 + rng() * 0.5;
+    // Same cadence the old 16 ms tick produced (0.05 rad/tick × wobbleSpeed),
+    // now expressed per millisecond so the state is a pure function of tMs.
+    const wobbleRadPerMs = (0.05 * wobbleSpeed) / 16;
 
-    let timer: ReturnType<typeof setInterval> | null = null;
+    const setAt = (tMs: number): void => {
+      target.scale.x = flippedX + Math.sin(wobbleRadPerMs * tMs) * 0.02;
+    };
+
     if (ctx.motion) {
-      const wobbleSpeed = 0.5 + rng() * 0.5;
-      let step = 0;
-      if (typeof setInterval !== 'undefined') {
-        timer = setInterval(() => {
-          step++;
-          const t = step * 0.05 * wobbleSpeed;
-          target.scale.x = (origScaleX > 0 ? -origScaleX : -1) + Math.sin(t) * 0.02;
-        }, 16);
-        if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
-          (timer as { unref: () => void }).unref();
-        }
-      }
+      setAt(0); // plain flip at t=0; the wobble grows from here
+    } else {
+      // Static variant: plain flip, identical rules, no motion.
+      target.scale.x = flippedX;
     }
 
-    return () => {
-      if (timer !== null) {
-        clearInterval(timer);
-        timer = null;
-      }
+    const stop: ModifierStop = () => {
       target.scale.x = origScaleX;
       target.scale.y = origScaleY;
       target.x = origX;
       target.y = origY;
     };
+    // motion=false ⇒ no reported movement, same rail as the chaos bus: the
+    // board stays pinned at its plain flip.
+    if (ctx.motion) stop.step = (tMs: number): void => { setAt(tMs); };
+    return stop;
   },
 };
 
 /**
- * Board Drift: slow deterministic drift of the board container.
- * Static mode (motion=false) applies a fixed deterministic offset with zero timer overhead.
- * Teardown cleanly restores previous coordinates and scale.
+ * Board Drift: slow deterministic drift of the board container. Time arrives
+ * only via the exposed pure step(tMs); the scene frame-loop drives it. Static
+ * mode (motion=false) applies a fixed half-amplitude offset (identical rules,
+ * no motion). Teardown restores the exact previous coordinates and scale.
  */
 const boardDriftModifier: RoundModifier = {
   id: 'board-drift',
   banner: 'BOARD DRIFT',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
-  apply: (ctx: ModCtx, scene: unknown): (() => void) => {
+  apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
     if (!target) return () => {};
 
@@ -183,40 +186,34 @@ const boardDriftModifier: RoundModifier = {
     const angle = rng() * Math.PI * 2;
     const amplitude = 12 + rng() * 12;
     const speed = 0.8 + rng() * 0.6;
+    // Same cadence the old 16 ms tick produced (0.05 rad/tick × speed), now
+    // expressed per millisecond so the state is a pure function of tMs.
+    const driftRadPerMs = (0.05 * speed) / 16;
 
-    let timer: ReturnType<typeof setInterval> | null = null;
+    const setAt = (tMs: number): void => {
+      const t = driftRadPerMs * tMs;
+      target.x = origX + Math.cos(angle + t) * amplitude;
+      target.y = origY + Math.sin(angle + t * 0.7) * amplitude;
+    };
 
-    if (!ctx.motion) {
+    if (ctx.motion) {
+      setAt(0); // full-amplitude seeded offset at t=0; the drift grows from here
+    } else {
+      // Static variant: fixed half-amplitude seeded offset, identical rules.
       target.x = origX + Math.cos(angle) * (amplitude * 0.5);
       target.y = origY + Math.sin(angle) * (amplitude * 0.5);
-    } else {
-      target.x = origX + Math.cos(angle) * amplitude;
-      target.y = origY + Math.sin(angle) * amplitude;
-
-      let step = 0;
-      if (typeof setInterval !== 'undefined') {
-        timer = setInterval(() => {
-          step++;
-          const t = step * 0.05 * speed;
-          target.x = origX + Math.cos(angle + t) * amplitude;
-          target.y = origY + Math.sin(angle + t * 0.7) * amplitude;
-        }, 16);
-        if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
-          (timer as { unref: () => void }).unref();
-        }
-      }
     }
 
-    return () => {
-      if (timer !== null) {
-        clearInterval(timer);
-        timer = null;
-      }
+    const stop: ModifierStop = () => {
       target.scale.x = origScaleX;
       target.scale.y = origScaleY;
       target.x = origX;
       target.y = origY;
     };
+    // motion=false ⇒ no reported movement, same rail as the chaos bus: the
+    // board stays pinned at its seeded half-amplitude offset.
+    if (ctx.motion) stop.step = (tMs: number): void => { setAt(tMs); };
+    return stop;
   },
 };
 

@@ -10,16 +10,26 @@
  *                      listener, so the AudioContext is only ever CREATED on
  *                      (or after) a real user gesture. Safe to call early.
  *   setMuted(b)      — writes IQB_MUTED localStorage + ramps master gain.
+ *   setVolume(v)     — writes IQB_VOL (0..1, clamped) + ramps master gain.
+ *   getVolume()      — current volume preference (default VOLUME_DEFAULT).
  *   sfx(name, opts?) — procedural one-shots, every voice <= 900 ms,
  *                      per-name throttle + concurrent-voice caps.
  *   isMuted()        — current gate state.
  *   onAudioReady(cb) — fires once when the graph first exists (beds.ts uses
  *                      this to start the pending alignment bed).
+ *   onAudioPrefChange(cb) — fires after mute OR volume changes, whether from
+ *                      setMuted/setVolume here or picked up by the poll from
+ *                      another tab. Returns an unsubscribe. scenes/volume.ts
+ *                      redraws off this.
  *
  * Fairness / rails:
- *  - Master gain HARD-CAPPED at MASTER_CAP = 0.15.
- *  - IQB_MUTED is read at init and re-polled every 400 ms; while muted, sfx()
- *    schedules NOTHING and master sits at 0 -> zero output guaranteed twice.
+ *  - Master gain HARD-CAPPED at MASTER_CAP = 0.15. The IQB_VOL preference
+ *    MULTIPLIES the cap (master = muted ? 0 : MASTER_CAP * volume), so the
+ *    slider can only ever go down from the ceiling. Default 0.5 = half of the
+ *    pre-slider level (owner ask 2026-09-04: "half the volume").
+ *  - IQB_MUTED and IQB_VOL are read at init and re-polled every 400 ms; while
+ *    muted, sfx() schedules NOTHING and master sits at 0 -> zero output
+ *    guaranteed twice, whatever the slider says.
  *  - Determinism: no Math.random / Date.now anywhere in this module. All
  *    stochastic texture (noise buffer fill, glitch blips) comes from an own
  *    mulberry32 — same algorithm as scenes/takeovers/redlight.ts, mirrored
@@ -28,6 +38,8 @@
 
 /** Hard ceiling on the master bus. Everything routes through this. */
 export const MASTER_CAP = 0.15;
+/** Shipped IQB_VOL when the user has never touched the slider. */
+export const VOLUME_DEFAULT = 0.5;
 
 const POLL_MS = 400;
 const GLOBAL_VOICE_CAP = 28;
@@ -82,6 +94,22 @@ function readMutedPref(): boolean {
   }
 }
 
+function clampVolume(v: number): number {
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : VOLUME_DEFAULT;
+}
+
+/** IQB_VOL: number 0..1; absent / unparsable -> VOLUME_DEFAULT. */
+function readVolumePref(): number {
+  try {
+    const v = globalThis.localStorage?.getItem('IQB_VOL');
+    if (v == null) return VOLUME_DEFAULT;
+    const n = Number(JSON.parse(v));
+    return clampVolume(n);
+  } catch {
+    return VOLUME_DEFAULT;
+  }
+}
+
 /** IQB_MOTION equivalent — ambient LFO flavour gates on this. */
 export function motionEnabled(): boolean {
   try {
@@ -99,6 +127,7 @@ export function motionEnabled(): boolean {
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let muted = readMutedPref();
+let volume = readVolumePref();
 /** setInterval handle shape across node/browser lib combos. */
 type IntervalHandle = NodeJS.Timeout | number;
 
@@ -106,6 +135,18 @@ let pollTimer: IntervalHandle | null = null;
 let gestureBound = false;
 const readyCbs: Array<() => void> = [];
 let firedReady = false;
+const prefCbs = new Set<() => void>();
+
+/** Master bus target for the current prefs. Mute wins over the slider. */
+function masterTarget(): number {
+  return muted ? 0 : MASTER_CAP * volume;
+}
+
+function notifyPrefs(): void {
+  for (const cb of prefCbs) {
+    try { cb(); } catch { /* a listener must not break the audio core */ }
+  }
+}
 
 /** Graph accessor — null until a user gesture created the context. */
 export function audioGraph(): { ctx: AudioContext; master: GainNode } | null {
@@ -114,6 +155,16 @@ export function audioGraph(): { ctx: AudioContext; master: GainNode } | null {
 
 export function isMuted(): boolean {
   return muted;
+}
+
+export function getVolume(): number {
+  return volume;
+}
+
+/** Subscribe to mute/volume changes (local or cross-tab). Returns unsubscribe. */
+export function onAudioPrefChange(cb: () => void): () => void {
+  prefCbs.add(cb);
+  return () => { prefCbs.delete(cb); };
 }
 
 export function onAudioReady(cb: () => void): void {
@@ -150,9 +201,10 @@ function ensureCtx(): boolean {
   if (!AC) return false;
   try {
     muted = readMutedPref(); // gate checked at INIT, not just module load
+    volume = readVolumePref();
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = muted ? 0 : MASTER_CAP;
+    master.gain.value = masterTarget();
     master.connect(ctx.destination);
     startPoll();
     firedReady = true;
@@ -170,8 +222,15 @@ function ensureCtx(): boolean {
 function startPoll(): void {
   if (pollTimer) return;
   pollTimer = every(POLL_MS, () => {
+    /* Both prefs re-read on the same clock, so a second tab that moves the
+     * slider or hits mute is picked up here the same way. */
     const m = readMutedPref();
-    if (m !== muted) { muted = m; applyMute(); }
+    const v = readVolumePref();
+    if (m === muted && v === volume) return;
+    muted = m;
+    volume = v;
+    applyMaster();
+    notifyPrefs();
   });
 }
 
@@ -183,12 +242,13 @@ function every(ms: number, fn: () => void): IntervalHandle {
   return t;
 }
 
-function applyMute(): void {
+/** Ramp the master bus to masterTarget() — one 80 ms time constant, no clicks. */
+function applyMaster(): void {
   if (!ctx || !master) return;
   try {
     const t = ctx.currentTime;
     master.gain.cancelScheduledValues(t);
-    master.gain.setTargetAtTime(muted ? 0 : MASTER_CAP, t, 0.08);
+    master.gain.setTargetAtTime(masterTarget(), t, 0.08);
   } catch { /* noop */ }
 }
 
@@ -200,7 +260,16 @@ export function initAudio(): boolean {
 export function setMuted(b: boolean): void {
   muted = !!b;
   try { globalThis.localStorage?.setItem('IQB_MUTED', JSON.stringify(!!b)); } catch { /* noop */ }
-  applyMute();
+  applyMaster();
+  notifyPrefs();
+}
+
+/** Set the volume preference (clamped 0..1), persist it, ramp the master bus. */
+export function setVolume(v: number): void {
+  volume = clampVolume(v);
+  try { globalThis.localStorage?.setItem('IQB_VOL', JSON.stringify(volume)); } catch { /* noop */ }
+  applyMaster();
+  notifyPrefs();
 }
 
 /** @internal test seam — clears the mute-poll interval. */

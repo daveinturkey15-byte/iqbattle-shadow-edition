@@ -216,9 +216,15 @@ director.stopDirectorClocks();
 /* ---------------------- 2 — unmute restores output ---------------- */
 
 audio.setMuted(false);
-const capEvents = master ? master.gain.events.filter((e) => e.m === 'tgt' && e.v === 0.15) : [];
-ck(capEvents.length > 0, 'unmute ramps master toward MASTER_CAP 0.15');
-if (master) ck(master.gain.value === 0.15 || capEvents.length > 0, 'master cap target is 0.15');
+/* The unmute target is MASTER_CAP scaled by the IQB_VOL preference (default
+ * 0.5), not the bare cap: this assertion used to hard-code 0.15 and went red
+ * the moment a volume preference existed. Derive it from the shipped values so
+ * it tracks the real contract instead of a snapshot of it. */
+const unmuteTarget = audio.MASTER_CAP * audio.getVolume();
+const capEvents = master ? master.gain.events.filter((e) => e.m === 'tgt' && e.v === unmuteTarget) : [];
+ck(capEvents.length > 0, `unmute ramps master toward MASTER_CAP*volume ${unmuteTarget}`);
+if (master) ck(master.gain.value === unmuteTarget || capEvents.length > 0, `master target is ${unmuteTarget}`);
+ck(unmuteTarget <= audio.MASTER_CAP, 'volume never pushes the master above MASTER_CAP');
 
 fakeNow += 1;
 {

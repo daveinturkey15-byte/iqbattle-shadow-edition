@@ -18,6 +18,11 @@ export {}; // module marker: top-level await below needs it
  *      linear crossfade ramps landing ~2 s after the call.
  *   5. the director's lookahead pass schedules bed voices (heartbeats).
  *   6. setLayer maps depth -> dread lowpass brightness; 0 silences it.
+ *   7. volume pref: IQB_VOL defaults to 0.5 (master = MASTER_CAP * 0.5),
+ *      setVolume clamps 0..1 + persists, mute stays independent of the
+ *      slider (muted -> 0 whatever the slider says), the 400 ms poll picks
+ *      up an external IQB_VOL write, and a fresh read of a persisted value
+ *      round-trips.
  *
  * Run from v2/:
  *   node --experimental-strip-types src/audio/selftest-audio.ts
@@ -167,9 +172,16 @@ ck(rec.sources.length === srcBefore, 'muted -> ZERO voices scheduled');
 
 audio.setMuted(false);
 ck(store.get('IQB_MUTED') === 'false', 'setMuted(false) persists IQB_MUTED=false');
+/* No IQB_VOL was ever written, so the unmute target is the shipped default:
+ * half the cap. Asserting the exact product keeps "half the volume" honest. */
+ck(audio.getVolume() === audio.VOLUME_DEFAULT && audio.VOLUME_DEFAULT === 0.5,
+  `default volume is 0.5 (got ${audio.getVolume()})`);
 if (master) {
-  const tgts = master.gain.events.filter((e) => e.m === 'tgt' && e.v === audio.MASTER_CAP);
-  ck(tgts.length > 0, 'unmute targets master toward MASTER_CAP 0.15');
+  const want = audio.MASTER_CAP * 0.5;
+  const tgts = master.gain.events.filter((e) => e.m === 'tgt' && approx(e.v, want, 1e-12));
+  ck(tgts.length > 0, `unmute targets master toward MASTER_CAP * 0.5 = ${want}`);
+  const overCap = master.gain.events.some((e) => e.v > audio.MASTER_CAP + 1e-12);
+  ck(!overCap, 'master never targeted above MASTER_CAP');
 }
 
 /* --------------- 2 — every SFX name, <= 900 ms -------------------- */
@@ -277,6 +289,66 @@ function dreadGainLastTarget(): number | null {
   fakeNow += 0.3; // clear the sting anti-spam window between the two
   ck(bedsMod.sting('heal') === true, 'sting(heal) plays');
   ck(rec.sources.length > before, 'stings schedule voices');
+}
+
+/* ------------- 7 — volume preference (IQB_VOL) -------------------- */
+
+function lastMasterTarget(): number | null {
+  const m = findMasterGain();
+  if (!m) return null;
+  const tgts = m.gain.events.filter((e) => e.m === 'tgt');
+  return tgts.length ? tgts[tgts.length - 1].v : null;
+}
+
+{
+  let notified = 0;
+  const unsub = audio.onAudioPrefChange(() => { notified++; });
+
+  // setVolume scales the cap, persists, ramps (tgt event, never a bare set)
+  audio.setVolume(0.8);
+  ck(audio.getVolume() === 0.8, 'setVolume(0.8) -> getVolume 0.8');
+  ck(store.get('IQB_VOL') === '0.8', `setVolume persists IQB_VOL=0.8 (got ${store.get('IQB_VOL')})`);
+  ck(approx(lastMasterTarget() ?? -1, audio.MASTER_CAP * 0.8, 1e-12),
+    `setVolume(0.8) ramps master toward CAP*0.8 (got ${lastMasterTarget()})`);
+  ck(notified === 1, `setVolume notifies pref listeners once (got ${notified})`);
+
+  // clamping: above 1 pins to the cap, below 0 pins to silence, NaN -> default
+  audio.setVolume(7);
+  ck(audio.getVolume() === 1, `setVolume(7) clamps to 1 (got ${audio.getVolume()})`);
+  ck(approx(lastMasterTarget() ?? -1, audio.MASTER_CAP, 1e-12), 'volume 1 -> master exactly MASTER_CAP, never above');
+  audio.setVolume(-3);
+  ck(audio.getVolume() === 0, `setVolume(-3) clamps to 0 (got ${audio.getVolume()})`);
+  ck(lastMasterTarget() === 0, 'volume 0 -> master target 0');
+  audio.setVolume(Number.NaN);
+  ck(audio.getVolume() === audio.VOLUME_DEFAULT, `setVolume(NaN) falls back to the default (got ${audio.getVolume()})`);
+
+  // mute independence: muted -> 0 regardless of slider; unmute -> slider level
+  audio.setVolume(0.6);
+  audio.setMuted(true);
+  ck(lastMasterTarget() === 0, 'muted with slider at 0.6 -> master 0');
+  ck(audio.getVolume() === 0.6, 'mute does not touch the volume pref');
+  audio.setVolume(0.9);
+  ck(lastMasterTarget() === 0, 'moving the slider while muted keeps master at 0');
+  ck(store.get('IQB_VOL') === '0.9', 'slider move while muted still persists');
+  audio.setMuted(false);
+  ck(approx(lastMasterTarget() ?? -1, audio.MASTER_CAP * 0.9, 1e-12),
+    `unmute lands on CAP * slider (got ${lastMasterTarget()})`);
+
+  // persistence round-trip: an external write is picked up by the 400 ms poll
+  const seen = notified;
+  store.set('IQB_VOL', '0.25');
+  await new Promise<void>((res) => setTimeout(res, 520));
+  ck(audio.getVolume() === 0.25, `poll picks up external IQB_VOL=0.25 (got ${audio.getVolume()})`);
+  ck(approx(lastMasterTarget() ?? -1, audio.MASTER_CAP * 0.25, 1e-12), 'poll ramps master to CAP*0.25');
+  ck(notified > seen, 'poll-detected change notifies pref listeners');
+  store.set('IQB_VOL', 'garbage');
+  await new Promise<void>((res) => setTimeout(res, 520));
+  ck(audio.getVolume() === audio.VOLUME_DEFAULT, `unparsable IQB_VOL reads as the default (got ${audio.getVolume()})`);
+
+  unsub();
+  const afterUnsub = notified;
+  audio.setVolume(0.5);
+  ck(notified === afterUnsub, 'unsubscribed listener no longer fires');
 }
 
 /* ---------------- cleanup + report -------------------------------- */

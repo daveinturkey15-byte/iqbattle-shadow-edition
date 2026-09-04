@@ -37,6 +37,20 @@ export function buildGameScene(
   onAnswer: (idx: number, correct: boolean) => void,
   depth = 1,
   opts: GameSceneOpts = {},
+  /**
+   * Where the live sidebar is parented. The round modifiers transform the
+   * container this function RETURNS — mirror-flip negates its scale.x,
+   * rotate-90 turns it a quarter turn about the stage centre, tilt-3d skews it.
+   * The sidebar used to live inside that container, so every one of those
+   * modifiers rotated and mirrored the player rail along with the board: the
+   * owner hit a depth-9 round where his own name was printed sideways up the
+   * left of the screen. The board is the thing the modifiers are meant to
+   * corrupt; the chrome that tells you your score and who is still alive is
+   * not. Pass an untransformed container (main.ts passes the round overlay)
+   * and the rail stays upright through every modifier. Defaults to the scene
+   * root so any other caller keeps the old behaviour.
+   */
+  chrome?: Container,
 ): Container {
   const root = new Container();
   void depth;
@@ -80,7 +94,7 @@ export function buildGameScene(
     label.label = `optlabel${idx}`;
   });
 
-  buildLiveSidebar(root, opts);
+  buildLiveSidebar(chrome ?? root, opts);
 
   return root;
 }

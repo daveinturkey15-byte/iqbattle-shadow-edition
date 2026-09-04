@@ -74,6 +74,39 @@ function sameState(a: BoardTarget, b: BoardTarget): boolean {
   return true;
 }
 
+/* The clock the scene tick drives step(tMs) with: 250 ms increments. Every
+ * step-exposing modifier must visibly move across this sample. */
+const TICK_SAMPLE_MS = [250, 500, 750, 1000, 1500, 2000, 4000];
+
+/**
+ * Ambient-clock trap. The modifier contract is "time arrives only as the
+ * step(tMs) argument": no timers, no wall clock, no Math.random. Every one of
+ * those globals is replaced for the duration of the gate; any call is recorded
+ * against the modifier under test. A modifier that leaks a setInterval into
+ * teardown, or reads Date.now inside step, fails here — even though the state
+ * it produced might otherwise look deterministic in a single-process run.
+ */
+function trapAmbientClock(onCall: (what: string) => void): () => void {
+  const g = globalThis as unknown as Record<string, unknown>;
+  const saved: Array<[Record<string, unknown>, string, unknown]> = [];
+  const trap = (obj: Record<string, unknown>, key: string, ret: unknown): void => {
+    if (!(key in obj)) return;
+    saved.push([obj, key, obj[key]]);
+    obj[key] = (): unknown => { onCall(key); return ret; };
+  };
+  trap(g, 'setInterval', 0);
+  trap(g, 'setTimeout', 0);
+  trap(g, 'setImmediate', 0);
+  trap(g, 'requestAnimationFrame', 0);
+  trap(g, 'queueMicrotask', undefined);
+  trap(Math as unknown as Record<string, unknown>, 'random', 0);
+  trap(Date as unknown as Record<string, unknown>, 'now', 0);
+  if (typeof g.performance === 'object' && g.performance !== null) {
+    trap(g.performance as Record<string, unknown>, 'now', 0);
+  }
+  return () => { for (const [obj, key, orig] of saved) obj[key] = orig; };
+}
+
 export function selfTest(): { ok: boolean; failures: string[] } {
   const failures: string[] = [];
 
@@ -81,13 +114,27 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     if (!cond) failures.push(msg);
   }
 
+  let ambientPhase = 'gate setup';
   function check(name: string, fn: () => void): void {
+    ambientPhase = name;
     try {
       fn();
     } catch (e) {
       failures.push(name + ': ' + (e instanceof Error ? e.message : String(e)));
     }
   }
+
+  const restoreClock = trapAmbientClock((what) => {
+    failures.push(`[${ambientPhase}] ambient clock: ${what}() was called — time may only arrive via step(tMs)`);
+  });
+  try {
+    runChecks();
+  } finally {
+    restoreClock();
+  }
+  return { ok: failures.length === 0, failures };
+
+  function runChecks(): void {
 
   check('MODIFIERS registry contains exactly the expected modifiers', () => {
     assert(MODIFIERS.length === 12, `expected 12 modifiers, got ${MODIFIERS.length}`);
@@ -134,6 +181,36 @@ export function selfTest(): { ok: boolean; failures: string[] } {
           sameState(appliedStateA, appliedStateB),
           `[${mod.id} seed=${seed} depth=${depth}] non-deterministic apply under motion=true`
         );
+
+        // Step purity: whatever exposes step(tMs) must be a pure function of
+        // (seed, depth, tMs). Same tMs on two stubs ⇒ same state; revisiting
+        // an earlier tMs ⇒ exactly the earlier state (no hidden accumulator);
+        // and the state must actually move across the 250 ms scene clock (a
+        // step that ignores its argument is a frozen animation).
+        if (teardownA.step !== undefined) {
+          assert(teardownB.step !== undefined,
+            `[${mod.id} seed=${seed} depth=${depth}] step exposed on one apply but not the other`);
+          let sawMovement = false;
+          for (const t of TICK_SAMPLE_MS) {
+            teardownA.step(t);
+            teardownB.step?.(t);
+            assert(sameState(initialA, initialB),
+              `[${mod.id} seed=${seed} depth=${depth}] step(${t}) diverged between two applies at the same tMs`);
+            if (!sameState(initialA, appliedStateA)) sawMovement = true;
+          }
+          assert(sawMovement,
+            `[${mod.id} seed=${seed} depth=${depth}] step(tMs) never changed the state across ${TICK_SAMPLE_MS.join('/')} ms — animation is frozen`);
+          teardownA.step(1000);
+          const at1000 = cloneStub(initialA);
+          teardownA.step(4000);
+          teardownA.step(1000);
+          assert(sameState(initialA, at1000),
+            `[${mod.id} seed=${seed} depth=${depth}] step(1000) after step(4000) differs from the first step(1000) — hidden accumulator`);
+          teardownA.step(0);
+          assert(sameState(initialA, appliedStateA),
+            `[${mod.id} seed=${seed} depth=${depth}] step(0) does not return the state to its apply-time (t=0) value`);
+          teardownB.step?.(0);
+        }
 
         // Teardown check: restores exact pre-apply values
         teardownA();
@@ -575,6 +652,104 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
+  /* mirror-flip — writes the container transform directly (scale.x). The gate
+   * asserts the flip lands (scale.x = -orig), the wobble stays within ±0.02 of
+   * it and moves under step(tMs), and nothing else on the transform is
+   * touched. Static: plain flip, NO step. */
+  const mirror = MODIFIERS.find((m) => m.id === 'mirror-flip');
+  check(`mirror-flip transform state (${SEED_COUNT} seeds)`, () => {
+    assert(!!mirror, 'mirror-flip missing from MODIFIERS');
+    if (!mirror) return;
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+      const ctx: ModCtx = { depth, seed, layer, align, motion: true };
+
+      const stub = createStub(1.25, 0.9, 150, 250);
+      const stop = mirror.apply(ctx, stub);
+      assert(stop.step !== undefined, `[mirror-flip seed=${seed}] motion stop must expose step(tMs) for the scene tick`);
+      assert(stub.scale.x === -1.25, `[mirror-flip seed=${seed}] apply must flip scale.x to -orig (got ${stub.scale.x})`);
+
+      let sawWobble = false;
+      for (const t of TICK_SAMPLE_MS) {
+        stop.step!(t);
+        if (stub.scale.x !== -1.25) sawWobble = true;
+        assert(Math.abs(stub.scale.x + 1.25) <= 0.02 + 1e-12,
+          `[mirror-flip seed=${seed}] wobble left ±0.02 of the flip at t=${t} (got ${stub.scale.x})`);
+        assert(stub.scale.y === 0.9 && stub.x === 150 && stub.y === 250,
+          `[mirror-flip seed=${seed}] step(${t}) touched scale.y/x/y — only scale.x may wobble`);
+      }
+      assert(sawWobble, `[mirror-flip seed=${seed}] scale.x never wobbled across step(${TICK_SAMPLE_MS.join('/')})`);
+      stop();
+      assert(stub.scale.x === 1.25 && stub.scale.y === 0.9 && stub.x === 150 && stub.y === 250,
+        `[mirror-flip seed=${seed}] teardown did not restore the exact transform (motion=true)`);
+
+      // Static variant: plain flip, NO step (no reported movement).
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = mirror.apply(sctx, sStub);
+      assert(sStub.scale.x === -1.5, `[mirror-flip seed=${seed}] static apply must be the plain flip (got ${sStub.scale.x})`);
+      assert(sStop.step === undefined, `[mirror-flip seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+      sStop();
+      assert(sStub.scale.x === 1.5 && sStub.scale.y === 0.8 && sStub.x === -50 && sStub.y === 75,
+        `[mirror-flip seed=${seed}] teardown did not restore the exact transform (motion=false)`);
+    }
+  });
+
+  /* board-drift — writes the container transform directly (x, y). The gate
+   * asserts the seeded offset stays within the 12–24 px amplitude, moves under
+   * step(tMs), and leaves scale alone. Static: half-amplitude pinned offset,
+   * NO step. */
+  const drift = MODIFIERS.find((m) => m.id === 'board-drift');
+  check(`board-drift transform state (${SEED_COUNT} seeds)`, () => {
+    assert(!!drift, 'board-drift missing from MODIFIERS');
+    if (!drift) return;
+    for (let i = 0; i < SEED_COUNT; i++) {
+      const seed = (i * 1664525 + 1013904223) >>> 0;
+      const depth = (i % 25) + 1;
+      const layer = i % 5;
+      const align = ALIGNS[i % ALIGNS.length]!;
+      const ctx: ModCtx = { depth, seed, layer, align, motion: true };
+
+      const stub = createStub(1, 1, 150, 250);
+      const stop = drift.apply(ctx, stub);
+      assert(stop.step !== undefined, `[board-drift seed=${seed}] motion stop must expose step(tMs) for the scene tick`);
+      const dist0 = Math.hypot(stub.x - 150, stub.y - 250);
+      assert(dist0 >= 12 - 1e-9 && dist0 <= 24 + 1e-9,
+        `[board-drift seed=${seed}] t=0 offset outside the 12–24 px amplitude (got ${dist0})`);
+      const x0 = stub.x;
+      const y0 = stub.y;
+
+      let sawDrift = false;
+      for (const t of TICK_SAMPLE_MS) {
+        stop.step!(t);
+        if (stub.x !== x0 || stub.y !== y0) sawDrift = true;
+        assert(Math.abs(stub.x - 150) <= 24 + 1e-9 && Math.abs(stub.y - 250) <= 24 + 1e-9,
+          `[board-drift seed=${seed}] drift left the ±24 px envelope at t=${t} (got dx=${stub.x - 150}, dy=${stub.y - 250})`);
+        assert(stub.scale.x === 1 && stub.scale.y === 1,
+          `[board-drift seed=${seed}] step(${t}) touched scale — only x/y may drift`);
+      }
+      assert(sawDrift, `[board-drift seed=${seed}] board never drifted across step(${TICK_SAMPLE_MS.join('/')})`);
+      stop();
+      assert(stub.x === 150 && stub.y === 250 && stub.scale.x === 1 && stub.scale.y === 1,
+        `[board-drift seed=${seed}] teardown did not restore the exact transform (motion=true)`);
+
+      // Static variant: half-amplitude pinned offset (6–12 px), NO step.
+      const sctx: ModCtx = { depth, seed, layer, align, motion: false };
+      const sStub = createStub(1.5, 0.8, -50, 75);
+      const sStop = drift.apply(sctx, sStub);
+      const sDist = Math.hypot(sStub.x + 50, sStub.y - 75);
+      assert(sDist >= 6 - 1e-9 && sDist <= 12 + 1e-9,
+        `[board-drift seed=${seed}] static offset outside the half-amplitude 6–12 px (got ${sDist})`);
+      assert(sStop.step === undefined, `[board-drift seed=${seed}] motion=false stop must NOT expose step (no reported movement)`);
+      sStop();
+      assert(sStub.x === -50 && sStub.y === 75 && sStub.scale.x === 1.5 && sStub.scale.y === 0.8,
+        `[board-drift seed=${seed}] teardown did not restore the exact transform (motion=false)`);
+    }
+  });
+
   check(`pickModifiers determinism and max bound over ${SEED_COUNT} seeds`, () => {
     for (let i = 0; i < SEED_COUNT; i++) {
       const seed = (i * 1103515245 + 12345) >>> 0;
@@ -608,8 +783,7 @@ export function selfTest(): { ok: boolean; failures: string[] } {
       }
     }
   });
-
-  return { ok: failures.length === 0, failures };
+  }
 }
 
 const isMain =
