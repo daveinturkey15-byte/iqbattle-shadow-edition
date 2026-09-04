@@ -30,14 +30,40 @@ function inviteCodeChip(root: Container, code: string): void {
   const hint = text(root, 'CLICK TO COPY', cx + cw - 116, cy + 25, 10, T.muted, true);
   hint.style.letterSpacing = 2;
 
+  /* Legacy path for anything without an async Clipboard API (insecure
+   * context, in-app webviews, older mobile browsers). Returns whether the
+   * copy actually happened — the caller must not claim success blindly. */
+  const execCopy = (t: string): boolean => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = t;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, t.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch { return false; }
+  };
+
   chip.on('pointerdown', () => {
     const nav = (globalThis as { navigator?: { clipboard?: { writeText(t: string): Promise<void> } } }).navigator;
+    const write = nav?.clipboard?.writeText;
     /* Clipboard is best-effort: it needs a secure context and a user
-     * gesture, and this is a game, not a form. On refusal the label just
-     * says so rather than throwing into the scene. */
-    void Promise.resolve(nav?.clipboard?.writeText(code))
+     * gesture, and this is a game, not a form. Two rules the old version
+     * broke: never report a copy that did not happen (a missing
+     * clipboard API made `Promise.resolve(undefined)` resolve, so the
+     * chip said COPIED while the buffer was empty and the joiner got
+     * nothing), and always try the legacy path before giving up. */
+    if (!write) {
+      hint.text = execCopy(code) ? 'COPIED' : 'COPY FAILED';
+      return;
+    }
+    void write.call(nav.clipboard, code)
       .then(() => { hint.text = 'COPIED'; })
-      .catch(() => { hint.text = 'COPY FAILED'; });
+      .catch(() => { hint.text = execCopy(code) ? 'COPIED' : 'COPY FAILED'; });
   });
 }
 

@@ -2,6 +2,7 @@ import { Container, Graphics, Rectangle, Sprite, Texture, Text, Ticker } from 'p
 import { T, STAGE_W } from '../theme.ts';
 import { panel, text } from './game.ts';
 import { luxeLabel, pillFillTexture, rankDiamond, signatureStrip } from '../style/panelkit.ts';
+import { applyPaste, classifyKey } from './textinput-keys.ts';
 
 /** Shared chrome (header bar / status strip / player cards / toasts / widgets),
  * extracted so Landing, Lobby and Game all wear the same DNA skin. */
@@ -348,6 +349,8 @@ let keyHookInstalled = false;
 
 interface KeyTarget {
   insert(ch: string): void;
+  /** Bulk entry (clipboard). Filters control chars, honours maxLength. */
+  insertText(s: string): void;
   backspace(): void;
   blur(): void;
 }
@@ -357,10 +360,23 @@ function ensureKeyHook(): void {
   if (keyHookInstalled) return;
   keyHookInstalled = true;
   window.addEventListener('keydown', (e) => {
+    const t = keyTarget;
+    if (!t) return;
+    /* Policy lives in textinput-keys.ts so a headless gate can assert it;
+     * 'ignore' deliberately leaves preventDefault() alone so Ctrl+V still
+     * reaches the browser and raises the paste event handled below. */
+    const a = classifyKey(e);
+    if (a.t === 'insert') { e.preventDefault(); t.insert(a.ch); }
+    else if (a.t === 'backspace') { e.preventDefault(); t.backspace(); }
+    else if (a.t === 'blur') { t.blur(); }
+  });
+  /* With Ctrl+V no longer swallowed, the browser raises a real paste event
+   * on the focused element and it bubbles to window. */
+  window.addEventListener('paste', (e) => {
     if (!keyTarget) return;
-    if (e.key === 'Backspace') { e.preventDefault(); keyTarget.backspace(); }
-    else if (e.key.length === 1 && e.key >= ' ') { e.preventDefault(); keyTarget.insert(e.key); }
-    else if (e.key === 'Escape') { keyTarget.blur(); }
+    e.preventDefault();
+    const t = (e as ClipboardEvent).clipboardData?.getData('text') ?? '';
+    if (t) keyTarget.insertText(t);
   });
 }
 
@@ -421,6 +437,13 @@ export function makeTextInput(parent: Container, x: number, y: number, w: number
     insert(ch) {
       if (value.length >= maxLength) return;
       value += ch;
+      blinkMs = 0;
+      relayout();
+    },
+    insertText(s) {
+      const next = applyPaste(value, s, maxLength);
+      if (next === value) return;
+      value = next;
       blinkMs = 0;
       relayout();
     },
