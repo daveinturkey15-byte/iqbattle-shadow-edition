@@ -251,91 +251,124 @@ export const rotationComposite: Family = {
 };
 
 /* ========================================================================
- * POSITION ORBIT — 3×3 DNA: one dot orbits a fixed center marker; its angle
- * advances a fixed step per column and its orbit radius widens a fixed step
- * per row. Options move the dot along exactly one axis (angle or radius).
- * Difficulty ramp: angle step 45°→36°→30°→24° (finer to track) and radial
- * step 8→9→10 (larger progression); decoys tighten from coarse ±2 steps /
- * ±10 arm gaps with two-attribute lures to fine single-attribute ±15° /
- * ±5 arm gaps. Arm gaps always use 5px construction steps.
+ * POSITION ORBIT — 3×3 DNA: a fixed center diamond with an orbit ring. The
+ * ring shows N evenly spaced guide slots (small dots) plus ONE large mover
+ * dot; the mover steps a fixed slot-chain per column and its orbit radius
+ * widens a fixed step per row. The hole is bottom-right (row 2, col 2).
+ * Difficulty ramp (monotonic, clamped): orbit positions 6→8→10→12 slots
+ * (more positions to track, 7→9→11→13 marks per cell), step chain 1→2→2→3
+ * slots per column (longer jumps around the ring, ~60°→90°), radial step
+ * 6→7→8 (larger progression). Decoys tighten from coarse ±2..3 slots /
+ * ±10 arms with two-attribute lures to fine single-attribute ±1 slot /
+ * ±5 arms that sit one position away. Mark count ramps modestly, but this
+ * family is better served by finer discrimination than by sheer marks, so
+ * hardness comes mainly from longer chains + one-attribute neighbours; the
+ * comment states that explicitly. Difficulty is NEVER carried by colour:
+ * ONE hue per board. Beyond N=12/step=3 the family holds hardest.
+ * Distinctness: every candidate varies a whole slot (≥30° chord, ≥9px) or
+ * a 5px arm step BY CONSTRUCTION, never sub-degree jitter, so high-diff
+ * small steps can never round to the same canonical key. Explicit key Set
+ * check plus a construction-separated fallback ladder guarantees 8 distinct
+ * options with exactly one correct.
  * ====================================================================== */
 
-function poGlyph(angleDeg: number, radius: number): Prim[] {
-  const a = angleDeg * Math.PI / 180;
-  return [
-    { k: 'diamond', x: 50, y: 50, s: 6 },
-    { k: 'dot', x: r2(50 + radius * Math.cos(a)), y: r2(50 + radius * Math.sin(a)), r: 4.2 },
-  ];
-}
+const PO_R0 = 18;
+const PO_MARKER_R = 2.2;
+const PO_MOVER_R = 4.2;
+const PO_CENTER_S = 6;
 
-function poDaFor(d: number): number {
-  if (d <= 3) return 45;
-  if (d <= 6) return 36;
-  if (d <= 9) return 30;
-  return 24;
+function poSlotsFor(d: number): number {
+  if (d <= 3) return 6;
+  if (d <= 6) return 8;
+  if (d <= 9) return 10;
+  return 12;
+}
+function poStepFor(d: number): number {
+  if (d <= 3) return 1;
+  if (d <= 6) return 2;
+  if (d <= 9) return 2;
+  return 3;
 }
 function poDrFor(d: number): number {
-  if (d <= 3) return 8;
-  if (d <= 6) return 9;
-  return 10;
+  if (d <= 3) return 6;
+  if (d <= 6) return 7;
+  return 8;
+}
+function poMod(a: number, n: number): number { return ((a % n) + n) % n; }
+function poSlotAngleDeg(slot: number, n: number): number { return -90 + (slot * 360) / n; }
+function poSlotPos(slot: number, n: number, radius: number): { x: number; y: number } {
+  const a = (poSlotAngleDeg(slot, n) * Math.PI) / 180;
+  return { x: r2(50 + radius * Math.cos(a)), y: r2(50 + radius * Math.sin(a)) };
+}
+/** Full hole/row cell: guide markers at rRow on every slot except the mover
+ *  slot, plus the large mover at (moverSlot, moverRadius). Omitting the
+ *  same-slot marker keeps 5px arm decoys overlap-free by construction. */
+function poOrbitCell(n: number, rRow: number, moverSlot: number, moverRadius: number): Prim[] {
+  const out: Prim[] = [{ k: 'diamond', x: 50, y: 50, s: PO_CENTER_S }];
+  for (let s = 0; s < n; s++) {
+    if (s === moverSlot) continue;
+    const q = poSlotPos(s, n, rRow);
+    out.push({ k: 'dot', x: q.x, y: q.y, r: PO_MARKER_R });
+  }
+  const m = poSlotPos(moverSlot, n, moverRadius);
+  out.push({ k: 'dot', x: m.x, y: m.y, r: PO_MOVER_R });
+  return out;
 }
 
 export const positionOrbit: Family = {
   id: 'position-orbit',
   generate(seed, diff, hue): Puzzle {
     const r = rngFrom(seed);
-    const a0 = Math.floor(r() * 24) * 15;
     const d = clampDiff(diff);
-    const da = poDaFor(d);
+    const N = poSlotsFor(d);
+    const step = poStepFor(d);
     const dr = poDrFor(d);
-    const r0 = 12;
-    const radii = [r0, r0 + dr, r0 + 2 * dr];
-    const angle = (_row: number, col: number) => a0 + col * da;
+    const a0 = Math.floor(r() * N);
+    const radii = [PO_R0, PO_R0 + dr, PO_R0 + 2 * dr];
+    const slotAt = (col: number): number => poMod(a0 + col * step, N);
     const cells: Prim[][] = [];
     for (let i = 0; i < 8; i++) {
       const row = Math.floor(i / 3), col = i % 3;
-      cells.push(poGlyph(angle(row, col), radii[row]));
+      const ms = slotAt(col);
+      cells.push(poOrbitCell(N, radii[row], ms, radii[row]));
     }
-    const A = angle(2, 2);
+    const A = slotAt(2);
     const R = radii[2];
-    const answer = poGlyph(A, R);
-    // Candidate decoys: each varies ONE axis unless noted (easy allows two).
-    const cAngP1 = poGlyph(A + da, R);
-    const cAngM1 = poGlyph(A - da, R);
-    const cAngP2 = poGlyph(A + 2 * da, R);
-    const cAngM2 = poGlyph(A - 2 * da, R);
-    const cFineP = poGlyph(A + 15, R);
-    const cFineM = poGlyph(A - 15, R);
-    const cRadP5 = poGlyph(A, R + 5);
-    const cRadM5 = poGlyph(A, R - 5);
-    const cRadP10 = poGlyph(A, R + 10);
-    const cRadM10 = poGlyph(A, R - 10);
-    const cTwoA = poGlyph(A + da, R + 10);
-    const cTwoB = poGlyph(A - da, R - 10);
-    const cTwoC = poGlyph(A + 2 * da, R + 5);
-    let primary: Prim[][];
+    const answer = poOrbitCell(N, R, A, R);
+    const toCand = (ds: number, drr: number): Prim[] =>
+      poOrbitCell(N, R, poMod(A + ds, N), R + drr);
+    // Primary ladders: (ds in slots, drr in px). Easy allows coarse two-attr
+    // lures; hard is single-attribute only, one position away.
+    let deltas: { ds: number; drr: number }[];
     if (d <= 3) {
-      primary = [cAngP1, cAngM1, cAngP2, cRadP10, cRadM10, cTwoA, cTwoB, cTwoC, cFineP, cRadP5];
+      deltas = [
+        { ds: 2, drr: 0 }, { ds: -2, drr: 0 }, { ds: 3, drr: 0 },
+        { ds: 0, drr: 10 }, { ds: 0, drr: -10 },
+        { ds: 2, drr: 10 }, { ds: -2, drr: -10 },
+        { ds: 1, drr: 0 }, { ds: 0, drr: 5 }, { ds: -1, drr: 0 },
+      ];
     } else if (d <= 6) {
-      primary = [cAngP1, cAngM1, cFineP, cFineM, cRadP5, cRadM5, cRadP10, cAngP2, cTwoA, cTwoB];
+      deltas = [
+        { ds: 1, drr: 0 }, { ds: -1, drr: 0 }, { ds: 2, drr: 0 }, { ds: -2, drr: 0 },
+        { ds: 0, drr: 5 }, { ds: 0, drr: -5 }, { ds: 0, drr: 10 }, { ds: 0, drr: -10 },
+        { ds: 1, drr: 5 }, { ds: -1, drr: -5 },
+      ];
     } else {
-      // hard: every decoy differs by ONE attribute with a fine gap
-      primary = [cFineP, cFineM, cAngP1, cAngM1, cRadP5, cRadM5, cRadP10, cAngP2, cAngM2, cRadM10];
+      deltas = [
+        { ds: 1, drr: 0 }, { ds: -1, drr: 0 }, { ds: 0, drr: 5 }, { ds: 0, drr: -5 },
+        { ds: 2, drr: 0 }, { ds: -2, drr: 0 }, { ds: 0, drr: 10 }, { ds: 0, drr: -10 },
+        { ds: 3, drr: 0 }, { ds: -3, drr: 0 },
+      ];
     }
-    // Fallback ladder separated BY CONSTRUCTION: arm length in 5px steps and
-    // fixed 15° angle offsets, so keys stay ≥5px apart after rounding.
-    const fallback: Prim[][] = [
-      poGlyph(A, R + 5),
-      poGlyph(A, R - 5),
-      poGlyph(A, R + 10),
-      poGlyph(A, R - 10),
-      poGlyph(A, R + 15),
-      poGlyph(A + 15, R + 5),
-      poGlyph(A - 15, R - 5),
-      poGlyph(A + 15, R),
-      poGlyph(A - 15, R),
-      poGlyph(A + da, R + 5),
+    const primary: Prim[][] = deltas.map(dd => toCand(dd.ds, dd.drr));
+    // Fallback ladder separated BY CONSTRUCTION: whole-slot angles and 5px
+    // arm steps only, so keys stay ≥5px apart after rounding.
+    const fallDeltas: { ds: number; drr: number }[] = [
+      { ds: 0, drr: -15 }, { ds: 3, drr: 0 }, { ds: -3, drr: 0 }, { ds: 4, drr: 0 },
+      { ds: 1, drr: 10 }, { ds: -1, drr: 10 }, { ds: 2, drr: -10 }, { ds: -2, drr: 10 },
+      { ds: 3, drr: 5 }, { ds: -3, drr: -5 },
     ];
+    const fallback: Prim[][] = fallDeltas.map(dd => toCand(dd.ds, dd.drr));
     const seen = new Set<string>([glyphKey(answer)]);
     const picked: Prim[][] = [];
     const consider = (cand: Prim[]): void => {
@@ -349,67 +382,71 @@ export const positionOrbit: Family = {
     };
     for (const c of primary) { if (picked.length >= 7) break; consider(c); }
     for (const c of fallback) { if (picked.length >= 7) break; consider(c); }
-    let rr = 15;
-    while (picked.length < 7 && rr < 60) {
-      consider(poGlyph(A, R + rr));
-      consider(poGlyph(A + 30, R - 5));
-      rr += 5;
+    let k = 1;
+    while (picked.length < 7 && k < 24) {
+      consider(toCand(2 + k, -5));
+      consider(toCand(-2 - k, 5));
+      k += 1;
     }
     const opts = shuffled([answer, ...picked], seed ^ 0x06b17);
     return {
       family: 'position-orbit', cols: 3, rows: 3,
       cells, holeIndex: 8, options: opts,
       answer: opts.findIndex(o => glyphKey(o) === glyphKey(answer)),
-      hue, rule: 'the dot steps a fixed angle per column; its orbit widens per row',
+      hue, rule: 'the large dot steps around its orbit per column; its orbit widens per row',
     };
   },
   solve(p): number {
-    const obs: ({ theta: number; rho: number } | null)[] = p.cells.map(cell => {
-      const dot = cell.find(pr => pr.k === 'dot');
-      if (!dot || dot.k !== 'dot' || cell.length !== 2) return null;
-      const dx = dot.x - 50, dy = dot.y - 50;
+    const moverOf = (cell: Prim[]): { theta: number; rho: number } | null => {
+      let best: { x: number; y: number; r: number } | null = null;
+      let hasDiamond = false;
+      for (const pr of cell) {
+        if (pr.k === 'diamond') { hasDiamond = true; continue; }
+        if (pr.k === 'dot') {
+          if (best === null || pr.r > best.r) best = { x: pr.x, y: pr.y, r: pr.r };
+        } else {
+          return null;
+        }
+      }
+      if (!hasDiamond || best === null) return null;
+      const dx = best.x - 50, dy = best.y - 50;
       return {
         theta: (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360,
         rho: Math.hypot(dx, dy),
       };
-    });
+    };
+    const obs: ({ theta: number; rho: number } | null)[] = p.cells.map(moverOf);
     if (obs.length !== 8 || obs.some(o => o === null)) return -1;
     const o = obs as { theta: number; rho: number }[];
-    const angDiff = (from: number, to: number) => ((to - from + 540) % 360) - 180;
-    // column angle step must be constant everywhere it is observable
+    const angDiff = (from: number, to: number): number => ((to - from + 540) % 360) - 180;
+    // Column angle step must be constant everywhere observable (0->1,1->2,
+    // 3->4,4->5,6->7). The 7->8 step predicts the hole.
     let daStep: number | null = null;
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 2; col++) {
-        const i = row * 3 + col;
-        if (i > 6) break;              // cell i+1 would be the hole
-        const dd = angDiff(o[i].theta, o[i + 1].theta);
-        if (daStep === null) daStep = dd;
-        else if (Math.abs(angDiff(daStep, dd)) > 0.5) return -1;
-      }
+    const pairs: [number, number][] = [[0, 1], [1, 2], [3, 4], [4, 5], [6, 7]];
+    for (const [a, b] of pairs) {
+      const dd = angDiff(o[a].theta, o[b].theta);
+      if (daStep === null) daStep = dd;
+      else if (Math.abs(angDiff(daStep, dd)) > 2) return -1;
     }
     if (daStep === null || Math.abs(daStep) < 1) return -1;
-    // radius: constant within a row, equal step across rows
+    // Radius: constant within each row, equal step across rows.
     for (let row = 0; row < 3; row++) {
-      if (Math.abs(o[row * 3].rho - o[row * 3 + 1].rho) > 0.25) return -1;
+      const idxs = [row * 3, row * 3 + 1, row * 3 + 2].filter(i => i < 8);
+      for (let q = 1; q < idxs.length; q++) {
+        if (Math.abs(o[idxs[0]].rho - o[idxs[q]].rho) > 0.6) return -1;
+      }
     }
-    if (Math.abs(o[3].rho - o[0].rho - (o[6].rho - o[3].rho)) > 0.25) return -1;
-    // expected hole dot: one more column step from cell 7, same orbit radius.
-    // Match options GEOMETRICALLY (not by rounded keys): derived theta/rho
-    // carry rounding noise, while decoys sit >=12 deg / >=5 units away, so a
-    // tolerance of a few degrees/units is unambiguous.
+    if (Math.abs((o[3].rho - o[0].rho) - (o[6].rho - o[3].rho)) > 0.6) return -1;
+    // Expected hole: one more column step from cell 7, same row radius.
     const theta = o[7].theta + daStep;
     const rho = o[7].rho;
     const hits: number[] = [];
     p.options.forEach((op, i) => {
-      if (op.length !== 2 || !op.some(pr => pr.k === 'diamond')) return;
-      const dot = op.find(pr => pr.k === 'dot');
-      if (!dot || dot.k !== 'dot') return;
-      const dx = dot.x - 50, dy = dot.y - 50;
-      const rho2 = Math.hypot(dx, dy);
-      if (Math.abs(rho2 - rho) > 1.5) return;
-      const th2 = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
-      const dAng = Math.abs(((th2 - theta + 540) % 360) - 180);
-      if (dAng <= 1.5) hits.push(i);
+      const m = moverOf(op);
+      if (m === null) return;
+      if (Math.abs(m.rho - rho) > 1.5) return;
+      const dAng = Math.abs(angDiff(theta % 360, m.theta));
+      if (dAng <= 2.5) hits.push(i);
     });
     return hits.length === 1 ? hits[0] : -1;
   },
