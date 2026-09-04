@@ -32,7 +32,15 @@ jobs:
           cache: npm
           cache-dependency-path: v2/package-lock.json
       - run: npm ci
+      # TURN credentials are injected at build time and never committed.
+      # Unset secrets are empty strings -> ice.ts ships STUN only, which is
+      # exactly the previous behaviour, so an absent secret degrades rather
+      # than breaking the build.
       - run: npm run build
+        env:
+          VITE_TURN_URLS: ${{ secrets.TURN_URLS }}
+          VITE_TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
+          VITE_TURN_CREDENTIAL: ${{ secrets.TURN_CREDENTIAL }}
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

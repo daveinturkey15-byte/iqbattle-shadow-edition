@@ -24,6 +24,14 @@
  * even when the broker is down. Every frame flows on BOTH pipes; _sq/_n
  * dedupe makes that exactly-once.
  *
+ * NOTE ON REACH: the BroadcastChannel bus is same-browser ONLY, so it can
+ * never carry a second device - it also masks a broken WebRTC leg when you
+ * test with two tabs. Test cross-device play across two ORIGINS
+ * (localhost:8792 vs 127.0.0.1:8792) to force the PeerJS path. ICE config
+ * (STUN always, TURN when the build supplied credentials) lives in ice.ts;
+ * without TURN, players on different networks behind symmetric NAT/CGNAT
+ * cannot connect and the join dies on its timeout.
+ *
  * TOPOLOGY: star, HOST-AUTHORITATIVE. Clients only ever talk to the host;
  * the host validates every action, owns scoring, relays state. v2 rounds are
  * regenerated from {family, seed} on every client, so the round frame NEVER
@@ -53,6 +61,8 @@
  * stubs; src/net/selftest.ts drives 3 sessions over adversarial stub pipes
  * (dup + reordered delivery, 500-frame bursts, zero loss/dup).
  * ==========================================================================*/
+
+import { peerOptions } from './ice.ts';
 
 /* ---------------------------- public types ------------------------------ */
 
@@ -712,7 +722,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
       const tryOpen = (): void => {
         attempt++;
         const id = 'iqb-' + base + (attempt > 1 ? String(attempt) : '');
-        const p = new Ctor(id, { debug: 1 });
+        const p = new Ctor(id, peerOptions());
         peer = p;
         p.on('open', (...args: unknown[]) => {
           const finalCode = base + (attempt > 1 ? String(attempt) : '');
@@ -812,7 +822,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
       try {
         const Ctor = await makePeerImpl();
         if (!Ctor || dead || role !== 'host') return;
-        const p = new Ctor('iqb-' + code, { debug: 1 });
+        const p = new Ctor('iqb-' + code, peerOptions());
         peer = p;
         p.on('open', () => logEv('peer-reopened', 'in', true));
         p.on('connection', (...cargs: unknown[]) => {
@@ -968,7 +978,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
           logEv('peerjs-unavailable', 'err', false);
           return;
         }
-        const p = new Ctor(null, { debug: 1 });
+        const p = new Ctor(null, peerOptions());
         peer = p;
         const attemptConn = (): void => {
           if (settled) return;
