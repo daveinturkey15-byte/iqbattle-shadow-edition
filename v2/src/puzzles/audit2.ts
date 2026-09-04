@@ -34,6 +34,7 @@ interface FamilyModules {
   FAMILIES: Family[];
   FAMILIES2: Family[];
   FAMILIES3: Family[];
+  FAMILIES5: Family[];
   FAMILIES4: Family[];
 }
 
@@ -55,6 +56,7 @@ function loadFamilies(): FamilyModules {
     ['families2.ts', join(here, 'families2.ts')],
     ['families3.ts', join(here, 'families3.ts')],
     ['families4.ts', join(here, 'families4.ts')],
+    ['families5.ts', join(here, 'families5.ts')],
   ];
   for (const [name, path] of sources) {
     const src = readFileSync(path, 'utf8');
@@ -74,7 +76,8 @@ function loadFamilies(): FamilyModules {
   const families2 = req('./families2.js');
   const families3 = req('./families3.js');
   const families4 = req('./families4.js');
-  return { FAMILIES: families.FAMILIES, FAMILIES2: families2.FAMILIES2, FAMILIES3: families3.FAMILIES3, FAMILIES4: families4.FAMILIES4 };
+  const families5 = req('./families5.js');
+  return { FAMILIES: families.FAMILIES, FAMILIES2: families2.FAMILIES2, FAMILIES3: families3.FAMILIES3, FAMILIES4: families4.FAMILIES4, FAMILIES5: families5.FAMILIES5 };
 }
 
 function auditFamily(f: Family, hue: string): string[] {
@@ -134,7 +137,7 @@ function auditFamily(f: Family, hue: string): string[] {
 export function runAudit(): boolean {
   const hue = '#d4a017';
   const mods = loadFamilies();
-  const all = [...mods.FAMILIES, ...mods.FAMILIES2, ...mods.FAMILIES3, ...mods.FAMILIES4];
+  const all = [...mods.FAMILIES, ...mods.FAMILIES2, ...mods.FAMILIES3, ...mods.FAMILIES4, ...mods.FAMILIES5];
   {
   /* Family ids must be unique across ALL_FAMILIES. main.ts picks a family by
    * INDEX, but everything else — the solver audit's labels, the onboard

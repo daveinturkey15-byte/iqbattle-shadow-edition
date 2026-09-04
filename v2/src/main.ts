@@ -4,6 +4,8 @@ import { buildGameScene, panel, text } from './scenes/game.ts';
 import { FAMILIES } from './puzzles/families.ts';
 import { FAMILIES2 } from './puzzles/families2.ts';
 import { FAMILIES3 } from './puzzles/families3.ts';
+import { FAMILIES4 } from './puzzles/families4.ts';
+import { FAMILIES5 } from './puzzles/families5.ts';
 import { buildLanding } from './scenes/landing.ts';
 import { buildLobby } from './scenes/lobby.ts';
 import { Shell, fmtClock } from './scenes/shell.ts';
@@ -114,7 +116,11 @@ function fit(): void {
   }
 }
 
-const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3];
+/* FAMILIES4 was audited by audit2 and never mounted by the game — 464 lines of
+ * solver-verified puzzle families no player has ever seen, because ALL_FAMILIES
+ * simply never listed them. The gate testing more than the game ships is the
+ * mirror image of the usual bug and just as silent. */
+const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3, ...FAMILIES4, ...FAMILIES5];
 const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell, mountPacman2, mountTetris2, mountBattleship2, mountDoom2, mountPhoenix2, mountGauntlet2, mountFractal2, mountHypercube2, mountSniper2, mountPopGlitter, mountMetal, mountTerminator2, mountFury2, mountSkyFire2,
   mountLanternGuard, mountPiano, mountLamp, mountPod, mountShelfEdge, mountOrb, mountGreenWar];
 
