@@ -471,11 +471,18 @@ export const countPositions: Family = {
 };
 
 /* ========================================================================
- * SIZE LADDER — a single centered equilateral-triangle outline per cell.
- * Its SIZE steps up an arithmetic ladder per column while its ROTATION
- * turns 90 degrees per row (the triangle's 120-degree symmetry makes each
- * rung look distinct). Ramp 1..12: rung width narrows 10..4 (finer size
- * discrimination, clamped) and angle decoys close in 90..15 degrees.
+ * SIZE LADDER — concentric equilateral-triangle outlines per cell. The OUTER
+ * size climbs one rung per column (SHORT 3-rung rows at low diff, LONG
+ * row-continuous 9-rung chain at high diff) while rotation turns 90 degrees
+ * per row. Ramp 1..12: stacked layers 1->2->3 (3->6->9 marks per cell, so
+ * board marks 24->48->72 ramp), rung width 10->2 (finer discrimination,
+ * clamped at 2 past what the canvas can express), longer chains at high
+ * diff, and decoy window from coarse (far size / 90deg / missing layer) to
+ * fine (ONE rung off, 30deg, narrow/wide gap). Finer discrimination is the
+ * real difficulty here, not just more ink: every fine decoy differs by ONE
+ * rung (outer +/- step), ONE layer, or ONE gap setting with >=2 units /
+ * >=30deg separation BY CONSTRUCTION, so no two candidates ever round to
+ * the same canonical key (no shrinking-circle duplicates).
  * ====================================================================== */
 
 /** Equilateral triangle outline centered at (50,50); circumradius `size`,
@@ -493,11 +500,19 @@ function slTri(size: number, deg: number): Prim[] {
   ];
 }
 
-interface SlObs { size: number; ang: number }
+/** Stack of `T` concentric outlines: outer `outer`, inner steps of `gap`. */
+function slTris(outer: number, deg: number, T: number, gap: number): Prim[] {
+  const out: Prim[] = [];
+  for (let k = 0; k < T; k++) out.push(...slTri(outer - k * gap, deg));
+  return out;
+}
 
-/** Re-derive (size, orientation mod 120-degrees) from a rendered triangle. */
+interface SlObs { outer: number; ang: number; T: number; gap: number }
+
+/** Re-derive (outer size, orientation mod 120, layers, gap) from nested triangles. */
 function slParse(cell: Prim[]): SlObs | null {
-  if (cell.length !== 3 || cell.some(p => p.k !== 'line')) return null;
+  if (cell.length % 3 !== 0 || cell.length < 3 || cell.length > 12) return null;
+  if (cell.some(p => p.k !== 'line')) return null;
   const pts: { x: number; y: number }[] = [];
   for (const p of cell) {
     if (p.k !== 'line') return null;
@@ -505,15 +520,39 @@ function slParse(cell: Prim[]): SlObs | null {
       if (!pts.some(q => Math.abs(q.x - x) < 0.6 && Math.abs(q.y - y) < 0.6)) pts.push({ x, y });
     }
   }
-  if (pts.length !== 3) return null;
-  const cx = (pts[0].x + pts[1].x + pts[2].x) / 3;
-  const cy = (pts[0].y + pts[1].y + pts[2].y) / 3;
+  const T = cell.length / 3;
+  if (pts.length !== cell.length) return null;
+  const cx = pts.reduce((s, q) => s + q.x, 0) / pts.length;
+  const cy = pts.reduce((s, q) => s + q.y, 0) / pts.length;
   if (Math.abs(cx - 50) > 1.5 || Math.abs(cy - 50) > 1.5) return null;
-  const radii = pts.map(q => Math.hypot(q.x - cx, q.y - cy));
-  const size = (radii[0] + radii[1] + radii[2]) / 3;
-  if (Math.max(...radii) - Math.min(...radii) > 1.0) return null;
-  const ang = ((Math.atan2(pts[0].y - cy, pts[0].x - cx) * 180 / Math.PI + 450) % 120 + 120) % 120;
-  return { size, ang };
+  const info = pts.map(q => ({
+    r: Math.hypot(q.x - cx, q.y - cy),
+    a: (((Math.atan2(q.y - cy, q.x - cx) * 180 / Math.PI + 450) % 120) + 120) % 120,
+  }));
+  info.sort((a, b) => a.r - b.r);
+  const avgR: number[] = [];
+  const avgA: number[] = [];
+  for (let t = 0; t < T; t++) {
+    const ch = info.slice(t * 3, t * 3 + 3);
+    if (Math.max(ch[0].r, ch[1].r, ch[2].r) - Math.min(ch[0].r, ch[1].r, ch[2].r) > 1.0) return null;
+    const a0 = ch[0].a;
+    for (const c of ch) if (Math.abs(foldDelta(c.a - a0, 120)) > 2) return null;
+    const mr = (ch[0].r + ch[1].r + ch[2].r) / 3;
+    let s = 0;
+    for (const c of ch) s += a0 + foldDelta(c.a - a0, 120);
+    const ma = (((s / 3) % 120) + 120) % 120;
+    avgR.push(mr);
+    avgA.push(ma);
+  }
+  for (let t = 1; t < T; t++) if (Math.abs(foldDelta(avgA[t] - avgA[0], 120)) > 2) return null;
+  let gap = 0;
+  if (T > 1) {
+    const diffs: number[] = [];
+    for (let t = 1; t < T; t++) diffs.push(avgR[t] - avgR[t - 1]);
+    if (Math.max(...diffs) - Math.min(...diffs) > 1.0) return null;
+    gap = diffs.reduce((s, v) => s + v, 0) / diffs.length;
+  }
+  return { outer: avgR[T - 1], ang: avgA[T - 1], T, gap };
 }
 
 const slAngDiff = (a: number, b: number): number => foldDelta(b - a, 120);
@@ -524,52 +563,65 @@ export const sizeLadder: Family = {
     const r = rngFrom(seed);
     const D = Math.max(1, Math.min(12, Math.floor(diff)));
     const deg0 = Math.floor(r() * 24) * 15;
-    const s0 = 12 + 2 * Math.floor(r() * 3);   // 12 / 14 / 16
-    // ramp: rung width narrows with difficulty (finer discrimination), clamped
-    const STEPS = [10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 4];
-    const cStep = STEPS[D - 1];
-    const sizeAt = (_row: number, col: number) => s0 + col * cStep;
-    const degAt = (row: number, _col: number) => deg0 + row * 90;
+    const sPick = r();
+    // ramp: stacked layers 1->2->3 (marks 3->6->9 per cell); gap 6 (5 when triple-stacked)
+    const T = D <= 4 ? 1 : D <= 9 ? 2 : 3;
+    const G = T === 3 ? 5 : 6;
+    // ramp: rung width narrows 10->2, clamped at 2 (canvas cannot express finer)
+    const CSTEP = [10, 9, 8, 7, 6, 6, 5, 5, 4, 2, 2, 2][D - 1];
+    // SHORT rows (3 rungs) at D<=9, LONG row-continuous chain (9 rungs) at D>=10
+    const s0 = D <= 9 ? 14 + 2 * Math.floor(sPick * 3) : 18 + 2 * Math.floor(sPick * 2);
+    const sizeAt = (row: number, col: number): number =>
+      D <= 9 ? s0 + col * CSTEP : s0 + (row * 3 + col) * CSTEP;
+    const degAt = (row: number, _col: number): number => deg0 + row * 90;
     const cells: Prim[][] = [];
     for (let i = 0; i < 8; i++) {
       const row = Math.floor(i / 3), col = i % 3;
-      cells.push(slTri(sizeAt(row, col), degAt(row, col)));
+      cells.push(slTris(sizeAt(row, col), degAt(row, col), T, G));
     }
-    const sAns = sizeAt(2, 2), aAns = degAt(2, 2);
-    const big2 = sAns + 2 * cStep <= 38 ? sAns + 2 * cStep : 36;
-    const small2 = sAns - 2 * cStep >= 10 ? sAns - 2 * cStep : 10;
-    const halfBig = sAns + cStep / 2 <= 38 ? sAns + cStep / 2 : sAns - cStep / 2;
-    const halfSmall = sAns - cStep / 2 >= 8 ? sAns - cStep / 2 : sAns + cStep / 2;
-    // master coarse -> fine: far sizes, one-rung sizes, far angles, near angles, half-rungs
-    const master: Prim[][] = [
-      slTri(big2, aAns),
-      slTri(small2, aAns),
-      slTri(sAns + cStep, aAns),
-      slTri(sAns - cStep, aAns),
-      slTri(sAns, aAns + 90),
-      slTri(sAns, aAns + 60),
-      slTri(sAns, aAns + 45),
-      slTri(sAns, aAns + 30),
-      slTri(sAns, aAns + 24),
-      slTri(sAns, aAns + 15),
-      slTri(halfBig, aAns),
-      slTri(halfSmall, aAns),
-    ];
-    const start = Math.floor((D - 1) * (master.length - 7) / 11);
+    const oAns = sizeAt(2, 2), aAns = degAt(2, 2);
+    const mk = (o: number, a: number, t: number, g: number): Prim[] => slTris(o, a, t, g);
+    // well-separated single-attribute candidates (size >= step>=2, angle >=30deg, gap >=2)
+    const oPlus1 = mk(oAns + CSTEP, aAns, T, G);
+    const oMinus1 = mk(oAns - CSTEP, aAns, T, G);
+    const oMinus2 = mk(oAns - 2 * CSTEP, aAns, T, G);
+    const rot90 = mk(oAns, aAns + 90, T, G);
+    const rot60 = mk(oAns, aAns + 60, T, G);
+    const rot30 = mk(oAns, aAns + 30, T, G);
+    let master: Prim[][];
+    let filler: Prim[][];
+    if (T === 1) {
+      const extra = mk(oAns, aAns, 2, G);
+      const extraWide = mk(oAns, aAns, 2, G + 3);
+      master = [
+        oPlus1, oMinus2, rot90, extra, rot60,
+        mk(oAns, aAns + 45, T, G), rot30, oMinus1,
+        mk(oAns - CSTEP, aAns + 90, T, G), extraWide,
+      ];
+      filler = [
+        oMinus1, oMinus2, oPlus1, rot90, rot60, rot30,
+        extra, extraWide,
+        mk(oAns - CSTEP, aAns + 90, T, G),
+        mk(oAns + CSTEP, aAns + 90, T, G),
+      ];
+    } else {
+      const missing = mk(oAns, aAns, T - 1, G);
+      const extra = mk(oAns, aAns, T + 1, G);
+      const gapWide = mk(oAns, aAns, T, G + 3);
+      const gapNarrow = mk(oAns, aAns, T, G - 2);
+      master = [
+        oPlus1, oMinus2, rot90, missing, rot60,
+        gapWide, oMinus1, rot30, gapNarrow, extra,
+      ];
+      filler = [
+        oMinus1, oMinus2, oPlus1, rot90, rot60, rot30,
+        gapWide, gapNarrow, missing, extra,
+      ];
+    }
+    const start = master.length > 7 ? Math.floor((D - 1) * (master.length - 7) / 11) : 0;
     const decoys = master.slice(start, start + 7);
-    const filler: Prim[][] = [
-      slTri(sAns, aAns + 45),
-      slTri(sAns, aAns - 24),
-      slTri(sAns, aAns - 15),
-      slTri(sAns, aAns - 30),
-      slTri(sAns, aAns + 12),
-      slTri(sAns + cStep, aAns),
-      slTri(sAns - cStep, aAns),
-      slTri(halfBig, aAns),
-      slTri(big2, aAns),
-      slTri(small2, aAns),
-    ];
-    const { opts, answerIdx } = finalize(slTri(sAns, aAns), decoys, filler, seed ^ 0x1add);
+    const answer = mk(oAns, aAns, T, G);
+    const { opts, answerIdx } = finalize(answer, decoys, filler, seed ^ 0x1add);
     return {
       family: 'size-ladder', cols: 3, rows: 3,
       cells, holeIndex: 8, options: opts, answer: answerIdx,
@@ -582,29 +634,53 @@ export const sizeLadder: Family = {
     if (obs.some(o => o === null)) return -1;
     const O = obs as SlObs[];
     const at = (row: number, col: number) => O[row * 3 + col];
-    // size: arithmetic ladder per column — equal step in every observable row
-    const s01 = at(0, 1).size - at(0, 0).size;
-    const s11 = at(1, 1).size - at(1, 0).size;
-    const s21 = at(2, 1).size - at(2, 0).size;
-    if (Math.abs(s01 - s11) > 0.25 || Math.abs(s11 - s21) > 0.25) return -1;
-    if (Math.abs(s01) < 2) return -1;
-    // rotation: constant within a row (mod 120), fixed step across rows
-    for (let row = 0; row < 3; row++) {
-      if (Math.abs(slAngDiff(at(row, 0).ang, at(row, 1).ang)) > 2) return -1;
+    const T0 = O[0].T;
+    if (O.some(o => o.T !== T0)) return -1;
+    if (T0 > 1) {
+      const g0 = O[0].gap;
+      if (O.some(o => Math.abs(o.gap - g0) > 1.0)) return -1;
     }
+    // rotation: constant within a row (mod 120), fixed step across rows
+    if (Math.abs(slAngDiff(at(0, 0).ang, at(0, 1).ang)) > 2) return -1;
+    if (Math.abs(slAngDiff(at(0, 1).ang, at(0, 2).ang)) > 2) return -1;
+    if (Math.abs(slAngDiff(at(1, 0).ang, at(1, 1).ang)) > 2) return -1;
+    if (Math.abs(slAngDiff(at(1, 1).ang, at(1, 2).ang)) > 2) return -1;
+    if (Math.abs(slAngDiff(at(2, 0).ang, at(2, 1).ang)) > 2) return -1;
     const r0 = slAngDiff(at(0, 0).ang, at(1, 0).ang);
     const r1 = slAngDiff(at(1, 0).ang, at(2, 0).ang);
     if (Math.abs(r0 - r1) > 2 || Math.abs(r0) < 5) return -1;
-    // hole sits in the BOTTOM ROW: size climbs one more column rung, rotation
-    // stays at row 2's orientation (the 90-degree/row step is already fully visible).
-    const expSize = at(2, 1).size + s01;
+    // size: uniform column step c and uniform row step rr (rr=0 SHORT, rr=3c LONG)
+    const cs = [
+      at(0, 1).outer - at(0, 0).outer,
+      at(0, 2).outer - at(0, 1).outer,
+      at(1, 1).outer - at(1, 0).outer,
+      at(1, 2).outer - at(1, 1).outer,
+      at(2, 1).outer - at(2, 0).outer,
+    ];
+    const c = cs[4];
+    for (const v of cs) if (Math.abs(v - c) > 1.0) return -1;
+    if (c < 1.5) return -1;
+    const rs = [
+      at(1, 0).outer - at(0, 0).outer,
+      at(1, 1).outer - at(0, 1).outer,
+      at(1, 2).outer - at(0, 2).outer,
+      at(2, 0).outer - at(1, 0).outer,
+      at(2, 1).outer - at(1, 1).outer,
+    ];
+    const rr = rs[3];
+    for (const v of rs) if (Math.abs(v - rr) > 1.0) return -1;
+    // hole sits in the BOTTOM ROW: one more column rung, same row angle/layers/gap
+    const expOuter = at(2, 1).outer + c;
     const expAng = at(2, 1).ang;
+    const expGap = at(2, 1).gap;
     const hits: number[] = [];
     p.options.forEach((op, i) => {
       const o = slParse(op);
       if (!o) return;
-      if (Math.abs(o.size - expSize) > 1.2) return;
+      if (o.T !== T0) return;
+      if (Math.abs(o.outer - expOuter) > 1.0) return;
       if (Math.abs(slAngDiff(o.ang, expAng)) > 2) return;
+      if (T0 > 1 && Math.abs(o.gap - expGap) > 1.0) return;
       hits.push(i);
     });
     return hits.length === 1 ? hits[0] : -1;
