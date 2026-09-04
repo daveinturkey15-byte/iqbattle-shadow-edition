@@ -24,6 +24,8 @@ import { pick as pickWorld } from './worlds/registry.ts';
 import { maybeCurse } from './fate/cursepack.ts';
 import { maybePack } from './fate/packs/registry.ts';
 import { mountVolume } from './scenes/volume.ts';
+import { redemptionCallback } from './arc/callback.ts';
+import { hellState } from './arc/hell.ts';
 /* P7 wave: the seven stages the spec still had unbuilt. Order here, in
  * TAKEOVERS and in onboard.TAKEOVER_STAGE_IDS must agree — the onboard
  * selftest enforces it, and both have drifted before. */
@@ -460,10 +462,22 @@ let activeMods: string[] = [];
 let shell: Shell | null = null;
 let lastLayer = 0;
 
+/* P6: how far hp may fall this depth. 0 everywhere except the deepest layers
+ * of hell, where the spec asks for negative health. SOLO ONLY: in a room the
+ * LMS director owns hp and elimination is hp-death, so a negative floor there
+ * would change who gets swept and when. Multiplayer keeps the 0 floor. */
+let hpFloor = 0;
+
+/** Clamp hp to [hpFloor, 100]. The floor is 0 unless deep hell says otherwise. */
+function clampHp(v: number): number {
+  return Math.max(hpFloor, Math.min(100, v));
+}
+
 function startRun(name: string, roomName: string, timerLen: number, seed?: number): void {
   seed = (seed ?? ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1))) >>> 0;
   run = { name, roomName, timerLen, seed, plan: planArc(seed, 2000), depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99, prevSanctuary: false, fateScoreMul: 1, curKind: 'puzzle', curAnswer: -1 };
   /* P2: one chaos bus per run. Pure logic — all time enters via tick(dtMs). */
+  hpFloor = 0;
   chaos = createChaos(seed, revealMotionEnabled());
   /* MP: the ladder, the attacks and the elimination sweep all hang off this. */
   lms = mp && mpRole ? makeDirector(mpRole, mp, seed) : null;
@@ -551,7 +565,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   /* A solo descent dies on HP. In a real match the elimination sweep is the
    * only authority on who is out, so a drained host keeps dealing until the
    * sweep says stop — but a one-seat room is not a match and must still die. */
-  if ((soloRules() && r.hp <= 0) || r.depth > r.plan.length) { endRun(); return; }
+  if ((soloRules() && r.hp <= hpFloor) || r.depth > r.plan.length) { endRun(); return; }
   lms?.openDepth(r.depth);
   closeAttackMenu();
   activeMods = []; /* takeover depths run none; never report the last depth's */
@@ -604,6 +618,18 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   startTick(root);
 
   applyArc(root, plan);
+  /* P6: the two things the arc has always computed and never shown. */
+  try {
+    const hs = hellState(r.seed, r.depth, r.plan);
+    hpFloor = soloRules() ? hs.hpFloor : 0;
+    if (hs.crossed && hs.crossingLine) toastNow(overlay, hs.crossingLine, T.bad);
+    /* The redemption callback: the good round visibly continuing the good
+     * round from ~5 depths ago. The arc planner has threaded this internally
+     * since the rebuild and nothing ever surfaced it, which is why the game
+     * never felt designed rather than generated. */
+    const cb = redemptionCallback(r.seed, r.depth, r.plan);
+    if (cb) toastNow(overlay, cb.line, T.good);
+  } catch { /* continuity is optional; a bad beat must never kill the round */ }
   if (plan.sanctuary) sanctuaryOn(root); else sanctuaryOff(root);
   try {
     const wd = pickWorld(plan.align === 'chaotic' ? 'chaotic' : plan.align === 'good' ? 'good' : plan.align === 'neutral' ? 'neutral' : 'bad', mulberry((r.seed ^ Math.imul(r.depth, 0xBEEF)) >>> 0));
@@ -613,7 +639,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
   try {
     const cm = maybeCurse({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xCA75E)) >>> 0), hp: r.hp, seed: r.seed });
     if (cm) {
-      if (typeof cm.hpDelta === 'number') r.hp = Math.max(0, Math.min(100, r.hp + cm.hpDelta));
+      if (typeof cm.hpDelta === 'number') r.hp = clampHp(r.hp + cm.hpDelta);
       r.fateScoreMul = typeof cm.scoreMul === 'number' && cm.scoreMul > 0 ? cm.scoreMul : 1;
       performCue(cm.cue);
       if (cm.bannerText) toastNow(overlay, cm.bannerText, T.gold);
@@ -662,7 +688,7 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
      * not silently overwritten; fateScoreMul is reset to 1 each depth. */
     const pk = maybePack({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0x9C4A1 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
     if (pk) {
-      if (typeof pk.hpDelta === 'number') r.hp = Math.max(0, Math.min(100, r.hp + pk.hpDelta));
+      if (typeof pk.hpDelta === 'number') r.hp = clampHp(r.hp + pk.hpDelta);
       if (typeof pk.scoreMul === 'number' && pk.scoreMul > 0) r.fateScoreMul *= pk.scoreMul;
       performCue(pk.cue);
       if (pk.bannerText) toastNow(overlay, pk.bannerText, T.gold);
@@ -892,7 +918,7 @@ function startTick(root: Container): void {
         lms.timeout(); /* host sweeps + reveals; clients simply wait */
         return;
       }
-      r.hp = Math.max(0, r.hp - 12); r.streak = 0;
+      r.hp = clampHp(r.hp - 12); r.streak = 0;
       toastNow(root, 'TIME DROWNED YOU', T.bad);
       r.depth++; deal();
     }
@@ -940,7 +966,7 @@ function dealTakeover(root: Container, idx: number, planSeed: number, overlay: C
       toastNow(root, res.summary, res.correct === true ? T.good : res.correct === false ? T.bad : T.gold);
       if (lms && mp) { lms.answer(res.correct, res.points, res.hpDelta); return; }
       r.score = Math.max(0, r.score + res.points);
-      r.hp = Math.max(0, Math.min(100, r.hp + res.hpDelta));
+      r.hp = clampHp(r.hp + res.hpDelta);
       scheduleAdvance(r, r.depth, 1500);
     },
   });
@@ -953,7 +979,13 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
   const plan = r.plan[depth - 1];
   const fam = ALL_FAMILIES[famIdx % ALL_FAMILIES.length];
   const hue = T.boardHues[hueIndexForDepth(r.seed, depth, T.boardHues.length)];
-  const diff = Math.min(5, 1 + Math.floor(depth / 6));
+  /* Difficulty used to be min(5, 1 + floor(depth/6)) — it stopped climbing at
+   * depth 24 and never moved again, in a game whose whole premise is that you
+   * descend until you die. That ceiling is the mechanical half of the owner's
+   * "the puzzles are too basic". It now keeps climbing: a slower early ramp so
+   * the opening still reads like an ordinary quiz, then no cap. Families clamp
+   * internally to whatever they can express. */
+  const diff = depth <= 3 ? 1 : 1 + Math.floor((depth - 1) / 4);
   const p = fam.generate((planSeed ^ Math.imul(depth, 7919)) >>> 0, diff, hue);
   if (plan.sanctuary) sanctuaryOn(root);
 
@@ -990,7 +1022,7 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
       say('wrong', {});
       playRevealFx(root, 'wrong', 0, 0);
       toastNow(root, 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
-      if (!lms) { r.score = Math.max(0, r.score - 40); r.hp = Math.max(0, r.hp - 12); }
+      if (!lms) { r.score = Math.max(0, r.score - 40); r.hp = clampHp(r.hp - 12); }
     }
     /* MP: the host re-derives the score from (diff, streak, sanctuary) —
      * the verdict below only reports WHAT happened, never what it is worth. */
@@ -1008,7 +1040,11 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
   /* P1: round modifiers — pure function of (runSeed, depth) so host and every
    * client roll the SAME ones. Count scales with layer: shallow stays clean,
    * deep gets strange. Every teardown is registered with the scene. */
-  const modMax = Math.min(3, Math.max(1, Math.floor(plan.layer / 2)));
+  /* The owner's very first line of spec: "we want the website to look and feel
+   * near identical for the first few rounds, but then it turns into my game."
+   * Round modifiers used to fire from depth 1, so round one was already our
+   * game. The first three depths now run clean; the corruption starts after. */
+  const modMax = depth <= 3 ? 0 : Math.min(3, Math.max(1, Math.floor(plan.layer / 2)));
   const mctx: ModCtx = { depth, seed: r.seed, layer: plan.layer, align: plan.align, motion: revealMotionEnabled() };
   /* Transform about the stage centre, not the container origin. Pixi rotates
    * and scales around (0,0) by default, so mirror-flip (scale.x = -1) and

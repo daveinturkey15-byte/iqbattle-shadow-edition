@@ -12,6 +12,8 @@
  *   - the INDEPENDENT solver re-derives exactly the keyed answer.
  * Prints one PASS line per family; exits non-zero on any failure.
  */
+export const MAX_DIFF = 12;
+
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -79,7 +81,12 @@ function auditFamily(f: Family, hue: string): string[] {
   const errors: string[] = [];
   let solved = 0;
   let total = 0;
-  for (let diff = 1; diff <= 5; diff++) {
+  /* 1..5 covered the OLD curve, which capped at 5 by depth 24. The curve is
+   * uncapped now, so a family only audited to 5 is a family untested at every
+   * depth the owner actually reaches. MAX_DIFF is the contract: a family must
+   * stay solvable and legible at any difficulty the engine can hand it, by
+   * clamping internally if it has run out of ways to get harder. */
+  for (let diff = 1; diff <= MAX_DIFF; diff++) {
     for (let sample = 0; sample < 30; sample++) {
       const seed = ((sample + 1) * 1013904223 + diff * 104729 + (f.id.length * 7919)) | 0;
       total++;
@@ -128,7 +135,21 @@ export function runAudit(): boolean {
   const hue = '#d4a017';
   const mods = loadFamilies();
   const all = [...mods.FAMILIES, ...mods.FAMILIES2, ...mods.FAMILIES3, ...mods.FAMILIES4];
-  console.log(`auditing ${all.length} families x 30 seeds x diff 1..5 @ hue ${hue}`);
+  {
+  /* Family ids must be unique across ALL_FAMILIES. main.ts picks a family by
+   * INDEX, but everything else — the solver audit's labels, the onboard
+   * legend, save data — keys off the id, so two families sharing one is a
+   * silent mix-up. A bulk rewrite introduced exactly that collision
+   * ('rotation-composite' defined in two files) and this suite happily audited
+   * both under one name. */
+  const ids = all.map((f) => f.id);
+  const dupes = ids.filter((v, i) => ids.indexOf(v) !== i);
+  if (dupes.length) {
+    console.error('AUDIT FAILED: duplicate family id(s): ' + [...new Set(dupes)].join(', '));
+    process.exit(1);
+  }
+}
+console.log(`auditing ${all.length} families x 30 seeds x diff 1..${MAX_DIFF} @ hue ${hue}`);
   const errors = all.flatMap(f => auditFamily(f, hue));
   if (errors.length > 0) {
     for (const e of errors.slice(0, 40)) console.error('FAIL ' + e);

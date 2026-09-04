@@ -10,6 +10,8 @@
  * mulberry32 generator — no Math.random, no Date.now.
  * ==========================================================================*/
 
+import { MODIFIERS2 } from './modifiers2.ts';
+
 export interface ModCtx {
   depth: number;
   seed: number;
@@ -642,7 +644,12 @@ const tilt3dModifier: RoundModifier = {
 };
 
 /** The active registry of round modifiers. */
+/* Batch two lives in its own file and imports only TYPES from here, so this
+ * value import is a one-way edge at runtime — no cycle. Appending them means
+ * pickModifiers and the gate both cover all 22 without a second code path:
+ * the gate's ambient-clock trap and step-purity checks apply to them free. */
 export const MODIFIERS: RoundModifier[] = [
+  ...MODIFIERS2,
   mirrorFlipModifier,
   boardDriftModifier,
   rotate90Modifier,
