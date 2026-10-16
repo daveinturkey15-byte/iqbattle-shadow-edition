@@ -11,7 +11,8 @@
  * exactly-once: zero loss, zero duplication, across BOTH transports.
  *
  * Also exercises the MpSession protocol flow (begin → round → sr → reveal →
- * elim → end) and the pure fold/clamp/LMS/roundPlan logic.
+ * elim → end), pure fold/clamp/LMS/roundPlan logic, and explicitly scheduled
+ * active/closed/ended catch-up through the real session and LMS director.
  *
  * Determinism: the harness RNG is mulberry32(seed) — no Math.random here.
  * ==========================================================================*/
@@ -27,8 +28,13 @@ import {
   roundPlan, runSeedFromRound,
   srCeiling,
   MpSession,
+  setActiveSession,
+  wireMain,
+  type MpMatchSnapshot,
+  type RoomSnapshot,
   type ScoreRec,
 } from '../scenes/mp.ts';
+import { createDirector } from '../scenes/lmsdirector.ts';
 /* Seeded harness RNG                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -53,7 +59,27 @@ class StubWorld {
   // One hub PER ROOM CODE — real BroadcastChannels are namespaced by name,
   // so frames must never leak across rooms (two hosts share myUid 'HOST').
   hubs = new Map<string, Set<BusStub>>();
+  connectionPairs: Array<{ client: ConnEnd; host: ConnEnd }> = [];
   scheduled = 0;
+  manual = false;
+  pending: Array<{ type: string; fire: () => void }> = [];
+
+  /** Explicit delivery order for lifecycle regressions, without timer races. */
+  flush(type?: string): void {
+    let delivered = 0;
+    for (;;) {
+      const i = this.pending.findIndex((item) => !type || item.type === type);
+      if (i < 0) return;
+      if (++delivered > 10000) throw new Error('manual delivery did not quiesce');
+      this.pending.splice(i, 1)[0].fire();
+    }
+  }
+
+  failConnection(conn: ConnEnd): void {
+    const fire = () => conn.fire('error', [{ type: 'peer-unavailable' }]);
+    if (this.manual) this.pending.push({ type: 'connection-error', fire });
+    else setTimeout(fire, 5);
+  }
 
   busHub(code: string): Set<BusStub> {
     let s = this.hubs.get(code);
@@ -76,6 +102,11 @@ class StubWorld {
   deliverToConn(conn: ConnEnd, obj: unknown): void {
     this.scheduled++;
     const fire = (): void => conn.fire('data', [JSON.parse(JSON.stringify(obj))]);
+    if (this.manual) {
+      const type = (obj as Frame).t;
+      this.pending.push({ type, fire }, { type, fire });
+      return;
+    }
     setTimeout(fire, this.latency());
     if (this.rng() < DUP_P) setTimeout(fire, this.latency() + 3);
   }
@@ -85,6 +116,10 @@ class StubWorld {
     this.scheduled++;
     const copy = JSON.parse(JSON.stringify(frame));
     const fire = (): void => target.receive(JSON.parse(JSON.stringify(copy)));
+    if (this.manual) {
+      this.pending.push({ type: frame.t, fire }, { type: frame.t, fire });
+      return;
+    }
     setTimeout(fire, this.latency());
     if (this.rng() < DUP_P) setTimeout(fire, this.latency() + 3);
   }
@@ -95,6 +130,7 @@ class ConnEnd implements DataConnLike {
   open = false;
   peer: string;
   remote: ConnEnd | null = null;
+  dropData = false;
   private cbs = new Map<string, Array<(...args: unknown[]) => void>>();
 
   constructor(peerId: string) {
@@ -112,7 +148,7 @@ class ConnEnd implements DataConnLike {
   }
 
   send(data: unknown): void {
-    if (!this.open || !this.remote || !this.worldRef) return;
+    if (!this.open || !this.remote || !this.worldRef || this.dropData) return;
     this.worldRef.deliverToConn(this.remote, data);
   }
 
@@ -157,7 +193,7 @@ class PeerStub implements PeerLike {
     const target = this.world.peers.get(id);
     if (!target || !target.open) {
       const dead = new ConnEnd(id);
-      setTimeout(() => dead.fire('error', [{ type: 'peer-unavailable' }]), 5);
+      this.world.failConnection(dead);
       return dead;
     }
     const a = new ConnEnd(id);
@@ -165,6 +201,7 @@ class PeerStub implements PeerLike {
     a.worldRef = this.world;
     b.worldRef = this.world;
     a.remote = b;
+    this.world.connectionPairs.push({ client: a, host: b });
     b.remote = a;
     const lat = this.world.latency();
     setTimeout(() => {
@@ -173,7 +210,7 @@ class PeerStub implements PeerLike {
     }, lat);
     setTimeout(() => {
       b.open = true;
-      this.fire('connection', [b]);
+      target.fire('connection', [b]);
     }, lat);
     return a;
   }
@@ -469,6 +506,14 @@ async function transportScenario(): Promise<void> {
 
   const j2 = await C2.join('RACE', 'BETA');
   check('second join resolves', Array.isArray(j2.players));
+  let targetedC1 = 0;
+  let targetedC2 = 0;
+  C1.on('targeted-probe', () => targetedC1++);
+  C2.on('targeted-probe', () => targetedC2++);
+  H.unicast(String(C2.myUid()), { t: 'targeted-probe', value: 'private' });
+  await waitFor('targeted frame reaches only its recipient', () => targetedC2 === 1);
+  check('host unicast is recipient-bound and dual-transport deduped', targetedC1 === 0 && targetedC2 === 1,
+    'c1=' + targetedC1 + ' c2=' + targetedC2);
 
   // Subscribe AFTER host()/join(): both call teardown() first (v1 parity),
   // which clears any pre-session handlers.
@@ -540,17 +585,23 @@ async function transportScenario(): Promise<void> {
   // `let x = null` to `never` across awaits, but property reads reset at calls.
   const seen = {
     begin: null as { timer: number; sd: number; rn?: string } | null,
-    round: null as { n: number; seed: number; id: string } | null,
-    sr: null as { points: number; hpDelta: number; correct: boolean | null } | null,
+    round: null as { n: number; seed: number; id: string; forcedGood?: true; closed: boolean; roundElapsedMs: number } | null,
     reveal: null as { n: number; scores: number } | null,
     elim: null as string[] | null,
+    sr: null as { correct: boolean | null; points: number; hpDelta: number } | null,
     endRows: -1,
   };
-
   m1.subscribe((e) => {
     cliEv.push(e.t);
     if (e.t === 'begin') seen.begin = { timer: e.timer, sd: e.sd, rn: e.rn };
-    if (e.t === 'round') seen.round = { n: e.n, seed: e.stg.seed, id: e.stg.id };
+    if (e.t === 'round') seen.round = {
+      n: e.n,
+      seed: e.stg.seed,
+      id: e.stg.id,
+      ...(e.forcedGood === true ? { forcedGood: true as const } : {}),
+      closed: e.closed,
+      roundElapsedMs: e.roundElapsedMs,
+    };
     if (e.t === 'reveal') seen.reveal = { n: e.n, scores: e.scores.length };
     if (e.t === 'elim') seen.elim = e.uids;
     if (e.t === 'end') seen.endRows = e.scores.length;
@@ -567,13 +618,88 @@ async function transportScenario(): Promise<void> {
     JSON.stringify(seen.begin),
   );
 
-  mh.round(3, 'pz:2', 999, 60);
+  mh.round(3, 'pz:2', 999, 60, true);
   await waitFor('client saw round', () => seen.round != null);
   check(
-    'round frame carries stage ref + seed identically',
-    seen.round != null && seen.round.n === 3 && seen.round.seed === 999 && seen.round.id === 'pz:2',
+    'round frame carries stage ref, seed, forced-good marker, and an open fresh clock',
+    seen.round != null && seen.round.n === 3 && seen.round.seed === 999 &&
+      seen.round.id === 'pz:2' && seen.round.forcedGood === true &&
+      !seen.round.closed && seen.round.roundElapsedMs === 0,
     JSON.stringify(seen.round),
   );
+  H.broadcast({
+    t: 'round',
+    n: 2,
+    stg: { id: 'pz:2', seed: 9 },
+    timerLen: 60,
+    closed: false,
+    roundElapsedMs: 0,
+  });
+  await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  check(
+    'stale lower-depth round is ignored after depth 3',
+    cliEv.filter((type) => type === 'round').length === 1 && seen.round?.n === 3,
+    cliEv.join(',') + ' / ' + JSON.stringify(seen.round),
+  );
+  const preClient = mkNet();
+  const preJoin = await preClient.join('RACE', 'DELTA');
+  const preUid = String(preClient.myUid());
+  const preMatch: MpMatchSnapshot = {
+    depth: 3,
+    scores: [
+      { uid: 'HOST', name: 'HOST', pts: 140 },
+      { uid: String(C1.myUid()), name: 'ALPHA', pts: 90 },
+      { uid: String(C2.myUid()), name: 'BETA', pts: 80 },
+      { uid: preUid, name: 'DELTA', pts: 0 },
+    ],
+    hp: { HOST: 76, [String(C1.myUid())]: 62, [String(C2.myUid())]: 100, [preUid]: 100 },
+    phases: {
+      HOST: 'alive',
+      [String(C1.myUid())]: 'alive',
+      [String(C2.myUid())]: 'spectator',
+      [preUid]: 'alive',
+    },
+    prevRanks: { HOST: 1, [String(C1.myUid())]: 2, [String(C2.myUid())]: 3, [preUid]: 4 },
+    answered: ['HOST', String(C1.myUid())],
+    clocks: { HOST: 12, [String(C1.myUid())]: 19 },
+    budget: { HOST: 4, [String(C1.myUid())]: 3, [String(C2.myUid())]: 0, [preUid]: 4 },
+    closed: false,
+    roundElapsedMs: 55000,
+    over: false,
+    winnerUid: null,
+  };
+  const preSession = new MpSession(preClient, 'client', {}, preJoin.players);
+  const activeSnapshot = { value: null as RoomSnapshot | null };
+  const routedSnapshot = { value: null as RoomSnapshot | null };
+  preSession.subscribe((e) => {
+    if (e.t === 'room-snapshot') activeSnapshot.value = e;
+  });
+  mh.setRoomSnapshotProvider(() => preMatch);
+  setActiveSession(preSession);
+  const stopWire = wireMain({ onRoomSnapshot: (snapshot) => { routedSnapshot.value = snapshot; } });
+  preSession.requestRoomName();
+  await waitFor('active join receives atomic snapshot', () => activeSnapshot.value?.phase === 'active');
+  const active = activeSnapshot.value?.phase === 'active' ? activeSnapshot.value : null;
+  check(
+    'active snapshot carries current forced-good round and full LMS ledger',
+    active?.round?.forcedGood === true && active.round.closed === false &&
+      active.round.roundElapsedMs === 55000 && active.match.depth === 3 &&
+      active.match.closed === false && active.match.roundElapsedMs === 55000 &&
+      active.match.answered.includes(String(C1.myUid())) &&
+      active.match.scores.some((row) => row.uid === preUid && row.pts === 0) &&
+      active.match.hp[preUid] === 100,
+    JSON.stringify(active),
+  );
+  check(
+    'snapshot contains no pre-reveal answer and wireMain dispatches it',
+    !!active && !('answer' in active) &&
+      !!active.round && !('answer' in active.round) && !('answerIdx' in active.round) &&
+      !('answer' in active.match) && routedSnapshot.value?.phase === 'active',
+    JSON.stringify({ active: active?.phase, routed: routedSnapshot.value?.phase }),
+  );
+  stopWire();
+  setActiveSession(null);
+
 
   m1.sendSr(3, { correct: true, points: 9999, hpDelta: -999 }); // spoofed verdict
   await waitFor('host saw sanitized sr', () => seen.sr != null);
@@ -594,9 +720,17 @@ async function transportScenario(): Promise<void> {
   await waitFor('client saw elim', () => seen.elim != null);
   check('elim frame carries uids', JSON.stringify(seen.elim) === JSON.stringify([String(C2.myUid())]));
 
-  mh.endMatch([{ uid: 'HOST', name: 'HOST', pts: 230 }]);
-  await waitFor('client saw end', () => seen.endRows === 1);
-  check('end frame carries final scores', seen.endRows === 1);
+  const endedMatch: MpMatchSnapshot = {
+    ...preMatch,
+    closed: true,
+    roundElapsedMs: 60000,
+    over: true,
+    winnerUid: 'HOST',
+  };
+  mh.setRoomSnapshotProvider(() => endedMatch);
+  mh.endMatch(endedMatch.scores, 'last-standing', 'HOST');
+  await waitFor('client saw end', () => seen.endRows === endedMatch.scores.length);
+  check('end frame carries final score table', seen.endRows === endedMatch.scores.length);
 
   check(
     'client event stream saw the full protocol in order',
@@ -634,31 +768,37 @@ async function transportScenario(): Promise<void> {
     if (typeof m.n === 'number') seen3.roundN = m.n;
   });
 
-  // Mid-game catch-up: GAMMA joined AFTER begin/round fired. Its MpSession's
-  // first lobby event triggers metaReq; the host must unicast the begin
-  // frame AND the in-flight round so the joiner mounts the live challenge.
+  // A post-match join receives the complete terminal state, never replayed
+  // begin/round frames that would remount a stale challenge.
   const m3 = new MpSession(C3, 'client', {}, j3.players);
-  const caught = { begin: false, round: false };
+  const caught = { snapshot: null as RoomSnapshot | null };
   m3.subscribe((e) => {
-    if (e.t === 'begin' && e.sd === 0x1234abcd) caught.begin = true;
-    if (e.t === 'round' && e.n === 3 && e.stg.seed === 999) caught.round = true;
+    if (e.t === 'room-snapshot') caught.snapshot = e;
   });
+  setActiveSession(m3);
+  const stopTerminalWire = wireMain({ onRoomSnapshot: (snapshot) => { caught.snapshot = snapshot; } });
 
-  // Poke the roster so post-subscribe observers see convergence at 4.
+  // Poke the roster so post-subscribe observers see convergence at 5.
   C1.send({ t: 'hello', uid: String(C1.myUid()), name: 'ALPHA' });
-  await waitFor('roster converges to 4 everywhere', () => hc.lastLobbySize === 4 && c2.lastLobbySize === 4 && seen3.lobbySize === 4);
-  check('4-player roster converges over surviving transport', true);
+  await waitFor('roster converges to 5 everywhere', () => hc.lastLobbySize === 5 && c2.lastLobbySize === 5 && seen3.lobbySize === 5);
+  check('5-player roster converges over surviving transport', true);
 
   H.broadcast({ t: 'round', n: 600 });
   await waitFor('post-death broadcast reaches GAMMA', () => seen3.roundN === 600);
   check('host still authoritative after broker death', seen3.roundN === 600);
 
-  await waitFor('mid-game catch-up delivered to GAMMA', () => caught.begin && caught.round);
+  await waitFor('terminal snapshot delivered to GAMMA', () => caught.snapshot?.phase === 'ended');
+  const terminal = caught.snapshot?.phase === 'ended' ? caught.snapshot : null;
   check(
-    'late joiner received begin + in-flight round via unicast replay',
-    caught.begin && caught.round,
-    JSON.stringify(caught),
+    'late joiner receives one complete ended snapshot without entering the finished table',
+    terminal?.match.over === true && terminal.match.closed === true &&
+      terminal.match.roundElapsedMs === 60000 && terminal.match.winnerUid === 'HOST' &&
+      terminal.end.scores.length === endedMatch.scores.length && terminal.end.winnerUid === 'HOST' &&
+      !terminal.match.scores.some((row) => row.uid === String(C3.myUid())),
+    JSON.stringify(terminal),
   );
+  stopTerminalWire();
+  setActiveSession(null);
 
   /* ---- handshake-ordering race: peerjs load lags the bus reply ---- */
   console.log('[race] slow peerjs load vs instant bus lobby reply');
@@ -717,6 +857,606 @@ async function transportScenario(): Promise<void> {
 
   console.log('  (stub deliveries scheduled: ' + world.scheduled + ')');
 }
+async function deterministicCatchupScenario(): Promise<void> {
+  console.log('[catchup] explicit delivery order through real net/session/director consumers');
+  for (const mode of ['active', 'closed', 'ended', 'stale-open', 'stale-terminal', 'stale-overflow'] as const) {
+    const stale = mode.startsWith('stale-');
+    const world = new StubWorld(200);
+    const ctor = makePeerCtor(world);
+    const host = createNet({
+      makePeer: async () => ctor,
+      busFactory: (code, uid) => new BusStub(world, code, uid),
+    });
+    const rival = createNet({
+      makePeer: async () => null,
+      busFactory: (code, uid) => new BusStub(world, code, uid),
+    });
+    const guest = createNet({
+      makePeer: async () => ctor,
+      busFactory: (code, uid) => new BusStub(world, code, uid),
+    });
+    let stopWire: () => void = () => undefined;
+    await host.host('ORDER', 'HOST');
+    const hostSession = new MpSession(host, 'host', {}, [{ id: 'HOST', name: 'HOST', isHost: true }]);
+    hostSession.setRoomName('Ordering Room');
+    world.manual = true;
+    const joiningRival = rival.join('ORDER', 'RIVAL');
+    world.flush();
+    await joiningRival;
+    let elapsed = 55;
+    let hostDepth = 3;
+    const hostDir = createDirector({
+      role: 'host', myUid: 'HOST',
+      wire: {
+        reveal: (n, a, scores, hp) => hostSession.reveal(n, a, scores, hp),
+        pushScores: (n, scores, hp, reason) => hostSession.pushScores(n, scores, hp, reason),
+        eliminate: (uids) => hostSession.eliminate(uids),
+        endMatch: (scores, reason, winner) => hostSession.endMatch(scores, reason, winner),
+        sendSr: (n, verdict) => hostSession.sendSr(n, verdict),
+        attack: (target, weapon, n) => hostSession.attack(target, weapon, n),
+        roster: () => hostSession.rosterNow(),
+      },
+      depth: () => hostDepth, kind: () => 'puzzle', answerIdx: () => 2,
+      diffAt: () => 1, sanctuaryAt: () => false, scoreMul: () => 1,
+      clockSec: () => elapsed,
+      toast: () => undefined, advance: () => undefined,
+      finish: () => undefined, changed: () => undefined,
+    }, hostSession.rosterNow().map((p) => ({ uid: p.id, name: p.name })), 1234);
+    hostSession.subscribe((event) => hostDir.handle(event));
+    hostSession.setRoomSnapshotProvider((uid) => hostDir.snapshotForJoin(uid));
+    hostSession.begin(60, true, 'Ordering Room', 1234);
+    if (stale) {
+      // Earn a real prior-round balance: timeout must move 140 -> 100,
+      // rather than testing a negative score below the existing zero floor.
+      hostDepth = 2;
+      hostDir.openDepth(2);
+      hostSession.round(2, 'pz:2', 998, 60);
+      hostDir.answer(true, 140, 0);
+      rival.send({ t: 'sr', n: 2, sr: { correct: 1, points: 140, hpDelta: 0 } });
+      world.flush();
+      hostDepth = 3;
+    }
+    hostDir.openDepth(3);
+    hostSession.round(3, 'pz:2', 999, 60, true);
+    hostDir.answer(true, 140, 0);
+    world.flush();
+    if (mode === 'closed' || mode === 'ended') {
+      elapsed = 60;
+      rival.send({ t: 'sr', n: 3, sr: { correct: 0, points: -40, hpDelta: -12 } });
+      world.flush();
+    }
+    if (mode === 'ended') {
+      rival.leave();
+      world.flush();
+    }
+    // Broker loss makes the RTC upgrade fail; the existing bus room survives.
+    world.peers.get('iqb-ORDER')!.simulateBrokerDeath();
+    const joiningGuest = guest.join('ORDER', 'GUEST');
+    await waitFor('RTC failure is queued before bus join', () =>
+      world.pending.some((item) => item.type === 'connection-error'));
+    world.flush('hello');
+    world.flush('lobby');
+    const joined = await joiningGuest;
+    const session = new MpSession(guest, 'client', {}, joined.players);
+    const events: string[] = [];
+    session.subscribe((event) => events.push(event.t));
+    session.requestRoomName();
+    world.flush('metaReq');
+    world.flush('meta');
+    world.flush('lobby');
+    check(mode + ': metadata arrives before lazy UI finishes without consuming catch-up',
+      session.roomName() === 'Ordering Room' && !events.includes('room-snapshot'),
+      events.join(','));
+
+    const clientDir = createDirector({
+      role: 'client', myUid: String(guest.myUid()),
+      wire: {
+        reveal: (n, a, scores, hp) => session.reveal(n, a, scores, hp),
+        pushScores: (n, scores, hp, reason) => session.pushScores(n, scores, hp, reason),
+        eliminate: (uids) => session.eliminate(uids),
+        endMatch: (scores, reason, winner) => session.endMatch(scores, reason, winner),
+        sendSr: (n, verdict) => session.sendSr(n, verdict),
+        attack: (target, weapon, n) => session.attack(target, weapon, n),
+        roster: () => session.rosterNow(),
+      },
+      depth: () => 3, kind: () => 'puzzle', answerIdx: () => 2,
+      diffAt: () => 1, sanctuaryAt: () => false, scoreMul: () => 1,
+      clockSec: () => elapsed,
+      toast: () => undefined, advance: () => undefined,
+      finish: () => undefined, changed: () => undefined,
+    }, joined.players.map((p) => ({ uid: p.id, name: p.name })), 1234);
+    const view = {
+      snapshot: null as RoomSnapshot | null, mounts: 0, prematureEnds: 0,
+      roundMounts: 0, reveals: 0, ends: 0,
+    };
+    try {
+      setActiveSession(session);
+      stopWire = wireMain({
+        onBegin: () => { view.mounts++; },
+        onRound: (event) => {
+          if (!stale) return;
+          view.roundMounts++;
+          clientDir.openDepth(event.n);
+        },
+        onReveal: (event) => {
+          if (!stale) return;
+          view.reveals++;
+          clientDir.handle(event);
+        },
+        onScores: (event) => { if (stale) clientDir.handle(event); },
+        onElim: (event) => { if (stale) clientDir.handle(event); },
+        onEnd: (event) => {
+          if (event.reason === 'host-left') view.prematureEnds++;
+          if (stale) { view.ends++; clientDir.handle(event); }
+        },
+        onRoomSnapshot: (snapshot) => {
+          view.snapshot = snapshot;
+          const mountedDepth = clientDir.state().depth;
+          if (snapshot.phase !== 'lobby') clientDir.restoreSnapshot(snapshot.match);
+          if (stale && snapshot.phase === 'active' && snapshot.round &&
+            snapshot.round.n > mountedDepth) view.roundMounts++;
+        },
+      });
+      // Force the exact old red ordering: failed RTC upgrade after successful
+      // bus join, then the authoritative targeted snapshot.
+      world.flush('connection-error');
+      world.flush('metaReq');
+      // A live begin/round/end can beat catch-up on the other transport.
+      host.broadcast({ t: 'begin', timer: 60, lms: 1, rn: 'Ordering Room', sd: 1234 });
+      host.broadcast({ t: 'round', n: 3, stg: { id: 'pz:2', seed: 999 },
+        timerLen: 60, forcedGood: true, closed: false, roundElapsedMs: 0 });
+      world.flush('begin');
+      world.flush('round');
+      if (stale) {
+        // The OPEN ledger is already captured and queued. Closing the SAME
+        // depth now sends a newer reveal that wins the delivery race.
+        elapsed = 60;
+        if (mode === 'stale-terminal') {
+          hostDir.applyRoundHpDeltas(3, 'terminal-after-capture', [
+            { uid: String(rival.myUid()), hpDelta: -100 },
+            { uid: String(guest.myUid()), hpDelta: -100 },
+          ]);
+        }
+        hostDir.timeout();
+        world.flush('reveal');
+        check(mode + ': live consumer is closed before the older snapshot arrives',
+          clientDir.state().closed && !clientDir.mayAnswer() && view.reveals === 1 &&
+          clientDir.state().hp.HOST === 100 &&
+          clientDir.state().hp[String(guest.myUid())] === (mode === 'stale-terminal' ? 0 : 88) &&
+          clientDir.state().hp[String(rival.myUid())] === (mode === 'stale-terminal' ? 0 : 88) &&
+          clientDir.state().table.some((row) => row.uid === String(rival.myUid()) && row.pts === 100),
+          JSON.stringify(clientDir.state()));
+        if (mode === 'stale-terminal') {
+          world.flush('elim');
+          world.flush('end');
+        }
+        if (mode === 'stale-overflow') {
+          // More authority events than the bounded pre-bootstrap journal.
+          // An obsolete capture must trigger a complete recapture, not loss.
+          for (let i = 0; i < 600; i++) {
+            hostSession.pushScores(3, hostDir.state().table, hostDir.state().hp);
+          }
+        }
+        world.flush('scores');
+      }
+      if (mode === 'ended') {
+        host.broadcast({ t: 'end', scores: hostDir.state().table,
+          reason: 'last-standing', winnerUid: 'HOST' });
+        world.flush('end');
+      }
+      world.flush();
+      const snapshot = view.snapshot;
+      const expected = hostDir.snapshotForJoin(String(guest.myUid()));
+      if (stale) {
+        check(mode + ': bootstrap preserves newer reveal scores, HP and answer lock',
+          snapshot?.phase === (mode === 'stale-terminal' ? 'ended' : 'active') &&
+          snapshot.match.closed &&
+          (snapshot.phase !== 'active' || snapshot.round?.closed === true) &&
+          clientDir.state().closed && !clientDir.mayAnswer() &&
+          clientDir.state().hp.HOST === 100 &&
+          clientDir.state().hp[String(guest.myUid())] === (mode === 'stale-terminal' ? 0 : 88) &&
+          clientDir.state().hp[String(rival.myUid())] === (mode === 'stale-terminal' ? 0 : 88) &&
+          JSON.stringify(clientDir.state().table) === JSON.stringify(hostDir.state().table),
+          JSON.stringify({ snapshot, state: clientDir.state() }));
+        check(mode + ': the full older ledger survives without repeating scoring or mounting',
+          clientDir.state().clocks.HOST === 55 && clientDir.state().answered.includes('HOST') &&
+          clientDir.state().budget.HOST === hostDir.state().budget.HOST &&
+          view.reveals === 1 && view.roundMounts === 1 &&
+          events.filter((type) => type === 'room-snapshot').length === 1,
+          JSON.stringify({ state: clientDir.state(), reveals: view.reveals, mounts: view.roundMounts, events }));
+        if (mode === 'stale-terminal') {
+          check('stale-terminal: elimination/end authority survives the older active capture',
+            clientDir.state().over && clientDir.state().winnerUid === 'HOST' && view.ends === 1 &&
+            clientDir.state().phases[String(rival.myUid())] === 'spectator' &&
+            clientDir.state().phases[String(guest.myUid())] === 'spectator',
+            JSON.stringify(clientDir.state()));
+        }
+        guest.send({ t: 'metaReq', snapshot: true });
+        world.flush();
+        check(mode + ': duplicate snapshot and reveal copies cannot reopen or refold the round',
+          clientDir.state().closed && !clientDir.mayAnswer() && view.reveals === 1 &&
+          view.roundMounts === 1 && events.filter((type) => type === 'room-snapshot').length === 1 &&
+          JSON.stringify(clientDir.state().table) === JSON.stringify(hostDir.state().table));
+        continue;
+      }
+      check(mode + ': consumer receives the complete current snapshot exactly once',
+        !!snapshot && snapshot.phase === (mode === 'ended' ? 'ended' : 'active') &&
+        events.filter((type) => type === 'room-snapshot').length === 1 &&
+        view.prematureEnds === 0 &&
+        JSON.stringify(snapshot.match) === JSON.stringify(expected),
+        JSON.stringify({ snapshot, prematureEnds: view.prematureEnds, events }));
+      check(mode + ': visible standings and answer lock restore from the host ledger',
+        JSON.stringify(clientDir.rows().map(({ you, targetable, ...standing }) => standing)) ===
+          JSON.stringify(hostDir.rows().map(({ you, targetable, ...standing }) => standing)) &&
+        clientDir.state().depth === 3 &&
+        clientDir.state().closed === (mode !== 'active') &&
+        clientDir.state().over === (mode === 'ended') &&
+        clientDir.mayAnswer() === (mode === 'active'),
+        JSON.stringify(clientDir.state()));
+      guest.send({ t: 'metaReq', snapshot: true });
+      world.flush();
+      check(mode + ': repeated requests and duplicated transport copies do not remount',
+        events.filter((type) => type === 'room-snapshot').length === 1 && view.mounts === 1);
+      if (mode === 'ended') {
+        check('ended: late guest never enters the finished standings',
+          !clientDir.rows().some((row) => row.uid === guest.myUid()) &&
+          clientDir.state().winnerUid === 'HOST');
+      }
+    } finally {
+      stopWire();
+      setActiveSession(null);
+      session.leave();
+      rival.leave();
+      hostSession.leave();
+      world.flush();
+    }
+  }
+}
+
+async function captureResourcesScenario(): Promise<void> {
+  console.log('[capture-resources] real earned balance, fractional response clock and spent attack allowance');
+  for (const mode of ['same-depth-spent', 'advanced-depth-spent', 'terminal-spent',
+    'cold-funded', 'cold-unfunded', 'newer-depth-refill'] as const) {
+    const cold = mode.startsWith('cold-');
+    const world = new StubWorld(402);
+    const makeNet = () => createNet({
+      makePeer: async () => null,
+      busFactory: (code, uid) => new BusStub(world, code, uid),
+    });
+    const host = makeNet();
+    const guest = makeNet();
+    const rival = makeNet();
+    await host.host('RESOURCE', 'HOST');
+    const hostSession = new MpSession(host, 'host', {}, [{ id: 'HOST', name: 'HOST', isHost: true }]);
+    hostSession.setRoomName('Resource Room');
+    world.manual = true;
+    const joinGuest = guest.join('RESOURCE', 'GUEST');
+    world.flush();
+    const joined = await joinGuest;
+    const session = new MpSession(guest, 'client', {}, joined.players);
+    const joinRival = rival.join('RESOURCE', 'RIVAL');
+    world.flush();
+    await joinRival;
+    const guestUid = String(guest.myUid());
+    const rivalUid = String(rival.myUid());
+    let depth = 1;
+    let elapsed = 12.345;
+    const toasts: string[] = [];
+    const makeDir = (mp: MpSession, role: 'host' | 'client') => createDirector({
+      role, myUid: String(mp.myUid()),
+      wire: {
+        reveal: (n, a, scores, hp) => mp.reveal(n, a, scores, hp),
+        pushScores: (n, scores, hp, reason) => mp.pushScores(n, scores, hp, reason),
+        eliminate: (uids) => mp.eliminate(uids),
+        endMatch: (scores, reason, winner) => mp.endMatch(scores, reason, winner),
+        sendSr: (n, verdict) => mp.sendSr(n, verdict),
+        attack: (target, weapon, n) => mp.attack(target, weapon, n),
+        roster: () => mp.rosterNow(),
+      },
+      depth: () => depth, kind: () => 'puzzle', answerIdx: () => 2,
+      diffAt: () => 1, sanctuaryAt: () => false, scoreMul: () => 1,
+      clockSec: () => elapsed,
+      toast: (msg) => { if (role === 'client') toasts.push(msg); },
+      advance: () => undefined, finish: () => undefined, changed: () => undefined,
+    }, mp.rosterNow().map((p) => ({ uid: p.id, name: p.name })), 4321);
+    const hostDir = makeDir(hostSession, 'host');
+    const clientDir = makeDir(session, 'client');
+    const delivered: RoomSnapshot[] = [];
+    let attackFrames = 0;
+    host.on('attack', () => { attackFrames++; });
+    hostSession.subscribe((event) => hostDir.handle(event));
+    hostSession.setRoomSnapshotProvider((uid) => hostDir.snapshotForJoin(uid));
+    setActiveSession(session);
+    const stopWire = wireMain({
+      onRound: (event) => { if (!cold) clientDir.openDepth(event.n); },
+      onReveal: (event) => { if (!cold) clientDir.handle(event); },
+      onScores: (event) => { if (!cold) clientDir.handle(event); },
+      onElim: (event) => { if (!cold) clientDir.handle(event); },
+      onEnd: (event) => { if (!cold) clientDir.handle(event); },
+      onRoomSnapshot: (snapshot) => {
+        delivered.push(snapshot);
+        if (snapshot.phase !== 'lobby') clientDir.restoreSnapshot(snapshot.match);
+      },
+    });
+    const capture = () => {
+      guest.send({ t: 'metaReq', snapshot: true });
+      world.flush('metaReq');
+      world.flush('meta');
+      world.flush('lobby');
+    };
+    const open = (n: number) => {
+      depth = n;
+      hostDir.openDepth(n);
+      hostSession.round(n, 'pz:2', 900 + n, 60);
+      world.flush('round');
+    };
+    const guestAnswer = () => {
+      if (cold) guest.send({ t: 'sr', n: depth, sr: { correct: 1, points: 140, hpDelta: 0 } });
+      else clientDir.answer(true, 140, 0);
+      world.flush('sr');
+    };
+    const rivalAnswer = () => {
+      rival.send({ t: 'sr', n: depth, sr: { correct: 1, points: 140, hpDelta: 0 } });
+      world.flush('sr');
+      world.flush('reveal');
+    };
+    try {
+      hostSession.begin(60, true, 'Resource Room', 4321);
+      world.flush('begin');
+      // Two genuine puzzle rounds fund both the attacker and the victim.
+      // A cold consumer deliberately has not installed any per-depth budget.
+      for (const n of [1, 2]) {
+        open(n);
+        hostDir.answer(true, 140, 0);
+        if (mode !== 'cold-unfunded') guestAnswer();
+        if (n === 2 && mode === 'advanced-depth-spent') capture();
+        rivalAnswer();
+        if (mode === 'cold-unfunded') {
+          hostDir.timeout();
+          world.flush('reveal');
+        }
+      }
+      open(3);
+      hostDir.answer(true, 140, 0);
+      check(mode + ': real host response clock records exact fractional seconds',
+        hostDir.state().clocks.HOST === 12.345, JSON.stringify(hostDir.state().clocks));
+      if (mode !== 'advanced-depth-spent' && mode !== 'newer-depth-refill') capture();
+      if (!cold) {
+        check(mode + ': live current-depth throw is funded before the first snapshot',
+          delivered.length === 0 && clientDir.budget() === 1 &&
+          clientDir.attackMenu().some((entry) => entry.spec.id === 'rotten' && entry.affordable) &&
+          clientDir.rows().some((row) => row.uid === 'HOST' && row.targetable));
+        clientDir.throwAt('HOST', 'rotten');
+        world.flush('attack');
+        world.flush('scores');
+        check(mode + ': first real throw spends host and client allowance exactly once',
+          clientDir.budget() === 0 && hostDir.state().budget[guestUid] === 0 &&
+          attackFrames === 1 && toasts.filter((msg) => msg === 'ROTTEN THROWN').length === 1,
+          JSON.stringify({ client: clientDir.state(), host: hostDir.state(), attackFrames, toasts }));
+      } else {
+        check(mode + ': cold default budget is absent, not known spent authority',
+          clientDir.state().depth === 0 && clientDir.budget() === 0 &&
+          !(guestUid in clientDir.state().budget));
+      }
+      if (mode === 'terminal-spent') {
+        hostDir.applyRoundHpDeltas(3, 'terminal-after-spend', [
+          { uid: guestUid, hpDelta: -100 }, { uid: rivalUid, hpDelta: -100 },
+        ]);
+        hostDir.timeout();
+        world.flush('scores');
+        world.flush('reveal');
+        world.flush('elim');
+        world.flush('end');
+      }
+      if (mode === 'newer-depth-refill') {
+        guestAnswer();
+        rivalAnswer();
+        depth = 4;
+        hostDir.openDepth(4);
+        hostSession.round(4, 'pz:2', 904, 60);
+        hostDir.answer(true, 140, 0);
+        // The newer capture arrives while the local depth-3 allowance is spent.
+        capture();
+        world.flush('room-snapshot');
+      } else {
+        world.flush('room-snapshot');
+      }
+      const snapshot = delivered[0];
+      if (mode === 'advanced-depth-spent') {
+        // A real newer round clears the old depth's clocks. Live scores do
+        // not carry response clocks, so never invent one from the old capture.
+        check(mode + ': a newer round clears captured prior-depth response clocks',
+          delivered.length === 1 && snapshot?.phase === 'active' &&
+          snapshot.match.depth === 3 && clientDir.rows().find((row) => row.uid === 'HOST')?.clock === null);
+      } else {
+        check(mode + ': bootstrap retains the exact host response clock in sidebar rows',
+          delivered.length === 1 && snapshot?.phase !== 'lobby' &&
+          clientDir.state().clocks.HOST === 12.345 &&
+          clientDir.rows().find((row) => row.uid === 'HOST')?.clock === 12.345,
+          JSON.stringify({ snapshot, state: clientDir.state() }));
+      }
+      check(mode + ': bootstrap keeps the full authoritative table and HP ledger',
+        JSON.stringify(clientDir.state().table) === JSON.stringify(hostDir.state().table) &&
+        JSON.stringify(clientDir.state().hp) === JSON.stringify(hostDir.state().hp),
+        JSON.stringify({ client: clientDir.state(), host: hostDir.state() }));
+      if (cold || mode === 'newer-depth-refill') {
+        check(mode + ': a legitimate initial or newer-depth allowance is not suppressed',
+          clientDir.budget() === 1 && hostDir.state().budget[guestUid] === 1 &&
+          clientDir.rows().some((row) => row.uid === 'HOST' && row.targetable) &&
+          (mode === 'cold-unfunded' ||
+            clientDir.attackMenu().some((entry) => entry.spec.id === 'rotten' && entry.affordable)),
+          JSON.stringify(clientDir.state()));
+      } else {
+        const table = JSON.stringify(hostDir.state().table);
+        const thrown = toasts.filter((msg) => msg === 'ROTTEN THROWN').length;
+        const frames = attackFrames;
+        check(mode + ': bootstrap cannot resurrect the spent current-depth allowance or target UI',
+          clientDir.budget() === 0 && hostDir.state().budget[guestUid] === 0 &&
+          !clientDir.rows().some((row) => row.targetable),
+          JSON.stringify({ snapshot, state: clientDir.state() }));
+        clientDir.throwAt('HOST', 'rotten');
+        world.flush('attack');
+        world.flush('scores');
+        check(mode + ': no second throw frame or THROWN UI acknowledgement after bootstrap',
+          attackFrames === frames && toasts.filter((msg) => msg === 'ROTTEN THROWN').length === thrown &&
+          JSON.stringify(hostDir.state().table) === table,
+          JSON.stringify({ attackFrames, toasts, state: clientDir.state() }));
+        if (mode === 'terminal-spent') {
+          check('terminal-spent: terminal state still forbids answering and attacking',
+            snapshot?.phase === 'ended' && clientDir.state().over &&
+            !clientDir.mayAnswer() && !clientDir.mayAttack());
+        } else {
+          guestAnswer();
+          rivalAnswer();
+          open(4);
+          check(mode + ': the next real depth refills the spent allowance normally',
+            clientDir.budget() === 1 && hostDir.state().budget[guestUid] === 1 &&
+            clientDir.rows().some((row) => row.uid === 'HOST' && row.targetable));
+        }
+      }
+    } finally {
+      stopWire();
+      setActiveSession(null);
+      session.leave();
+      rival.leave();
+      hostSession.leave();
+      world.flush();
+    }
+  }
+}
+
+async function survivingBusPresenceScenario(): Promise<void> {
+  console.log('[presence] a closed RTC leg cannot retire a live bus seat');
+  const world = new StubWorld(301);
+  const ctor = makePeerCtor(world);
+  let clock = 1000;
+  const options = {
+    makePeer: async () => ctor,
+    busFactory: (code: string, uid: string) => new BusStub(world, code, uid),
+    now: () => clock, presenceIntervalMs: 5, presenceLeaseMs: 40,
+  };
+  const host = createNet(options);
+  const client = createNet(options);
+  await host.host('SURVIVE', 'HOST');
+  world.manual = true;
+  let leaves = 0;
+  let ends = 0;
+  let rosterSize = 0;
+  host.on('peer-leave', () => { leaves++; });
+  host.on('lobby', (frame) => {
+    rosterSize = Array.isArray(frame.players) ? frame.players.length : 0;
+  });
+  const joining = client.join('SURVIVE', 'GUEST');
+  await waitFor('both RTC endpoints are open before bus handshake drains', () => {
+    const pair = world.connectionPairs[0];
+    return !!pair && pair.client.open && pair.host.open;
+  });
+  world.flush();
+  await joining;
+  client.on('end', () => { ends++; });
+  const pair = world.connectionPairs[0];
+  try {
+    pair.client.close();
+    pair.host.close();
+    for (let tick = 0; tick < 8; tick++) {
+      clock += 10;
+      await new Promise<void>((resolve) => setTimeout(resolve, 6));
+      world.flush();
+    }
+    host.refreshLobby();
+    world.flush();
+    check('live bus heartbeats preserve both roles beyond the RTC-loss lease',
+      leaves === 0 && ends === 0 && rosterSize === 2,
+      JSON.stringify({ leaves, ends, rosterSize }));
+    client.leave();
+    world.flush();
+    check('explicit departure retires a bus seat once despite duplicate deliveries',
+      leaves === 1 && rosterSize === 1 && ends === 0,
+      JSON.stringify({ leaves, ends, rosterSize }));
+  } finally {
+    client.leave();
+    host.leave();
+    world.flush();
+  }
+  clock += 100;
+  await new Promise<void>((resolve) => setTimeout(resolve, 15));
+  check('leave closes the bus and stops presence deliveries',
+    world.busHub('SURVIVE').size === 0 && world.pending.length === 0);
+}
+
+async function presenceFailureScenario(): Promise<void> {
+  console.log('[presence] silent RTC failure with open DataChannels expires both seats');
+  const world = new StubWorld(73);
+  const ctor = makePeerCtor(world);
+  let clock = 1000;
+  const opts = {
+    makePeer: async (): Promise<PeerCtor> => ctor,
+    busFactory: (code: string, uid: string) => new BusStub(world, code + '-' + uid, uid),
+    now: () => clock,
+    presenceIntervalMs: 5,
+    presenceLeaseMs: 40,
+  };
+  const host = createNet(opts);
+  const client = createNet(opts);
+  await host.host('FADE', 'HOST');
+  let leaves = 0;
+  host.on('peer-leave', (f) => {
+    if (f.id === client.myUid()) leaves++;
+  });
+  await client.join('FADE', 'GUEST');
+  const ended = { reason: null as string | null };
+  client.on('end', (f) => {
+    if (typeof f.reason === 'string') ended.reason = f.reason;
+  });
+  const pair = world.connectionPairs[0];
+  check('realistic peer path is open before silent failure', !!pair && pair.client.open && pair.host.open);
+  if (!pair) {
+    host.leave();
+    client.leave();
+    return;
+  }
+
+  const clockTimer = setInterval(() => { clock += 5; }, 5);
+  await new Promise<void>((resolve) => setTimeout(resolve, 60));
+  check('active direct heartbeats do not retire an idle seat', leaves === 0 && pair.client.open && pair.host.open);
+
+  pair.client.dropData = true;
+  pair.host.dropData = true;
+  const channelsStayedOpen = pair.client.open && pair.host.open;
+  await waitFor('open but silent peer expires by heartbeat lease', () => leaves === 1 && ended.reason === 'host-left', 1000);
+  clearInterval(clockTimer);
+  check('silent RTC failure is bounded despite open DataChannels', channelsStayedOpen && leaves === 1 && ended.reason === 'host-left',
+    'channelsOpen=' + channelsStayedOpen + ' leaves=' + leaves + ' end=' + ended.reason);
+  host.leave();
+  client.leave();
+}
+
+async function busLeaseScenario(): Promise<void> {
+  console.log('[presence] bus-only seats expire when client heartbeat stops');
+  const world = new StubWorld(91);
+  let clock = 2000;
+  const opts = {
+    makePeer: async (): Promise<PeerCtor | null> => null,
+    busFactory: (_code: string, uid: string) => new BusStub(world, _code, uid),
+    now: () => clock,
+    presenceIntervalMs: 5,
+    presenceLeaseMs: 25,
+  };
+  const host = createNet(opts);
+  const client = createNet({ ...opts, presenceIntervalMs: 100000 });
+  await host.host('BUSLEASE', 'HOST');
+  let leaves = 0;
+  host.on('peer-leave', () => leaves++);
+  await client.join('BUSLEASE', 'GUEST');
+  // Keep time moving while already-scheduled deliveries drain.
+  const clockTimer = setInterval(() => { clock += 5; }, 5);
+  await waitFor('bus-only guest expires after missed heartbeat lease', () => leaves === 1, 1000);
+  clearInterval(clockTimer);
+  check('bus-only heartbeat lease retires exactly one stale seat', leaves === 1);
+  host.leave();
+  client.leave();
+}
+
 
 function bumpRound(m: Map<number, number>, n: unknown): void {
   if (typeof n !== 'number') return;
@@ -731,6 +1471,11 @@ function bumpRound(m: Map<number, number>, n: unknown): void {
   console.log('== iqbattle v2 · net2/mp self-test ==');
   pureChecks();
   await transportScenario();
+  await deterministicCatchupScenario();
+  await captureResourcesScenario();
+  await survivingBusPresenceScenario();
+  await presenceFailureScenario();
+  await busLeaseScenario();
   if (failures > 0) {
     console.error('\nSELFTEST FAILED — ' + failures + ' failing check(s)');
     process.exit(1);

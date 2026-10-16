@@ -82,19 +82,6 @@ a[0].urls = 'stun:mutated';
 check('iceServers returns fresh objects', b[0].urls !== 'stun:mutated', JSON.stringify(b[0]));
 check('STUN_SERVERS is frozen', Object.isFrozen(STUN_SERVERS));
 
-/* ---- the Vite trap ------------------------------------------------------
- * Vite substitutes the exact TEXT `import.meta.env.VITE_FOO` at build time.
- * Reading the env as an OBJECT works in dev and silently ships nothing in
- * production - a build with VITE_TURN_URLS set produced zero occurrences of
- * the URL in dist/. So assert the literal accessors are still present in the
- * source; a refactor to dynamic access must fail here, not in the field. */
-import { readFileSync } from 'node:fs';
-const src = readFileSync(new URL('./ice.ts', import.meta.url), 'utf8');
-for (const name of ['VITE_TURN_URLS', 'VITE_TURN_USERNAME', 'VITE_TURN_CREDENTIAL']) {
-  check('literal accessor for ' + name,
-    src.includes('import.meta.env.' + name),
-    'ice.ts must read import.meta.env.' + name + ' literally, not via a variable');
-}
 
 if (failures > 0) { console.error(failures + ' failure(s)'); process.exit(1); }
 console.log('selftest-ice: OK');

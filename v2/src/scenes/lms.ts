@@ -163,6 +163,10 @@ export interface LmsState {
   depth: number;
   /** uid -> response clock in seconds for the CURRENT depth. */
   clocks: Record<string, number>;
+  /** Whether the current depth has already reached its reveal/close point. */
+  closed: boolean;
+  /** Host-measured elapsed clock for the current depth, bounded in ms. */
+  roundElapsedMs: number;
   /** uids that have submitted a verdict for the current depth. */
   answered: string[];
   /** uid -> attacks left this depth. */
@@ -198,6 +202,8 @@ export function createLms(
     prevRanks: {},
     streaks,
     depth: 0,
+    closed: false,
+    roundElapsedMs: 0,
     clocks: {},
     answered: [],
     budget: {},
@@ -243,17 +249,17 @@ export function aliveUids(st: LmsState): string[] {
 
 /** Can this screen's player answer / attack right now? */
 export function iMayAnswer(st: LmsState): boolean {
-  return !st.over && mayAnswer(st.phases[st.myUid] ?? 'alive');
+  return !st.over && !st.closed && mayAnswer(st.phases[st.myUid] ?? 'alive');
 }
 export function iMayAttack(st: LmsState): boolean {
-  return !st.over && mayAttack(st.phases[st.myUid] ?? 'alive');
+  return !st.over && !st.closed && mayAttack(st.phases[st.myUid] ?? 'alive');
 }
 
 /** Start depth n: clear the per-depth ledgers and refill attack budgets. */
 export function beginDepth(st: LmsState, depth: number): LmsState {
   const budget: Record<string, number> = {};
   for (const uid of aliveUids(st)) budget[uid] = ATTACKS_PER_ROUND;
-  return { ...st, depth, clocks: {}, answered: [], budget };
+  return { ...st, depth, clocks: {}, answered: [], budget, closed: false, roundElapsedMs: 0 };
 }
 
 /* ------------------------------------------------------------------ */
@@ -294,7 +300,7 @@ export interface SubmitResult {
  */
 export function submitVerdict(st: LmsState, inp: SubmitInput): SubmitResult {
   const drop = { state: st, pointsApplied: 0, hpApplied: 0, accepted: false };
-  if (st.over) return drop;
+  if (st.over || st.closed) return drop;
   if (inp.n !== st.depth) return drop;
   if (!mayAnswer(st.phases[inp.uid] ?? 'alive')) return drop;
   if (st.answered.includes(inp.uid)) return drop;
@@ -353,6 +359,7 @@ export function everyoneAnswered(st: LmsState): boolean {
  * were punished so the host can name them in the reveal toast.
  */
 export function timeoutMissing(st: LmsState): { state: LmsState; drowned: string[] } {
+  if (st.closed) return { state: st, drowned: [] };
   let out = st;
   const drowned: string[] = [];
   for (const uid of aliveUids(st)) {
@@ -395,21 +402,40 @@ export interface CloseResult {
  * the reveal frame.
  */
 export function closeDepth(st: LmsState, cfg?: { mode?: 'and' | 'or'; floor?: number }): CloseResult {
+  if (st.closed) {
+    return {
+      state: st,
+      scores: st.table.map((r) => ({ ...r })),
+      eliminated: [],
+      matchOver: st.over,
+      winnerUid: st.winnerUid,
+    };
+  }
   const rows = liveStandings(st.table, st.prevRanks, st.phases);
   const ranked = snapshotRanks(rows);
+  const alive = aliveUids(st);
+  const contest = st.table.length >= 2;
 
-  /* Elimination is an LMS rule end to end. A one-seat room is a solo descent:
-   * running the sweep there would promote the lone player to 'spectator' the
-   * moment their score and hp both hit zero — locking them out of their own
-   * run — and "end-when-one" would crown them at depth 1. Neither belongs
-   * outside a contest; solo death is the caller's HP rule. */
-  if (aliveUids(st).length < 2) {
+  /* A one-seat room remains the solo descent. A real contest, however,
+   * closes as soon as departures leave at most one living seat. */
+  if (!contest) {
     return {
-      state: { ...st, prevRanks: ranked },
+      state: { ...st, prevRanks: ranked, closed: true },
       scores: st.table.map((r) => ({ ...r })),
       eliminated: [],
       matchOver: false,
       winnerUid: null,
+    };
+  }
+  if (alive.length <= 1) {
+    const winnerUid = alive[0] ?? null;
+    const state: LmsState = { ...st, prevRanks: ranked, closed: true, over: true, winnerUid };
+    return {
+      state,
+      scores: state.table.map((r) => ({ ...r })),
+      eliminated: [],
+      matchOver: true,
+      winnerUid,
     };
   }
 
@@ -420,6 +446,7 @@ export function closeDepth(st: LmsState, cfg?: { mode?: 'and' | 'or'; floor?: nu
   const state: LmsState = {
     ...st,
     phases: sweep.phases,
+    closed: true,
     prevRanks: ranked,
     over: sweep.matchOver,
     winnerUid: sweep.winnerUid,
@@ -460,6 +487,7 @@ export function applyElim(st: LmsState, uids: string[]): LmsState {
   return {
     ...st,
     phases,
+    closed: st.closed || (contest && alive.length <= 1),
     over: st.over || (contest && alive.length <= 1),
     winnerUid: contest && alive.length === 1 ? alive[0] : st.winnerUid,
   };
@@ -503,7 +531,7 @@ export function resolveAttack(
   weapon: WeaponId,
   depth: number,
 ): AttackOutcome {
-  if (st.over) return { ok: false, reason: 'match-over' };
+  if (st.over || st.closed) return { ok: false, reason: 'match-over' };
   if ((st.budget[attackerUid] ?? 0) <= 0) return { ok: false, reason: 'no-budget' };
   const req = {
     attackerUid,
@@ -802,7 +830,8 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     assert(close.eliminated.length === 1 && close.eliminated[0] === 'c1', 'only the drained die');
     assert(!close.matchOver, '2 seats remain');
     assert(close.state.phases.c1 === 'spectator', 'promoted to spectator');
-    const finish = closeDepth({ ...close.state, hp: { ...close.state.hp, c2: 0 } });
+    const nextDepth = beginDepth(close.state, 2);
+    const finish = closeDepth({ ...nextDepth, hp: { ...nextDepth.hp, c2: 0 } });
     assert(finish.matchOver && finish.winnerUid === 'HOST', 'end-when-one crowns the survivor');
   });
 

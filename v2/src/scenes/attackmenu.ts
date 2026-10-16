@@ -82,10 +82,10 @@ export function buildAttackMenu(opts: AttackMenuOpts): Container {
       row.cursor = 'pointer';
       row.on('pointerdown', (e) => { e.stopPropagation(); opts.onPick(entry.spec.id); });
     }
-    text(card, entry.spec.label, 48, y + 14, 17, usable ? T.ink : T.muted, true);
-    text(card, '−' + entry.spec.dmg + ' PTS' + (entry.spec.hpDelta ? '  ·  ' + entry.spec.hpDelta + ' HP' : ''),
+    text(row, entry.spec.label, 48, y + 14, 17, usable ? T.ink : T.muted, true);
+    text(row, '−' + entry.spec.dmg + ' PTS' + (entry.spec.hpDelta ? '  ·  ' + entry.spec.hpDelta + ' HP' : ''),
       48, y + 40, 12, usable ? T.bad : T.muted, true);
-    const cost = text(card, entry.affordable ? 'COSTS ' + entry.spec.cost : entry.reason,
+    const cost = text(row, entry.affordable ? 'COSTS ' + entry.spec.cost : entry.reason,
       0, y + 40, 11, entry.affordable ? T.gold : T.muted, true);
     cost.x = PANEL_W - 48 - cost.width;
   });

@@ -142,19 +142,18 @@ function hpFloorFor(layer: number): number {
 /**
  * Pure deterministic hell traversal.
  *
- * Walk beats 0..depth (clamped into plan). Hostile beats (bad/chaotic)
- * descend exactly one layer per depth (1 -> 2 -> ... -> 7, capped at 7).
- * Neutral holds the current layer. Good lifts out to layer 0. Layer never
- * increases by more than 1 per depth and never skips downward; only a good
- * beat can decrease it.
+ * `depth` is the 1-based current round. Walk plan beats 0..depth-1 (clamped
+ * into the plan). Hostile beats (bad/chaotic) descend exactly one layer per
+ * round (1 -> 2 -> ... -> 7, capped at 7). Neutral holds the current layer.
+ * Good lifts out to layer 0. Only a good beat can decrease the layer.
  */
 export function hellState(seed: number, depth: number, plan: readonly ArcBeat[]): HellState {
   const seedU32 = Number.isFinite(seed) ? (Math.floor(seed) >>> 0) : 0;
   if (!Number.isFinite(depth)) return notInHell();
   if (!Array.isArray(plan) || plan.length === 0) return notInHell();
   const depthInt = Math.floor(depth);
-  if (depthInt < 0) return notInHell();
-  const eff = depthInt >= plan.length ? plan.length - 1 : depthInt;
+  if (depthInt < 1) return notInHell();
+  const eff = Math.min(depthInt, plan.length) - 1;
 
   let layer = 0;
   let depthsInLayer = 0;
@@ -282,11 +281,11 @@ export function selfTest(): string {
   ];
   for (const seed of [0, 1, 7, 42, 12345, 4294967295]) {
     for (let d = 0; d < mixedPlan.length; d++) {
-      const a = hellState(seed, d, mixedPlan);
-      const b = hellState(seed, d, mixedPlan);
+      const a = hellState(seed, d + 1, mixedPlan);
+      const b = hellState(seed, d + 1, mixedPlan);
       ok(sameState(a, b), `determinism failed seed=${seed} d=${d}`);
       if (a.crossingLine !== null) {
-        const c = hellState(seed, d, mixedPlan);
+        const c = hellState(seed, d + 1, mixedPlan);
         ok(c.crossingLine === a.crossingLine, `line determinism failed seed=${seed} d=${d}`);
       }
     }
@@ -295,7 +294,7 @@ export function selfTest(): string {
   {
     const seen = new Set<string>();
     for (let s = 0; s < 30; s++) {
-      const st = hellState(s, 2, [mkBeat('bad'), mkBeat('bad'), mkBeat('bad')]);
+      const st = hellState(s, 3, [mkBeat('bad'), mkBeat('bad'), mkBeat('bad')]);
       if (st.crossingLine !== null) seen.add(st.crossingLine);
     }
     ok(seen.size >= 1, 'expected at least one crossing line variant');
@@ -306,7 +305,7 @@ export function selfTest(): string {
     const plan: ArcBeat[] = [];
     for (let i = 0; i < 10; i++) plan.push(mkBeat('bad'));
     const seq: number[] = [];
-    for (let d = 0; d < plan.length; d++) seq.push(hellState(99, d, plan).layer);
+    for (let d = 0; d < plan.length; d++) seq.push(hellState(99, d + 1, plan).layer);
     const expected = [1, 2, 3, 4, 5, 6, 7, 7, 7, 7];
     ok(JSON.stringify(seq) === JSON.stringify(expected), `all-bad run expected ${expected}, got ${seq}`);
   }
@@ -316,7 +315,7 @@ export function selfTest(): string {
     const plan: ArcBeat[] = [];
     for (let i = 0; i < 6; i++) plan.push(mkBeat('good'));
     for (let d = 0; d < plan.length; d++) {
-      const st = hellState(5, d, plan);
+      const st = hellState(5, d + 1, plan);
       ok(st.layer === 0, `all-good d=${d} layer must be 0`);
       ok(st.depthsInLayer === 0, `all-good d=${d} depthsInLayer must be 0`);
       ok(st.allowsNegativeHp === false && st.hpFloor === 0, `all-good d=${d} hp must be 0/false`);
@@ -333,13 +332,13 @@ export function selfTest(): string {
       mkBeat('good'),
       mkBeat('bad'),
     ];
-    const deep = hellState(3, 3, plan);
+    const deep = hellState(3, 4, plan);
     ok(deep.layer === 4, `pre-good layer expected 4, got ${deep.layer}`);
-    const out = hellState(3, 4, plan);
+    const out = hellState(3, 5, plan);
     ok(out.layer === 0, 'good must lift to layer 0');
     ok(out.crossed === true, 'exit to heaven must mark crossed (change)');
     ok(out.crossingLine === null, 'exit to heaven carries no hell crossing line');
-    const re = hellState(3, 5, plan);
+    const re = hellState(3, 6, plan);
     ok(re.layer === 1, `re-entry after good must restart at 1, got ${re.layer}`);
     ok(re.crossed === true && re.crossingLine !== null, 're-entry must cross with a line');
   }
@@ -382,7 +381,7 @@ export function selfTest(): string {
     for (const seed of [1, 2, 3]) {
       let prev: HellState | null = null;
       for (let d = 0; d < shape.plan.length; d++) {
-        const cur = hellState(seed, d, shape.plan);
+        const cur = hellState(seed, d + 1, shape.plan);
         ok(Number.isInteger(cur.layer) && cur.layer >= 0 && cur.layer <= 7, `${shape.name} s=${seed} d=${d} layer range`);
         ok(Number.isInteger(cur.depthsInLayer) && cur.depthsInLayer >= 0, `${shape.name} s=${seed} d=${d} depths range`);
         ok(cur.hpFloor === hpFloorFor(cur.layer), `${shape.name} s=${seed} d=${d} floor curve`);
@@ -436,7 +435,7 @@ export function selfTest(): string {
       else long.push(mkBeat(m === 3 ? 'chaotic' : 'bad'));
     }
     for (let d = 0; d < 200; d++) {
-      const st = hellState(20260704, d, long);
+      const st = hellState(20260704, d + 1, long);
       ok(st.layer >= 0 && st.layer <= 7, `long walk d=${d} range`);
       if (st.crossingLine !== null) {
         ok(st.crossingLine.length <= 90, `long walk d=${d} line > 90`);
@@ -444,7 +443,7 @@ export function selfTest(): string {
       }
     }
     // Out-of-range / empty inputs never throw.
-    hellState(1, -1, long);
+    hellState(1, 0, long);
     hellState(1, 9999, long);
     hellState(1, 0, []);
     hellState(Number.NaN, 0, long);

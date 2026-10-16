@@ -4,35 +4,24 @@ Vite + TypeScript + PixiJS v8 rebuild of the original site with the corruption a
 Fixed 1600×900 logical stage, letterboxed to any viewport. Ground truth for the puzzle engine:
 `v2/DNA.md`. The old v1 build stays frozen at repo root (`modes/*.js` — read-only reference).
 
+The public root is a version picker: **Current** retains the 4 September release;
+**New / experimental** uses this October candidate. See [release instructions](../README.md#deploy-to-github-pages).
+Publishing the candidate does not establish whole-game or cross-network acceptance.
+
 ---
 
 ## Run it
 
-**Dev (hot reload)**
+Use platform-native dependencies in an owned checkout; never reuse another OS's
+`node_modules`, and never rebuild a protected historical `v2/dist`.
 
-```sh
-cd v2
-npm i          # once
-npm run dev    # vite --port 8792 --strictPort → http://localhost:8792
-```
-
-**Built (root server :8791)**
-
-```sh
-cd v2 && npm run build     # tsc + vite build → v2/dist
-cd .. && bun dev-server.js # http://localhost:8791
-```
-
-The root Bun server serves `v2/dist` at `/` (SPA fallback included), the legacy v1 build under
-`/v1/`, and sends `no-store` everywhere so browser cache never shadows an iteration.
-
-**Checks**
-
-```sh
-npx tsc                          # strict typecheck (clean project-wide)
-node src/puzzles/audit2.ts       # family solver gauntlet (see Gauntlet below)
-node --experimental-strip-types src/scenes/takeovers/selftest.ts   # + other suites below
-```
+From `v2`, `npm ci && npm run dev` serves development at `http://127.0.0.1:8792/`.
+`npm run build` typechecks and builds the candidate for `/iqbattle-shadow-edition/new/`,
+then runs release guard regressions and assembles the two-version site under
+`runtime/omarchy/build/site` at the repository root. Local assembly never writes `v2/dist`;
+that path is staged only in a fresh GitHub Actions checkout for the existing publisher.
+`npm run preview` previews only the newer build, at `/iqbattle-shadow-edition/new/`.
+The root Bun server is historical; it is not the dual-version site entry.
 
 ---
 
@@ -50,8 +39,8 @@ stage). Rules of the deal (`main.ts`):
   + 12 hp; timeout costs 12 hp. `mul` is 1 unless a fate roll says otherwise (midas 1.5×, a
   curse can halve it; clamped to 0.25–3). **Multipliers apply solo only** — `maybeCurse` rolls
   partly off your own hp, so a personal event must never move a shared ladder.
-- First sight of a puzzle family at depths 1–3 shows its legend line above the board
-  (`meta/onboard.ts`); the answer-reveal juice is `fx/reveal.ts`.
+- Depths 1–3 use curated, clean accretion/count/rotation puzzles. First encounters with supported
+  families show a legend before answering; the answer-reveal juice is `fx/reveal.ts`.
 - **Takeovers** fire only on hostile rounds, from depth 4, never closer than 3 depths apart,
   ~42 % of eligible depths. A goal card (title + controls) shows at stage entry; every takeover
   is escapable — **Esc bails with a neutral result**.
@@ -67,54 +56,30 @@ the rule sentence is revealed only after answering ("the board teaches the rule"
 
 ## Takeover stages
 
-Eleven stages are wired into the live rotation (`main.ts` `TAKEOVERS`, same order as
-`TAKEOVER_NAMES` and `meta/onboard.ts` `MOUNTED_STAGE_IDS`). Nine wave-1 ports plus two rhythm
-ports exist as scenes with goal cards and self-tests but are not yet in the rotation array.
+The live rotation contains 35 stage slots: the previous 32 plus TOKEN RUN, SIX STONES and
+GUNSHIP PASS. `main.ts` `TAKEOVERS` and `meta/onboard.ts` are the mounted roster and goal-card
+sources; the old “ported, awaiting rotation” distinction no longer applies.
 
-| # | Name | File | Goal | Controls |
-|---|------|------|------|----------|
-| 1 | RED LIGHT | `redlight.ts` | Solve on green, freeze dead-still on red | Click/tap or press 1–4 |
-| 2 | TIDE POOL | `tidepool.ts` | Answer only from a dry pool — the tide decides when | Click/tap a dry pool or press 1–8 |
-| 3 | SERPENT | `serpent.ts` | Eat, grow, don't bite yourself | Arrows / WASD / swipe |
-| 4 | FLOOR-FALL | `floorfall.ts` | Answer before the tile under you drops | Click/tap a standing tile or keys 1–8 |
-| 5 | HUNTER-DODGE | `hunterdodge.ts` | Stay out of the lock-on cone; break the lock with an answer | Move out of the beam · click/tap or keys 1–8 |
-| 6 | LASER-STORM | `laserstorm.ts` | Pick a lane the sky is not about to fry | Click/tap a cold lane · never a firing one · keys 1–8 |
-| 7 | DRONE SWARM | `dronedodge.ts` | Dodge the swarm, answer when the sky clears | Move to evade · click/tap or keys 1–8 |
-| 8 | SABER CLASH | `saberclash.ts` | Strike inside the sweet arc, three rings | Space / click/tap to strike |
-| 9 | ONE-ARMED GOD | `slots.ts` | Stop the reels; any payout beats the house | Space / click/tap to stop each reel |
-| 10 | SLIME GALLERY | `slimegallery.ts` | Pop slimes, never shoot the crown | Click/tap / keys 1–9 |
-| 11 | THE WELL | `well.ts` | Stack lines, clear, survive | ←→ move · ↑/X cw · Z ccw · ↓ soft · SPACE drop · P pause |
+| New stage | File | Goal | Controls |
+|-----------|------|------|----------|
+| TOKEN RUN | `collectibles.ts` | Follow the posted token order through three lanes; avoid gaps | Arrows / WASD / click lane / keys 1–3; Esc neutral |
+| SIX STONES | `stonetrial.ts` | Watch six primitive stones, then recall their order | Click stones / keys 1–6; Esc neutral |
+| GUNSHIP PASS | `gunshipevasion.ts` | Read each telegraphed searchlight lane and move to shelter | Left/right / A/D / click shelter / keys 1–3; Esc neutral |
 
-Ported, awaiting rotation (goal cards live in `meta/onboard.ts`):
-
-| Stage | File | Goal | Controls |
-|-------|------|------|----------|
-| GLUTTON | `pacman2.ts` | Eat every pellet; big dots turn the tables | Arrows / WASD / swipe |
-| THE WELL II | `tetris2.ts` | Same well, deeper water | Same as THE WELL |
-| SALVOS | `battleship2.ts` | Sink the fleet; every salvo calls its shot | Click/tap a grid cell |
-| THE CORRIDOR | `doom2.ts` | Walk the corridor; answer before it answers you | WASD move · click/tap or keys 1–8 |
-| PHOENIX RITUAL | `phoenix2.ts` | Keep the flame alive through every ritual step | Click/tap the ritual steps |
-| HORSEMEN GAUNTLET | `gauntlet2.ts` | Outrun the four horsemen; solving gains ground | Arrows / WASD · click/tap or keys 1–8 |
-| FRACTAL SOLVE | `fractal2.ts` | Find the missing branch hidden inside the pattern | Click/tap or keys 1–8 |
-| HYPERCUBE 606D | `hypercube2.ts` | Read the spinning cube; pick the next face | Click/tap or keys 1–8 |
-| LONG QUIET | `sniper2.ts` | One breath, one shot into the crosshair | Aim with mouse · click/tap or keys 1–8 |
-| CHART TOPPER | `popglitter2.ts` | 4-lane pop rhythm set; combos pay directly | D F J K / 1–4 / tap pads |
-| FORGE SET | `metal2.ts` | Heavier twin of CHART TOPPER; ×2 downbeat accents | D F J K / 1–4 / tap pads |
-
-Every takeover: own `mulberry32` seeded from `ctx.seed` (+ fixed salt), self-resolves inside
-`ctx.timerLen`, settles its `StageResult` exactly once (`onceResolve`), empties `ctx.container`
-on done.
+These use the existing `TakeoverCtx`/`StageResult` contract, seeded state, ticker deadlines and
+one settlement. Browser smoke exercised token success/failure, stone success, neutral exits,
+and gunship loss; full mounted-game balance and gunship success remain acceptance work.
 
 ---
 
-## Puzzle families (9, all DNA-real)
+## Puzzle families (14, all DNA-real)
 
 One hue per board from the `T.boardHues` wheel (gold, orange, crimson, sky, violet, mint) — color
 never varies within a board; glyphs are primitive marks only (triangles, dots, diamonds, lines,
 via `glyphs.ts`). Hole is always bottom-right; 8 pairwise-distinct options; every family ships an
 independent solver that re-derives the answer from visible data.
 
-| Family | Rule (from the legends shown at depths 1–3, once per family per run) |
+| Core family | Legend |
 |--------|----------------------------------------------------------------------|
 | count-grid | Columns double the count; each row starts a step higher |
 | accretion | Each step adds one structure: diagonal, then corners, then edge dots |
@@ -126,7 +91,10 @@ independent solver that re-derives the answer from visible data.
 | count-positions | The mark count never changes; occupied spots advance one step per column |
 | size-ladder | The triangle climbs one size rung per column and turns 90° per row |
 
-Sources: `puzzles/families.ts`, `families2.ts`, `families3.ts`; shapes in `puzzles/types.ts`.
+Additional mounted families: `arrow-chain`, `dot-balance`, `ring-nest`, `dual-axis`, `mirror-mend`.
+Sources: `puzzles/families.ts` through `families5.ts`; shapes in `puzzles/types.ts`.
+The repaired ring-nest generator was checked through difficulty 12 against solver, bounds
+and the DNA maximum of 24 marks; see the current handoff for exact evidence.
 
 ---
 
@@ -189,8 +157,8 @@ frame; ambience only — never touches glyphs or scoring.
    round timer (1–120 s), press START.
 2. Joiner: enter name + code on the landing JOIN path.
 3. Transport (`net/net2.ts`): PeerJS (script-loaded from unpkg when online) with a
-   BroadcastChannel + localStorage-ring fallback for same-machine/offline play; contiguous
-   watermark + replay valve means frames arrive exactly-once in order.
+   BroadcastChannel + localStorage-ring fallback for same-machine/offline play; sequence
+   watermarks collapse cross-transport copies exactly once (they do not reorder delivery).
 4. Protocol (`scenes/mp.ts`): host ships `begin{timer,lms,rn,sd}` — clients regenerate the
    IDENTICAL arc locally from the run seed. Each depth, `roundPlan()` mirrors the local pick
    formulas exactly, so clients mount the same family/stage at the same seed; puzzle payloads
@@ -199,6 +167,49 @@ frame; ambience only — never touches glyphs or scoring.
    anti-spoof ceiling `100·diff+40`) before folding into the authoritative reveal.
 5. LMS + attacks — **live and wired** (`scenes/mpfeat.ts` rules → `scenes/lms.ts` reducer →
    `scenes/lmsdirector.ts` sequencing → `main.ts` effects). See the section below.
+
+### Catch-up and connection-loss contract
+
+- A PeerJS connection closing or failing is loss of **one pipe**, not evidence that the host
+  or guest left. Explicit goodbye frames retire seats immediately; otherwise the shared
+  presence lease decides whether both paths have gone silent.
+- Room-name requests fetch metadata only. `wireMain()` requests the atomic match snapshot
+  **after** attaching the gameplay consumer, including when `MPJoin.start()` awaited lazy UI
+  imports. An early live frame does not replace the full LMS ledger. Each targeted snapshot
+  carries `_captureSq`, the existing host **broadcast** epoch/sequence at capture (not the
+  recipient-specific unicast sequence, and not a wall-clock timestamp). The session brings
+  its ledger forward with newer received round/score/reveal/elimination/end/departure events
+  using the existing LMS reducers, without replaying their UI/scoring effects or `sr` claims.
+  Already-mounted rounds retain their clock and do not remount; duplicate bootstraps are ignored.
+  Frames at or before the installed capture are covered by its ledger and cannot roll it back.
+  The pre-bootstrap journal is capped at 512 events and released on installation/leave. If a
+  delayed capture predates discarded events, or a newer table lacks its round, the client asks
+  for a fresh complete capture instead of installing partial state.
+- Snapshot response clocks retain fractional seconds (for example `12.345`); they are not
+  integer-rounded. `lmsdirector.ts` takes the minimum of captured and explicitly known local
+  same-depth attack budgets, so a spent `0` cannot refill. An absent cold-consumer budget is
+  not known spent authority; cold and genuinely newer-depth captures restore a legitimate `1`.
+- Client reveal handling increments `run.depth` immediately, while the mounted board waits
+  for the actual host next-round frame. Browser QA must use the mounted `DEPTH` label and
+  real round-wire authority, not treat `__QA.state().depth` as the current board depth.
+- `src/net/selftest.ts` retains manual delivery-order regressions for active, closed and ended
+  joins, an OPEN snapshot delivered after a newer same-depth reveal, newer elimination/end
+  authority, a bounded-journal recapture, a failed RTC upgrade after a successful bus join,
+  duplicated snapshots, a surviving bus after RTC closure, and presence teardown. It uses real
+  `createNet`, `MpSession` and `createDirector` consumers. Run from `v2` with
+  `node --experimental-strip-types src/net/selftest.ts`.
+
+The earlier October Windows transport checks covered complete active/closed/ended
+catch-up, delayed snapshots, fractional clocks and spent attack budgets through actual
+Main consumers. Those bounded historical receipts are not whole-game or WAN proof.
+
+The dual-release Linux verification reran transport/session, ICE, LMS and lobby checks
+and the strict TypeScript/Vite production build (831 modules). Owned-browser smoke
+exercised both chooser links, both create-room/start paths, a correct candidate answer
+awarding 140 points, and returning to the chooser. Desktop and narrow chooser pixels
+were inspected. Retained release hashes and same-size corruption rejection were checked.
+No whole-game, WAN/TURN, long-soak, hardware-GPU or heard-audio acceptance is implied.
+
 
 ### Last Man Standing (the MP match layer)
 

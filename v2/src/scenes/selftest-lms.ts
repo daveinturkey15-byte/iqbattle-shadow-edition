@@ -134,9 +134,9 @@ function buildScreen(hub: Hub, uid: string, name: string, role: 'host' | 'client
       reveal: (n, a, scores, hp) => session.reveal(n, a, scores, hp),
       pushScores: (n, scores, hp, reason) => session.pushScores(n, scores, hp, reason),
       eliminate: (uids) => session.eliminate(uids),
-      endMatch: (scores, reason) => session.endMatch(scores, reason),
-      sendSr: (n, v) => session.sendSr(n, v),
-      attack: (t, w, n) => session.attack(t, w, n),
+      endMatch: (scores, reason, winnerUid) => session.endMatch(scores, reason, winnerUid),
+      sendSr: (n, verdict) => session.sendSr(n, verdict),
+      attack: (targetUid, weapon, n) => session.attack(targetUid, weapon, n),
       roster: () => hub.roster.map((p) => ({ id: p.id, name: p.name })),
     },
     depth: () => screen.depth,
@@ -274,6 +274,18 @@ function scenario(seed: number, quiet: boolean): { transcript: string; world: Wo
 
   /* --- depth 4: a real attack lands and propagates --------------------- */
   openDepth(w, 4, 'puzzle', 2);
+  const beforeStaleFrames = tableOf(w.host);
+  w.host.dir.handle({
+    t: 'sr',
+    uid: 'c1',
+    n: 3,
+    sr: { correct: true, points: 500, hpDelta: 60 },
+  });
+  w.host.dir.handle({ t: 'attack', uid: 'c1', targetUid: 'HOST', weapon: 'rotten', n: 3 });
+  say(
+    'stale verdict and attack from an older depth are ignored',
+    tableOf(w.host) === beforeStaleFrames && !w.host.dir.state().answered.includes('c1'),
+  );
   const spec = weaponFor('rotten', 4);
   const attackerBefore = ptsOf(w.host, 'c1');
   const victimBefore = ptsOf(w.host, 'HOST');
@@ -386,6 +398,191 @@ function rageQuitScenario(): void {
   check('the leaver is never crowned', w.host.dir.state().winnerUid !== 'c2');
 }
 
+function snapshotJoinScenario(): void {
+  const w = newWorld(711);
+  openDepth(w, 4, 'puzzle', 2);
+  w.host.clock = 4;
+  w.host.dir.answer(true, 0, 0);
+  w.c1.clock = 5;
+  w.c1.dir.answer(true, 0, 0);
+
+  w.hub.add('late', 'LATE', false);
+  const snapshot = w.host.dir.snapshotForJoin('late');
+  const fresh = snapshot.scores.find((row) => row.uid === 'late');
+  check(
+    'active snapshot seats a new UID and carries its elapsed clock',
+    fresh?.pts === 0 && snapshot.hp.late === 100 && snapshot.phases.late === 'alive' &&
+      !snapshot.closed && snapshot.roundElapsedMs === 4000,
+    JSON.stringify({ fresh, hp: snapshot.hp.late, phase: snapshot.phases.late, closed: snapshot.closed, elapsed: snapshot.roundElapsedMs }),
+  );
+
+  const late = buildScreen(w.hub, 'late', 'LATE', 'client', 711);
+  late.depth = snapshot.depth;
+  late.dir.restoreSnapshot(snapshot);
+  const restored = late.dir.state();
+  check(
+    'client restores the entire in-flight LMS ledger without reopening the depth',
+    restored.depth === snapshot.depth &&
+      JSON.stringify(restored.table) === JSON.stringify(snapshot.scores) &&
+      JSON.stringify(restored.order) === JSON.stringify(snapshot.scores.map((row) => row.uid)) &&
+      JSON.stringify(restored.hp) === JSON.stringify(snapshot.hp) &&
+      JSON.stringify(restored.phases) === JSON.stringify(snapshot.phases) &&
+      JSON.stringify(restored.prevRanks) === JSON.stringify(snapshot.prevRanks) &&
+      JSON.stringify(restored.answered) === JSON.stringify(snapshot.answered) &&
+      JSON.stringify(restored.clocks) === JSON.stringify(snapshot.clocks) &&
+      JSON.stringify(restored.budget) === JSON.stringify(snapshot.budget) &&
+      !restored.closed && restored.roundElapsedMs === snapshot.roundElapsedMs &&
+      !restored.over && restored.winnerUid === null,
+  );
+  check('restored late joiner can answer the current depth', late.dir.mayAnswer());
+  late.dir.answer(true, 0, 0);
+  check('host accepts the new UID against the restored current depth', w.host.dir.state().answered.includes('late'));
+  w.c2.clock = 6;
+  w.c2.dir.answer(true, 0, 0);
+  w.hub.add('late2', 'LATE2', false);
+  const closedSnapshot = w.host.dir.snapshotForJoin('late2');
+  check(
+    'depth close freezes the host-measured elapsed clock in the snapshot',
+    closedSnapshot.closed && closedSnapshot.roundElapsedMs === 4000,
+  );
+  const closedLate = buildScreen(w.hub, 'late2', 'LATE2', 'client', 711);
+  closedLate.depth = closedSnapshot.depth;
+  closedLate.dir.restoreSnapshot(closedSnapshot);
+  check(
+    'a late joiner of a closed depth cannot answer before the next depth',
+    closedLate.dir.state().closed && closedLate.dir.state().roundElapsedMs === 4000 &&
+      !closedLate.dir.state().answered.includes('late2') && !closedLate.dir.mayAnswer(),
+  );
+  closedLate.dir.answer(true, 0, 0);
+  check('closed-depth verdict stays inert at the host', !w.host.dir.state().answered.includes('late2'));
+
+  w.all.push(closedLate);
+  openDepth(w, 5, 'puzzle', 3);
+  check(
+    'the next host depth reopens input with a fresh elapsed clock',
+    !closedLate.dir.state().closed && closedLate.dir.state().roundElapsedMs === 0 && closedLate.dir.mayAnswer(),
+  );
+  closedLate.dir.answer(true, 0, 0);
+  check('new depth accepts the newcomer after its closed-depth wait', w.host.dir.state().answered.includes('late2'));
+
+}
+
+function roomHpEffectScenario(): void {
+  const w = newWorld(712);
+  openDepth(w, 1, 'puzzle', 2);
+  w.host.dir.handle({ t: 'peer-leave', id: 'c2' });
+  const applied = w.host.dir.applyRoundHpDeltas(1, 'fate:nuke:1', [
+    { uid: 'HOST', hpDelta: -99 },
+    { uid: 'c1', hpDelta: -99 },
+    { uid: 'c2', hpDelta: -99 },
+    { uid: 'unknown', hpDelta: -99 },
+  ]);
+  check(
+    'room HP effect clamps to one and skips a departed seat',
+    applied && w.host.dir.state().hp.HOST === 1 && w.host.dir.state().hp.c1 === 1 &&
+      w.host.dir.state().hp.c2 === 100 && w.host.dir.state().phases.c2 === 'left',
+  );
+  check(
+    'room HP effect replicates the authoritative HP map to every client',
+    w.all.every((screen) =>
+      screen.dir.state().hp.HOST === 1 && screen.dir.state().hp.c1 === 1 && screen.dir.state().hp.c2 === 100),
+  );
+
+  const logSize = w.hub.log.length;
+  const duplicate = w.host.dir.applyRoundHpDeltas(1, 'fate:nuke:1', [{ uid: 'HOST', hpDelta: 200 }]);
+  const stale = w.host.dir.applyRoundHpDeltas(2, 'fate:stale', [{ uid: 'HOST', hpDelta: -20 }]);
+  const clientAttempt = w.c1.dir.applyRoundHpDeltas(1, 'fate:client', [{ uid: 'HOST', hpDelta: -20 }]);
+  const unknown = w.host.dir.applyRoundHpDeltas(1, 'fate:unknown', [{ uid: 'missing', hpDelta: -20 }]);
+  check(
+    'HP effect is host-only, depth-bound, UID-bound, and idempotent',
+    !duplicate && !stale && !clientAttempt && !unknown &&
+      w.host.dir.state().hp.HOST === 1 && w.hub.log.length === logSize,
+  );
+
+  const clamped = w.host.dir.applyRoundHpDeltas(1, 'fate:clamp', [
+    { uid: 'HOST', hpDelta: 500 },
+    { uid: 'c1', hpDelta: -500 },
+    { uid: 'c2', hpDelta: -500 },
+  ]);
+  check(
+    'room HP effect clamps both upper and lower boundaries',
+    clamped && w.host.dir.state().hp.HOST === 100 && w.host.dir.state().hp.c1 === 0 &&
+      w.host.dir.state().hp.c2 === 100,
+  );
+  check(
+    'clamped room HP effect remains converged on every client',
+    w.all.every((screen) =>
+      screen.dir.state().hp.HOST === 100 && screen.dir.state().hp.c1 === 0 && screen.dir.state().hp.c2 === 100),
+  );
+}
+
+function departureEndsContestScenario(): void {
+  const hub = new Hub();
+  hub.add('HOST', 'DAVE', true);
+  hub.add('c1', 'MIRA', false);
+  const host = buildScreen(hub, 'HOST', 'DAVE', 'host', 713);
+  const client = buildScreen(hub, 'c1', 'MIRA', 'client', 713);
+  host.depth = 1;
+  client.depth = 1;
+  host.dir.openDepth(1);
+  client.dir.openDepth(1);
+  host.dir.answer(true, 0, 0);
+
+  hub.broadcastFromHost({ t: 'peer-leave', id: 'c1' });
+  host.dir.handle({ t: 'peer-leave', id: 'c1' });
+  check(
+    'a departure that leaves one live seat ends a real two-seat contest',
+    host.finished && host.dir.state().over && host.dir.state().winnerUid === 'HOST',
+  );
+  check(
+    'the remaining client receives the winner and terminal state',
+    client.finished && client.dir.state().over && client.dir.state().winnerUid === 'HOST' &&
+      client.dir.state().phases.c1 === 'left',
+  );
+  const closedHub = new Hub();
+  closedHub.add('HOST', 'DAVE', true);
+  closedHub.add('c1', 'MIRA', false);
+  const closedHost = buildScreen(closedHub, 'HOST', 'DAVE', 'host', 715);
+  const closedClient = buildScreen(closedHub, 'c1', 'MIRA', 'client', 715);
+  closedHost.depth = 1;
+  closedClient.depth = 1;
+  closedHost.dir.openDepth(1);
+  closedClient.dir.openDepth(1);
+  closedHost.dir.answer(true, 0, 0);
+  closedClient.dir.answer(true, 0, 0);
+  check('both seats have closed the depth before a later departure', closedHost.dir.state().closed);
+  closedHub.broadcastFromHost({ t: 'peer-leave', id: 'c1' });
+  closedHost.dir.handle({ t: 'peer-leave', id: 'c1' });
+  check(
+    'a departure after reveal still ends the contest without reopening a closed depth',
+    closedHost.finished && closedHost.dir.state().closed && closedHost.dir.state().over &&
+      closedHost.dir.state().winnerUid === 'HOST',
+  );
+  check(
+    'the closed-depth departure sends its winner to the remaining client',
+    closedClient.finished && closedClient.dir.state().over && closedClient.dir.state().winnerUid === 'HOST',
+  );
+
+}
+
+function soloContinuityScenario(): void {
+  const hub = new Hub();
+  hub.add('HOST', 'DAVE', true);
+  const host = buildScreen(hub, 'HOST', 'DAVE', 'host', 714);
+  for (const depth of [1, 2]) {
+    host.depth = depth;
+    host.pendingAdvance = null;
+    host.dir.openDepth(depth);
+    host.dir.answer(false, 0, -12);
+    check(
+      'one-seat solo continues after depth ' + depth + ' without a last-standing end',
+      !host.finished && !host.dir.state().over && host.dir.state().winnerUid === null &&
+        host.dir.state().depth === depth && host.dir.state().phases.HOST === 'alive' &&
+        host.pendingAdvance !== null,
+    );
+  }
+}
+
 /**
  * Seeded sweep: many differently-shaped matches, asserting the invariant that
  * actually matters after EVERY depth — all three screens hold byte-identical
@@ -473,6 +670,12 @@ console.log('[lms-match] elimination + end-when-one');
 eliminationScenario();
 console.log('[lms-match] rage quit');
 rageQuitScenario();
+console.log('[lms-match] active join snapshots + room HP effects');
+snapshotJoinScenario();
+roomHpEffectScenario();
+console.log('[lms-match] terminal departure + solo continuity');
+departureEndsContestScenario();
+soloContinuityScenario();
 
 const b = scenario(4242, true);
 check('determinism: the same match replays byte-identically', a.transcript === b.transcript);

@@ -44,7 +44,7 @@
  *   pick    client→host {n,qid,idx}        sr      client→host {n,sr{correct,points,hpDelta}}
  *   reveal  host→all {n,answer,scores}     end     host→all {scores,reason?}
  *   elim    host→all {uids}                attack  client→host {targetUid,weapon,n}
- *   meta    host→all {rn}                  metaReq client→host {}
+ *   meta    host→all {rn}                  metaReq client→host {snapshot?:true}
  *
  * DETERMINISM NOTE: Math.random/Date.now appear ONLY in session plumbing
  * (uids, epochs, nonces, bus salts) — never in gameplay decisions, which
@@ -378,12 +378,18 @@ const MAX_JOIN_TRIES = 48; // backstop ~= JOIN_TIMEOUT_MS / JOIN_RETRY_MS
 const KEEPALIVE_MS = 5000; // host broker-leg sweep while the room is open
 const HELLO_RETRY_MS = 2000; // client bus-hello cadence while joining
 const REOPEN_AFTER_FAILS = 3; // dead keepalive sweeps before a full peer rebuild
+const PRESENCE_MS = 5000;
+const PRESENCE_LEASE_MS = 20000;
 
 export interface NetOpts {
   /** Override the PeerJS constructor source (tests inject a stub). */
   makePeer?: () => Promise<PeerCtor | null>;
   /** Override the same-browser bus (tests inject an in-memory hub). */
   busFactory?: BusFactory;
+  /** Presence clock/timing seam for deterministic lease-expiry tests. */
+  now?: () => number;
+  presenceIntervalMs?: number;
+  presenceLeaseMs?: number;
 }
 
 export interface NetApi {
@@ -420,6 +426,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
   const seenNonces = new Set<string>();
   const opaqueSqSeen = new Set<string>();
   const watermarks = new Map<string, Watermark>();
+  const targetedSqOut = new Map<string, number>();
 
   let role: Role | null = null;
   let code: string | null = null;
@@ -433,6 +440,14 @@ export function createNet(opts: NetOpts = {}): NetApi {
   let sqOut = 0;
   let nonceSeq = 0;
   let retryJoinConn: (() => void) | null = null;
+  const now = opts.now ?? Date.now;
+  const presenceIntervalMs = Math.max(1, Math.round(opts.presenceIntervalMs ?? PRESENCE_MS));
+  const presenceLeaseMs = Math.max(1, Math.round(opts.presenceLeaseMs ?? PRESENCE_LEASE_MS));
+  const lastSeen = new Map<string, number>();
+
+  let presenceTimer: NodeJS.Timeout | number | undefined = undefined;
+  let lastHostSeen = 0;
+  let hostLeaseLost = false;
 
   /* ---- tiny debug ring ---- */
   function logEv(t: string, dir: LogEv['dir'], ok: boolean): void {
@@ -500,6 +515,15 @@ export function createNet(opts: NetOpts = {}): NetApi {
     return f;
   }
 
+  /** Targeted frames use a recipient-specific sequence space, so peers do not
+   * accumulate artificial gaps for unicasts they were never meant to receive. */
+  function stampTargetSq(frame: Frame, targetUid: string): Frame {
+    const next = (targetedSqOut.get(targetUid) ?? 0) + 1;
+    targetedSqOut.set(targetUid, next);
+    frame._sq = sqEp + ':' + targetUid + ':' + next;
+    return frame;
+  }
+
   function seenNonce(n: string): boolean {
     if (seenNonces.has(n)) return true;
     seenNonces.add(n);
@@ -526,13 +550,113 @@ export function createNet(opts: NetOpts = {}): NetApi {
     for (const [k, v] of conns) if (v === c) return k;
     return null;
   }
+  function retireSeat(uid: string): boolean {
+    if (!uid || uid === 'HOST') return false;
+    const gone = players.get(uid);
+    if (!gone) return false;
+    const c = conns.get(uid);
+    conns.delete(uid);
+    players.delete(uid);
+    lastSeen.delete(uid);
+    if (c?.open) {
+      try {
+        c.close();
+      } catch {
+        /* already gone */
+      }
+    }
+    void broadcast({ t: 'peer-leave', id: uid, name: gone.name });
+    void broadcast(lobbyFrame());
+    return true;
+  }
+
+  function sendGoodbye(): void {
+    if (dead || !role || !myUid) return;
+    const frame: Frame = role === 'host'
+      ? { t: 'bye', uid: 'HOST', host: true }
+      : { t: 'bye', uid: myUid, to: 'HOST' };
+    frame._sq = sqEp + ':' + ++sqOut;
+    stampNonce(frame);
+    if (role === 'host') {
+      for (const c of conns.values()) {
+        if (c.open) {
+          try {
+            c.send(frame);
+          } catch {
+            /* bus notification still goes out */
+          }
+        }
+      }
+      bus?.post(frame);
+      return;
+    }
+    try {
+      if (hostConn?.open) hostConn.send(frame);
+    } catch {
+      /* bus notification still goes out */
+    }
+    bus?.post(frame);
+  }
+
+  function stopPresence(): void {
+    clearInterval(presenceTimer);
+    presenceTimer = undefined;
+  }
+
+  function startPresence(): void {
+    stopPresence();
+    presenceTimer = setInterval(() => {
+      if (dead) return;
+      const stamp = now();
+      if (role === 'host') {
+        for (const uid of players.keys()) {
+          if (uid === 'HOST') continue;
+          const frame: Frame = { t: 'presence', uid: 'HOST', to: uid };
+          stampTargetSq(frame, uid);
+          stampNonce(frame);
+          const conn = conns.get(uid);
+          if (conn?.open) {
+            try {
+              conn.send(Object.assign({}, frame));
+            } catch {
+              /* the lease detects a failed data path */
+            }
+          }
+          bus?.post(Object.assign({}, frame));
+        }
+        for (const uid of players.keys()) {
+          if (uid === 'HOST') continue;
+          const seenAt = lastSeen.get(uid);
+          if (seenAt == null || stamp - seenAt > presenceLeaseMs) retireSeat(uid);
+        }
+      } else if (role === 'client') {
+        if (stamp - lastHostSeen > presenceLeaseMs) {
+          if (!hostLeaseLost) {
+            hostLeaseLost = true;
+            dead = true;
+            emit({ t: 'end', reason: 'host-left' });
+          }
+          return;
+        }
+        const frame: Frame = { t: 'presence', uid: myUid ?? undefined, to: 'HOST' };
+        frame._sq = sqEp + ':' + ++sqOut;
+        stampNonce(frame);
+        try {
+          if (hostConn?.open) hostConn.send(Object.assign({}, frame));
+        } catch {
+          /* the lease detects a failed data path */
+        }
+        bus?.post(Object.assign({}, frame));
+      }
+    }, presenceIntervalMs);
+  }
 
   /* ---- inbound frames, both transports ------------------------------------ */
   function acceptHostFrame(msg: Frame, conn: DataConnLike | null): void {
-    // Shared by the PeerJS branch (conn present) and the bus branch (conn
-    // null) so hello registration/dedup behaves identically on either pipe.
+    // Hello binds the stable uid to a peer connection; bus frames bind via src.
     if (msg.t === 'hello') {
       const pid = String(msg.uid || (conn ? conn.peer : msg.src) || '?');
+      if (!conn && msg.src && String(msg.uid || '') !== msg.src) return;
       if (conn) {
         // Retire stale registrations pointing at this physical conn so a
         // re-hello under a new uid cannot leave ghosts behind.
@@ -540,6 +664,7 @@ export function createNet(opts: NetOpts = {}): NetApi {
           if (pc === conn && pk !== pid) {
             conns.delete(pk);
             players.delete(pk);
+            lastSeen.delete(pk);
           }
         }
         const prev = conns.get(pid);
@@ -554,13 +679,23 @@ export function createNet(opts: NetOpts = {}): NetApi {
       const isNew = !players.has(pid);
       players.set(pid, { id: pid, name: clip(String(msg.name ?? 'PLAYER')), isHost: false });
       if (conn) conns.set(pid, conn);
+      lastSeen.set(pid, now());
       if (isNew) emit({ t: 'peer-join', id: pid, name: players.get(pid)?.name });
-      void broadcast(lobbyFrame()); // emits locally too — one path for both roles
+      void broadcast(lobbyFrame());
       return;
     }
     if (msg.t === 'lobby') return;
-    if (msg._sq != null && seenSq(msg._sq)) return; // dual-transport copy
-    if (!msg.uid) msg.uid = conn ? connKey(conn) ?? conn.peer : msg.src; // score key = stable uid, never name
+    if (msg.to && msg.to !== 'HOST') return;
+    const uid = conn ? connKey(conn) : (typeof msg.src === 'string' ? msg.src : '');
+    if (!uid || !players.has(uid) || (msg.uid && msg.uid !== uid)) return;
+    if (msg._sq != null && seenSq(msg._sq)) return;
+    msg.uid = uid; // sender identity comes from the bound connection or bus src
+    lastSeen.set(uid, now());
+    if (msg.t === 'presence') return;
+    if (msg.t === 'bye') {
+      retireSeat(uid);
+      return;
+    }
     emit(msg);
   }
 
@@ -568,6 +703,16 @@ export function createNet(opts: NetOpts = {}): NetApi {
     if (msg.t === 'hello') return;
     if (msg.to && msg.to !== myUid) return; // targeted unicast for someone else
     if (msg._sq != null && seenSq(msg._sq)) return;
+    if (msg.src === 'HOST') lastHostSeen = now();
+    if (msg.t === 'presence' && msg.src === 'HOST') return;
+    if (msg.t === 'bye' && (msg.uid === 'HOST' || msg.src === 'HOST')) {
+      if (!hostLeaseLost) {
+        hostLeaseLost = true;
+        dead = true;
+        emit({ t: 'end', reason: 'host-left' });
+      }
+      return;
+    }
     emit(msg);
   }
 
@@ -625,6 +770,8 @@ export function createNet(opts: NetOpts = {}): NetApi {
   }
 
   function teardown(): void {
+    sendGoodbye();
+    stopPresence();
     stopKeepAlive();
     retryJoinConn = null;
     dead = true;
@@ -648,8 +795,11 @@ export function createNet(opts: NetOpts = {}): NetApi {
     watermarks.clear();
     opaqueSqSeen.clear();
     seenNonces.clear();
+    targetedSqOut.clear();
     sqEp = null;
     sqOut = 0;
+    lastHostSeen = 0;
+    hostLeaseLost = false;
     if (peer) {
       try {
         peer.destroy();
@@ -668,20 +818,15 @@ export function createNet(opts: NetOpts = {}): NetApi {
   function onConnGone(c: DataConnLike): void {
     if (role === 'host') {
       const pid = connKey(c);
-      if (!pid || !players.has(pid)) return;
-      if (conns.get(pid) !== c) return; // superseded by a replacement hello
+      if (!pid || conns.get(pid) !== c) return;
       conns.delete(pid);
-      const gone = players.get(pid);
-      players.delete(pid);
-      emit({ t: 'peer-leave', id: pid, name: gone?.name });
-      void broadcast(lobbyFrame());
-    } else if (role === 'client' && !dead) {
-      if (joining && retryJoinConn) {
-        retryJoinConn(); // broker flap mid-handshake -> retry
-        return;
-      }
-      dead = true;
-      emit({ t: 'end', reason: 'host-left' });
+      // Losing one pipe is not a departure: the bus may still carry this
+      // seat. An explicit bye or the shared presence lease retires it.
+    } else if (role === 'client' && !dead && hostConn === c) {
+      hostConn = null;
+      if (joining && retryJoinConn) retryJoinConn();
+      // A failed RTC upgrade can arrive AFTER the bus completed join().
+      // Only an authoritative goodbye or loss of BOTH pipes ends the room.
     }
   }
 
@@ -704,6 +849,9 @@ export function createNet(opts: NetOpts = {}): NetApi {
     // not under the peer id in the open handler — so the roster is correct
     // even when the broker/CDN is dead and the room runs bus-only.
     players.set('HOST', { id: 'HOST', name: clip(displayName || 'HOST'), isHost: true });
+    lastHostSeen = now();
+    hostLeaseLost = false;
+    startPresence();
 
     const Ctor = await makePeerImpl().catch(() => null);
     if (role !== 'host') throw new Error('IQ2.Net: session torn down while opening');
@@ -778,8 +926,10 @@ export function createNet(opts: NetOpts = {}): NetApi {
               tryOpen(); // id taken -> next suffix
             } else {
               role = null;
+              dead = true;
               busClose();
               stopKeepAlive();
+              stopPresence();
               reject(err instanceof Error ? err : new Error(String(type ?? 'peer-error')));
             }
             return;
@@ -905,6 +1055,9 @@ export function createNet(opts: NetOpts = {}): NetApi {
     sqEp = uid; // client epoch == its stable uid (unique per join)
     sqOut = 0;
 
+    lastHostSeen = now();
+    hostLeaseLost = false;
+    startPresence();
     bus = busFactory(c, uid);
     bus?.onFrame(onBusFrame);
 
@@ -1047,12 +1200,13 @@ export function createNet(opts: NetOpts = {}): NetApi {
     let ok = false;
     try {
       if (role === 'client') {
-        obj._sq = sqEp + ':' + ++sqOut; // host dedupes dual-transport copies
+        const frame = Object.assign({}, obj, { uid: myUid ?? undefined, to: 'HOST' });
+        frame._sq = sqEp + ':' + ++sqOut;
         if (hostConn && hostConn.open) {
-          hostConn.send(obj);
+          hostConn.send(frame);
           ok = true;
         }
-        bus?.post(stampNonce(Object.assign({}, obj, { to: 'HOST' })));
+        bus?.post(stampNonce(Object.assign({}, frame)));
         ok = true;
       } else if (role === 'host') {
         emit(obj); // host talks to itself
@@ -1093,13 +1247,17 @@ export function createNet(opts: NetOpts = {}): NetApi {
     if (role !== 'host') return;
     try {
       const c = conns.get(id);
-      if (c && c.open) c.send(obj);
-      bus?.post(stampNonce(Object.assign({}, obj, { to: id })));
+      const frame = Object.assign({}, obj, { to: id });
+      stampTargetSq(frame, id);
+      stampNonce(frame);
+      if (c && c.open) c.send(frame);
+      bus?.post(frame);
       logEv(obj?.t ?? 'unicast', 'out', !!(c && c.open));
     } catch {
       /* a broken pipe never kills the host */
     }
   }
+
 
   /** host re-broadcasts the roster — lets a starved join handshake recover. */
   function refreshLobby(): void {
@@ -1108,23 +1266,8 @@ export function createNet(opts: NetOpts = {}): NetApi {
   }
 
   function kick(id: string): boolean {
-    try {
-      if (role !== 'host') return false;
-      const conn = conns.get(id);
-      if (!conn) return false;
-      conns.delete(id);
-      players.delete(id);
-      try {
-        conn.close();
-      } catch {
-        /* noop */
-      }
-      emit({ t: 'peer-leave', id });
-      void broadcast(lobbyFrame());
-      return true;
-    } catch {
-      return false;
-    }
+    if (role !== 'host') return false;
+    return retireSeat(id);
   }
   function leave(): void {
     try {

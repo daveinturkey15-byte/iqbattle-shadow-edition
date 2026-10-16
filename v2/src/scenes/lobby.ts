@@ -5,6 +5,7 @@ import {
   edgeRect, fmtClock, headerBar, makeButton, playerCard, statusStrip,
   type PlayerCardHandle,
 } from './shell.ts';
+import { seatTags, startControl, type LobbySeat } from './lobby-roster.ts';
 
 /**
  * The invite code, given its own object on the screen: caption, the code in
@@ -80,8 +81,12 @@ export interface LobbyCallbacks {
 export interface LobbyOpts extends LobbyCallbacks {
   roomName: string;
   code: string;
-  /** seat order; players[0] is host (tagged "you · host") */
-  players: string[];
+  /** seat order as the host published it; players[0] is the host */
+  players: LobbySeat[];
+  /** the LOCAL player's uid — the "you" tag follows this, NEVER seat index */
+  youUid: string | null;
+  /** false ⇒ this screen cannot begin the run (joiner): START renders inert */
+  canStart: boolean;
 }
 
 const TIMER_MIN = 1;
@@ -112,9 +117,10 @@ export function buildLobby(opts: LobbyOpts): Container {
   countLabel.style.letterSpacing = 2;
 
   let cardY = py + 64;
-  opts.players.forEach((name, i) => {
-    const tags = i === 0 ? ['you', 'host'] : [];
-    const h = playerCard(root, px + 32, cardY, pw - 64, name, tags);
+  opts.players.forEach((seat, i) => {
+    /* Tags by IDENTITY. Tagging by index told every joiner that seat 0 —
+     * always the host — was them; see lobby-roster.ts. */
+    const h = playerCard(root, px + 32, cardY, pw - 64, seat.name, seatTags(seat, opts.youUid));
     h.setClock(null); /* lobby: everyone is waiting */
     h.setRank(i + 1); /* seat-order diamond badge: gold host, silver, bronze */
     cardY += 84;
@@ -122,12 +128,13 @@ export function buildLobby(opts: LobbyOpts): Container {
 
   // Round Timer row: label + [-] value [+]
   const timerY = cardY + 24;
-  const timerLabel = text(root, 'ROUND TIMER (S)', px + 32, timerY + 14, 13, T.muted, true);
+  const timerLabel = text(root, opts.canStart ? 'ROUND TIMER (S)' : 'ROUND TIMER · HOST ONLY', px + 32, timerY + 14, 13, T.muted, true);
   timerLabel.style.letterSpacing = 2;
 
   let seconds = TIMER_DEFAULT;
-  const valueLabel = text(root, String(seconds), 0, timerY + 8, 18, T.ink, true);
+  const valueLabel = text(root, opts.canStart ? String(seconds) : '—', 0, timerY + 8, 18, T.ink, true);
   const setSeconds = (v: number): void => {
+    if (!opts.canStart) return;
     seconds = Math.max(TIMER_MIN, Math.min(TIMER_MAX, v));
     valueLabel.text = String(seconds);
     valueLabel.x = stepperCx - valueLabel.width / 2;
@@ -138,15 +145,33 @@ export function buildLobby(opts: LobbyOpts): Container {
   const groupW = stepperW * 2 + 90 + stepperGap * 2;
   const stepperCx = px + pw / 2;
   const gx = stepperCx - groupW / 2;
-  makeButton(root, gx, timerY, stepperW, stepperH, '−', () => setSeconds(seconds - 5), 'ghost');
-  makeButton(root, gx + stepperW + 90 + stepperGap * 2, timerY, stepperW, stepperH, '+', () => setSeconds(seconds + 5), 'ghost');
+  const minus = makeButton(root, gx, timerY, stepperW, stepperH, '−', () => setSeconds(seconds - 5), 'ghost');
+  const plus = makeButton(root, gx + stepperW + 90 + stepperGap * 2, timerY, stepperW, stepperH, '+', () => setSeconds(seconds + 5), 'ghost');
+  if (!opts.canStart) {
+    for (const stepper of [minus, plus]) {
+      stepper.eventMode = 'none';
+      stepper.cursor = 'default';
+      stepper.alpha = 0.42;
+    }
+  }
   edgeRect(root, gx + stepperW + stepperGap, timerY, 90, stepperH, 22);
   valueLabel.x = stepperCx - valueLabel.width / 2;
 
   // START + LEAVE
   const btnY = py + ph - 96;
   makeButton(root, px + 32, btnY, 200, 56, 'LEAVE', () => { opts.onLeave(); }, 'danger');
-  makeButton(root, px + pw - 32 - 320, btnY, 320, 56, 'START', () => { opts.onStart(seconds); }, 'primary');
+
+  /* A joiner's START used to look and press exactly like the host's while
+   * doing nothing at all (mp.ts drops onStart for non-hosts). Same geometry,
+   * different state: dimmed, inert, and labelled with what it waits for. */
+  const start = startControl(opts.canStart);
+  const startBtn = makeButton(root, px + pw - 32 - 320, btnY, 320, 56, start.label,
+    () => { if (start.enabled) opts.onStart(seconds); }, start.variant);
+  if (!start.enabled) {
+    startBtn.eventMode = 'none'; /* also kills the hover/press sheen */
+    startBtn.cursor = 'default';
+    startBtn.alpha = 0.5;
+  }
 
   return root;
 }
@@ -155,7 +180,15 @@ export function __preview(): Container {
   const scene = buildLobby({
     roomName: 'Friday Night',
     code: 'K7QXA',
-    players: ['OxAlpha', 'Dave', 'shadow awaits'],
+    /* previewed from the JOINER's seat: 'you' must sit on Dave, not on the
+     * host card — that is the whole bug this screen carried. */
+    players: [
+      { uid: 'HOST', name: 'OxAlpha', isHost: true },
+      { uid: 'C2', name: 'Dave', isHost: false },
+      { uid: 'C3', name: 'shadow awaits', isHost: false },
+    ],
+    youUid: 'C2',
+    canStart: false,
     onStart: (seconds) => console.log('[preview] start:', seconds),
     onLeave: () => console.log('[preview] leave'),
   });

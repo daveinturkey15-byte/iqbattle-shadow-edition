@@ -1,33 +1,30 @@
 /**
- * FATE — v2 port of the frozen v1 event layer (curse-pack.js + pack-events.js,
- * mechanic not code). Pure decision layer Main calls once per round start.
+ * FATE — deterministic round-start outcomes. The engine consumes each typed
+ * rider explicitly; presentation effects share the chaos-bus cue.
  *
- * Roll scheme (single ctx draw, mirroring v1's mutually-exclusive windows so
- * replays stay exact regardless of branch):
- *   good rounds            : r < 1/4            -> LOLLIPOP / STICKER blessing
+ * Roll scheme (single ctx draw, mirroring v1's mutually-exclusive windows):
+ *   good rounds            : r < 1/4            -> lollipop/sticker object
  *                             (flair chip persisted to localStorage IQB_FLAIR_V2)
- *   hostile/neutral, d >= 3: r < 1/40           -> NUKE (hostile AND depth>=8 only)
- *                             r < 1/40 + 12%    -> one of six fates:
- *                               MIDAS       next correct answer pays x1.5
- *                               ECLIPSE     cosmetic veil over the board
- *                               TOLL        score x0.9 this round
- *                               CARNIVAL    a coin on a correct answer (50%)
- *                               COMET       timer +6s
- *                               POLTERGEIST controls invert for 700ms
+ *   hostile/neutral, d >= 3: r < 1/40           -> nuke (hostile and depth>=8)
+ *                             r < 1/40 + 12%    -> one of six fates
+ *   MIDAS       next correct answer pays x1.5
+ *   ECLIPSE     board veil cue
+ *   TOLL        score x0.9 this round
+ *   CARNIVAL    a coin may drop on a correct answer (50%)
+ *   COMET       bright board trail cue
+ *   POLTERGEIST board image inversion for 700ms
  *
  * Determinism: own mulberry32 from ctx.seed ^ depth salt — or the caller's
- * injected rng (host stream). Zero Math.random / Date.now in decisions.
- * Purity: maybeFate NEVER mutates run state; it returns plain Hooks-style
- * modifier data the engine consumes. The only side effect is the blessing
- * flair chip in localStorage (meta-progression, guarded, node-safe).
- *
- * Fairness rails: POLTERGEIST inversion is 700ms and never stacks; ECLIPSE is
- * cosmetic only; nothing here recolors or animates question/answer glyphs;
- * banners are text the engine renders. Nuke forces the NEXT round to good
- * via flag { nuke:true, forcedAlign:'good' } — Main owns the forcing.
+ * injected rng (host stream). No Math.random / Date.now in decisions.
+ * Nuke carries explicit `nuke` and `forceGoodNext` markers; solo consumes its
+ * hpDelta directly, while the multiplayer host derives per-seat deltas and
+ * authors the next depth's forcedGood wire field.
  */
 
+import type { PackCue } from './pack-kit.ts';
+import type { RewardId } from './rewards.ts';
 import { mulberry32 } from '../scenes/takeovers/redlight.ts';
+
 
 /* ------------------------------------------------------------------ */
 /* Windows                                                             */
@@ -45,48 +42,32 @@ export interface FateCtx {
   depth: number;
   align: Align;
   seed: number;
-  /** current hp — enables the exact "everyone to 1" delta on NUKE */
+  /** current player's hp — enables solo's exact hp-to-1 NUKE delta */
   hp?: number;
   /** host rng stream; omitted -> seeded fallback (deterministic either way) */
   rng?: () => number;
 }
 
-/** Hooks-style round-start modifier. Plain data; engine aggregates. */
+/** Typed round-start outcome; every exposed rider has an engine consumer. */
 export interface FateMod {
   id: string;
   kind: 'nuke' | 'fate' | 'blessing';
   bannerText: string;
+  /** Solo hp delta; multiplayer nuke uses the host-authored per-seat rider. */
   hpDelta?: number;
-  /** this round's score multiplier (TOLL x0.9) */
+  /** This round's score multiplier (TOLL x0.9). */
   scoreMul?: number;
-  /** seconds added to this round's timer (COMET +6) */
-  timerDelta?: number;
-  /** multiplier applied to the NEXT correct answer (MIDAS x1.5) */
+  /** Multiplier applied to the next correct answer (MIDAS x1.5). */
   nextCorrectMul?: number;
-  /** chance a coin pickup drops on a correct answer (CARNIVAL BOX 0.5) */
-  coinOnCorrectP?: number;
-  /** ms of inverted controls (POLTERGEIST 700) */
-  invertMs?: number;
-  /** presentation-only effect id (ECLIPSE 'veil') */
-  cosmetic?: string;
-  /** opaque pass-through flags (nuke -> forcedAlign etc.) */
-  flag?: Record<string, unknown>;
-  /** flair chip granted by blessings */
-  chip?: string;
-  /**
-   * Declarative chaos-bus cue — PURE DATA. The engine (main.ts) performs it
-   * via the chaos bus; fate.ts never imports or calls the bus.
-   * Limits: flash.ms <= 200, shake.intensity <= 1, embers <= 64, melt 0..1.
-   */
-  cue?: {
-    shake?: { intensity: number; ms: number };
-    glitch?: number;          // ms
-    flash?: { color: number; ms: number };
-    embers?: number;
-    scanlines?: boolean;
-    melt?: number;            // 0..1
-    invert?: number;          // ms
-  };
+  /** Chance a coin object drops on a correct answer (CARNIVAL BOX 0.5). */
+  coinDropChance?: number;
+  /** Explicit host/solo effect markers; never opaque pass-through data. */
+  nuke?: true;
+  forceGoodNext?: true;
+  /** Physical reward object shown by the engine and persisted if a flair chip. */
+  rewardId?: RewardId;
+  /** Declarative cue consumed by the chaos bus; no second cue dialect. */
+  cue?: PackCue;
 }
 
 /* ------------------------------------------------------------------ */
@@ -135,8 +116,7 @@ export const FATES: readonly FateFactory[] = [
   }),
   () => ({
     id: 'eclipse', kind: 'fate',
-    bannerText: '🌑 ECLIPSE — A VEIL FALLS OVER THE BOARD (COSMETIC)',
-    cosmetic: 'veil',
+    bannerText: 'ECLIPSE — A VEIL SHIFTS ACROSS THE BOARD',
     cue: { scanlines: true, melt: 0.35 },
   }),
   () => ({
@@ -148,19 +128,17 @@ export const FATES: readonly FateFactory[] = [
   () => ({
     id: 'carnival_box', kind: 'fate',
     bannerText: '🎪 CARNIVAL BOX — ANSWER TRUE AND A COIN MAY DROP',
-    coinOnCorrectP: 0.5,
+    coinDropChance: 0.5,
     cue: { flash: { color: 0xff66cc, ms: 150 }, embers: 24 },
   }),
   () => ({
     id: 'comet', kind: 'fate',
-    bannerText: '☄ COMET — SIX SECONDS RETURNED TO THE CLOCK',
-    timerDelta: 6,
+    bannerText: 'COMET — A BRIGHT TRAIL CROSSES THE BOARD',
     cue: { flash: { color: 0x66ccff, ms: 120 }, embers: 16 },
   }),
   () => ({
     id: 'poltergeist', kind: 'fate',
-    bannerText: '👻 POLTERGEIST — YOUR HANDS ARE NOT YOUR OWN (700ms)',
-    invertMs: 700,
+    bannerText: 'POLTERGEIST — THE BOARD IMAGE INVERTS FOR 700ms',
     cue: { invert: 700, shake: { intensity: 0.5, ms: 700 } },
   }),
 ];
@@ -180,19 +158,20 @@ export const FATE_INLINE_EVENTS: readonly FateMod[] = [
   {
     id: 'lollipop', kind: 'blessing',
     bannerText: '🍭 LOLLIPOP — A SWEET TOKEN YOURS',
-    chip: 'lollipop',
+    rewardId: 'lollipop',
     cue: { flash: { color: 0xff9ecf, ms: 150 } },
   },
   {
     id: 'sticker', kind: 'blessing',
     bannerText: '🌟 STICKER — WEAR IT PROUDLY',
-    chip: 'sticker',
+    rewardId: 'sticker',
     cue: { flash: { color: 0xfff2a8, ms: 150 }, embers: 12 },
   },
   {
     id: 'nuke', kind: 'nuke',
     bannerText: '☢ NUKE — EVERYONE LEFT AT 1 HP · NEXT ROUND FORCED GOOD',
-    flag: { nuke: true, forcedAlign: 'good' },
+    nuke: true,
+    forceGoodNext: true,
     cue: { flash: { color: 0xff3030, ms: 200 }, shake: { intensity: 1, ms: 600 } },
   },
 ];
@@ -222,10 +201,9 @@ export function maybeFate(ctx: FateCtx): FateMod | null {
 
   if (ctx.align === 'good') {
     if (r >= W_BLESS) return null;
-    // second draw picks the chip; deterministic per seed+depth
-    const chip = rng() < 0.5 ? 'lollipop' : 'sticker';
-    grantChip(chip);
-    return { ...inlineEvent(chip), chip };
+    const rewardId: RewardId = rng() < 0.5 ? 'lollipop' : 'sticker';
+    grantChip(rewardId);
+    return { ...inlineEvent(rewardId), rewardId };
   }
 
   if (hostile && ctx.depth >= 8 && r < W_NUKE) {
@@ -263,7 +241,7 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   call = 0;
   let m = maybeFate({ seed: 1, depth: 8, align: 'bad', hp: 42, rng: fixed(W_NUKE / 2) });
   if (!m || m.id !== 'nuke' || m.hpDelta !== -41) failures.push(`nuke exact-delta failed: ${JSON.stringify(m)}`);
-  if (!m?.flag || m.flag.forcedAlign !== 'good' || m.flag.nuke !== true) failures.push('nuke missing forcedAlign flag');
+  if (!m?.nuke || m.forceGoodNext !== true) failures.push('nuke missing explicit nuke/forceGoodNext markers');
   // nuke window, NOT eligible (depth<8) -> falls through to fate? no: r<W_NUKE outside fate window too -> null... but fate window starts at W_NUKE, so r=W_NUKE/2 with depth<8 gives null
   call = 0;
   m = maybeFate({ seed: 1, depth: 7, align: 'bad', rng: fixed(W_NUKE / 2) });
@@ -286,7 +264,7 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   // blessing window
   call = 0;
   m = maybeFate({ seed: 1, depth: 3, align: 'good', rng: fixed(0.1) });
-  if (!m || m.kind !== 'blessing' || (m.chip !== 'lollipop' && m.chip !== 'sticker')) failures.push(`blessing window missed: ${JSON.stringify(m)}`);
+  if (!m || m.kind !== 'blessing' || (m.rewardId !== 'lollipop' && m.rewardId !== 'sticker')) failures.push(`blessing window missed: ${JSON.stringify(m)}`);
   call = 0;
   m = maybeFate({ seed: 1, depth: 3, align: 'good', rng: fixed(W_BLESS + 0.01) });
   if (m !== null) failures.push(`blessing fired past window: ${JSON.stringify(m)}`);
@@ -327,8 +305,8 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     const f = roll(i, 6, 'bad');
     if (!f || f.kind !== 'fate') continue;
     if (!f.bannerText || f.bannerText.length < 8) failures.push(`bad banner ${f.id}`);
-    if (f.invertMs !== undefined && f.invertMs > 700) failures.push('inversion exceeds 700ms rail');
-    if (f.cosmetic !== undefined && f.scoreMul !== undefined) failures.push(`${f.id} mixes cosmetic and mechanical`);
+    if (f.cue?.invert !== undefined && f.cue.invert > 700) failures.push('inversion exceeds 700ms rail');
+    if (f.forceGoodNext && !f.nuke) failures.push(`${f.id} forces good without being nuke`);
   }
 
   return { ok: failures.length === 0, failures };

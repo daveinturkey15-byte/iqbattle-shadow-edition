@@ -20,11 +20,15 @@ export interface ModCtx {
   motion: boolean;
 }
 
+export type ModifierCategory = 'motion' | 'input' | 'selection' | 'visibility' | 'presentation';
+
 export interface RoundModifier {
   id: string;
+  category: ModifierCategory;
   when(ctx: ModCtx): boolean;
   apply(ctx: ModCtx, scene: unknown): ModifierStop;
-  banner?: string;
+  banner: string;
+  telegraph: string;
 }
 
 /**
@@ -123,7 +127,9 @@ function resolveBoardTarget(scene: unknown): BoardTarget | null {
  */
 const mirrorFlipModifier: RoundModifier = {
   id: 'mirror-flip',
+  category: 'motion',
   banner: 'MIRROR FLIP',
+  telegraph: 'THE BOARD IS MIRRORED LEFT-TO-RIGHT; MOTION ON ADDS A SMALL WOBBLE. ANSWER SLOT MAP IS UNCHANGED.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -173,7 +179,9 @@ const mirrorFlipModifier: RoundModifier = {
  */
 const boardDriftModifier: RoundModifier = {
   id: 'board-drift',
+  category: 'motion',
   banner: 'BOARD DRIFT',
+  telegraph: 'MOTION ON: THE BOARD DRIFTS SLOWLY; REDUCED-MOTION MODE HOLDS A SEEDED OFFSET.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -226,7 +234,9 @@ const boardDriftModifier: RoundModifier = {
  */
 const rotate90Modifier: RoundModifier = {
   id: 'rotate-90',
+  category: 'motion',
   banner: 'BOARD ROTATED 90°',
+  telegraph: 'THE WHOLE BOARD TURNS 90 DEGREES; THE MARKS AND ANSWER STAY THE SAME.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -254,7 +264,9 @@ const rotate90Modifier: RoundModifier = {
  */
 const breathingModifier: RoundModifier = {
   id: 'breathing',
+  category: 'motion',
   banner: 'THE BOARD IS BREATHING',
+  telegraph: 'MOTION ON: THE BOARD GENTLY BREATHES; REDUCED-MOTION MODE HOLDS A SEEDED SCALE.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -301,7 +313,9 @@ const breathingModifier: RoundModifier = {
  */
 const lurchModifier: RoundModifier = {
   id: 'lurch',
+  category: 'motion',
   banner: 'THE BOARD LURCHES',
+  telegraph: 'MOTION ON: A ONE-TIME SHIFT SETTLES IN 400MS; REDUCED-MOTION MODE HOLDS A SMALL OFFSET.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -349,7 +363,9 @@ const lurchModifier: RoundModifier = {
  */
 const invertedControlsModifier: RoundModifier = {
   id: 'inverted-controls',
+  category: 'input',
   banner: 'CONTROLS INVERTED',
+  telegraph: 'OPTION SLOTS REVERSE: 1↔8, 2↔7, 3↔6, 4↔5. EVERY ANSWER REMAINS SELECTABLE.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -390,7 +406,9 @@ const invertedControlsModifier: RoundModifier = {
  */
 const optionShuffleModifier: RoundModifier = {
   id: 'option-shuffle',
+  category: 'selection',
   banner: 'OPTIONS HAVE MOVED',
+  telegraph: 'THE EIGHT ANSWER TILES SHUFFLE; MATCH THE CORRECT PATTERN IN ITS NEW SLOT.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -425,7 +443,9 @@ const optionShuffleModifier: RoundModifier = {
  */
 const fogBankModifier: RoundModifier = {
   id: 'fog-bank',
+  category: 'visibility',
   banner: 'A FOG BANK ROLLS IN',
+  telegraph: 'A FOG PATCH NEVER EXCEEDS 40% OPACITY; IT DRIFTS ONLY WHEN MOTION IS ENABLED.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -480,7 +500,9 @@ const fogBankModifier: RoundModifier = {
  */
 const inkSplatterModifier: RoundModifier = {
   id: 'ink-splatter',
+  category: 'visibility',
   banner: 'INK SPLATTERS ACROSS THE BOARD',
+  telegraph: 'AN INK BLOT NEVER EXCEEDS 40% OPACITY; IT FADES ONLY WHEN MOTION IS ENABLED.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -528,7 +550,9 @@ const inkSplatterModifier: RoundModifier = {
  */
 const scanlineRollModifier: RoundModifier = {
   id: 'scanline-roll',
+  category: 'visibility',
   banner: 'A SCANLINE ROLLS ACROSS',
+  telegraph: 'A TRANSLUCENT BAND NEVER EXCEEDS 40% OPACITY; IT SWEEPS ONLY WHEN MOTION IS ENABLED.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -578,7 +602,9 @@ const scanlineRollModifier: RoundModifier = {
  */
 const pianoKeysModifier: RoundModifier = {
   id: 'piano-keys',
+  category: 'presentation',
   banner: 'OPTIONS ARE PIANO KEYS',
+  telegraph: 'ANSWER TILES CHANGE TO PIANO-KEY STYLE; THEIR ORDER AND CORRECT MARK DO NOT CHANGE.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -604,7 +630,9 @@ const pianoKeysModifier: RoundModifier = {
  */
 const tilt3dModifier: RoundModifier = {
   id: 'tilt-3d',
+  category: 'motion',
   banner: 'THE BOARD TILTS IN 3D',
+  telegraph: 'THE BOARD HAS A SEEDED PITCH TILT; MOTION ON SWAYS IT GENTLY. ANSWER MAPPING IS FIXED.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -668,9 +696,13 @@ export const MODIFIERS: RoundModifier[] = [
  * Deterministically picks up to `max` modifiers eligible for the given context.
  */
 export function pickModifiers(ctx: ModCtx, max: number): RoundModifier[] {
-  if (max <= 0) return [];
+  if (!Number.isFinite(ctx.depth) || ctx.depth < 4 || ctx.align === 'good' || !(max > 0)) return [];
+
   const eligible = MODIFIERS.filter((m) => m.when(ctx));
   if (eligible.length === 0) return [];
+
+  const limit = Math.min(Math.floor(max), 5);
+  if (limit <= 0) return [];
 
   const rng = mulberry32((ctx.seed ^ Math.imul(ctx.depth, 0x85ebca6b)) >>> 0);
   const pool = [...eligible];
@@ -680,5 +712,12 @@ export function pickModifiers(ctx: ModCtx, max: number): RoundModifier[] {
     pool[i] = pool[j]!;
     pool[j] = tmp;
   }
-  return pool.slice(0, Math.max(0, Math.min(max, pool.length)));
+
+  const selected: RoundModifier[] = [];
+  for (const modifier of pool) {
+    if (selected.some((picked) => picked.category === modifier.category)) continue;
+    selected.push(modifier);
+    if (selected.length === limit) break;
+  }
+  return selected;
 }

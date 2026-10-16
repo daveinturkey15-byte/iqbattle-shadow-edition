@@ -4,9 +4,9 @@
  *   cd v2 && node src/worlds/selftest.ts     (exit 0 = PASS)
  *
  * Acceptance criteria (wave-2 Worlds/Breadth ticket):
- *   1. registry: exactly 12 worlds, unique ids.
+ *   1. registry: non-shrinking roster, unique ids.
  *   2. align coverage: bad / chaotic / neutral / good each have >= 2.
- *   3. all 12 draw() run on a RECORDING STUB ctx at t = 0, 1000, 10000
+ *   3. every registered world draws on a RECORDING STUB ctx at t = 0, 1000, 10000
  *      without throwing and issue a non-empty op stream.
  *   4. determinism: same world + same t => byte-identical call/property-op
  *      sequence across two independent runs; different t => differs
@@ -22,7 +22,8 @@
  * ==========================================================================*/
 
 import { list, pick, byId, ALIGNS, type Align } from './registry.ts';
-import { applyBackdrop } from './backdrops.ts'; // side-effect: registers all 12 worlds
+import { applyBackdrop } from './backdrops.ts'; // side-effect: registers procedural worlds
+import { resolveEncounter } from './encounters.ts';
 
 /* --------------------------- recording stub ctx -------------------------- */
 
@@ -213,7 +214,7 @@ for (const def of all) {
     }
   }
 }
-check('all 12 draw on stub ctx at t=0/1000/10000 without throw', drewClean, detail);
+check('all registered worlds draw on stub ctx at t=0/1000/10000 without throw', drewClean, detail);
 
 let deterministic = true;
 let detDetail = '';
@@ -274,6 +275,42 @@ check('every backdrop is genuinely f(t)', timeVaries, tvDetail);
   }
   check('applyBackdrop cleanup immediately callable + idempotent', ok);
 }
+
+/* One event identity must own aligned world, pressure, and deterministic cameo seed. */
+{
+  let aligned = true;
+  let stable = true;
+  for (const align of ALIGNS as readonly Align[]) {
+    const first = resolveEncounter(319, 4, align, { id: 'event:fixed', bannerText: 'THE SIGNAL' });
+    const second = resolveEncounter(319, 4, align, { id: 'event:fixed', bannerText: 'THE SIGNAL' });
+    if (first.align !== align || byId(first.worldId)?.align !== align) aligned = false;
+    if (JSON.stringify(first) !== JSON.stringify(second)) stable = false;
+  }
+  check('encounters use an aligned world and stable event identity', aligned && stable);
+
+  const stones = resolveEncounter(319, 4, 'neutral', {
+    id: 'pk:stones:engraving',
+    bannerText: 'THE SIX MARKS',
+    hpDelta: -99,
+    scoreMul: 9,
+    rewardId: 'coin',
+  });
+  check(
+    'stones packs select a related neutral setting',
+    stones.worldId === 'cave-crystal' || stones.worldId === 'mountain-ascent',
+    stones.worldId,
+  );
+  check(
+    'event identity keeps its banner/reward while pressure stays bounded',
+    stones.eventId === 'pk:stones:engraving' &&
+      stones.pressure.id === stones.eventId &&
+      stones.bannerText === 'THE SIX MARKS' &&
+      stones.rewardId === 'coin' &&
+      stones.pressure.hpDelta === -8 &&
+      stones.pressure.scoreMul === 1.2,
+  );
+}
+
 
 /* --- cross-world distinctness -------------------------------------------
  * 22 of these worlds were authored in one bulk wave. The failure mode that

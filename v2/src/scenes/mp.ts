@@ -78,6 +78,8 @@
 import type { Container } from 'pixi.js';
 import type { Frame, NetApi, PlayerRec, Role } from '../net/net2.ts';
 import { createNet } from '../net/net2.ts';
+import { lobbyView } from './lobby-roster.ts';
+import { adoptScores, aliveUids, applyElim, beginDepth, dropSeat, type LmsState } from './lms.ts';
 
 /* ------------------------------------------------------------------ */
 /* Pure protocol types                                                 */
@@ -100,15 +102,54 @@ export interface StageRef {
   seed: number;
 }
 
+export type SeatPhase = 'alive' | 'spectator' | 'left';
+
+export interface MpMatchSnapshot {
+  depth: number;
+  scores: ScoreRec[];
+  hp: Record<string, number>;
+  phases: Record<string, SeatPhase>;
+  prevRanks: Record<string, number>;
+  answered: string[];
+  clocks: Record<string, number>;
+  budget: Record<string, number>;
+  closed: boolean;
+  roundElapsedMs: number;
+  over: boolean;
+  winnerUid: string | null;
+}
+
+export interface BeginInfo {
+  timer: number;
+  lms: boolean;
+  rn?: string;
+  sd: number;
+}
+
+export interface RoundInfo {
+  n: number;
+  stg: StageRef;
+  timerLen: number;
+  forcedGood?: true;
+  closed: boolean;
+  roundElapsedMs: number;
+}
+
+export type RoomSnapshot =
+  | { t: 'room-snapshot'; phase: 'lobby' }
+  | { t: 'room-snapshot'; phase: 'active'; begin: BeginInfo; round?: RoundInfo; match: MpMatchSnapshot }
+  | { t: 'room-snapshot'; phase: 'ended'; begin: BeginInfo; match: MpMatchSnapshot; end: { scores: ScoreRec[]; reason?: string; winnerUid?: string } };
+
 export type MpEvent =
   | { t: 'lobby'; players: PlayerRec[] }
   | { t: 'begin'; timer: number; lms: boolean; rn?: string; sd: number }
-  | { t: 'round'; n: number; stg: StageRef; timerLen: number }
+  | ({ t: 'round' } & RoundInfo)
+  | RoomSnapshot
   | { t: 'pick'; uid: string; n: number; idx: number }
   | { t: 'sr'; uid: string; n: number; sr: SrVerdict }
   | { t: 'reveal'; n: number; scores: ScoreRec[]; hp?: Record<string, number> }
   | { t: 'scores'; n: number; scores: ScoreRec[]; hp?: Record<string, number>; reason?: string }
-  | { t: 'end'; scores: ScoreRec[]; reason?: string }
+  | { t: 'end'; scores: ScoreRec[]; reason?: string; winnerUid?: string }
   | { t: 'elim'; uids: string[] }
   | { t: 'attack'; uid: string; targetUid?: string; weapon?: string; n?: number }
   | { t: 'meta'; rn?: string }
@@ -123,6 +164,7 @@ const SR_HP_MAX = 60;
 
 const TIMER_MIN = 1;
 const TIMER_MAX = 120;
+export const MAX_ROUND_ELAPSED_MS = TIMER_MAX * 1000;
 
 /* ------------------------------------------------------------------ */
 /* Wire-frame readers (validated boundary reads)                       */
@@ -180,6 +222,122 @@ function asHpMap(v: unknown): Record<string, number> | undefined {
 function asUids(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v.filter((u): u is string => typeof u === 'string' && u.length > 0);
+}
+function asNumberMap(v: unknown, integer = true): Record<string, number> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!key || typeof raw !== 'number' || !isFinite(raw)) continue;
+    out[key.slice(0, 40)] = Math.max(0, integer ? Math.round(raw) : raw);
+  }
+  return out;
+}
+
+function asPhaseMap(v: unknown): Record<string, SeatPhase> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const out: Record<string, SeatPhase> = {};
+  for (const [key, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!key) continue;
+    if (raw !== 'alive' && raw !== 'spectator' && raw !== 'left') return null;
+    out[key.slice(0, 40)] = raw;
+  }
+  return out;
+}
+
+function asBeginInfo(v: unknown): BeginInfo | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Record<string, unknown>;
+  return {
+    timer: Math.max(TIMER_MIN, Math.min(TIMER_MAX, Math.round(asNum(r.timer, 60)))),
+    lms: r.lms === true || r.lms === 1,
+    rn: typeof r.rn === 'string' ? r.rn.slice(0, 24) : undefined,
+    sd: asNum(r.sd, 0) >>> 0,
+  };
+}
+
+function asRoundInfo(v: unknown): RoundInfo | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Record<string, unknown>;
+  const rawStage = r.stg;
+  if (!rawStage || typeof rawStage !== 'object') return null;
+  const s = rawStage as Record<string, unknown>;
+  const n = Math.round(asNum(r.n, 0));
+  const stg = { id: asStr(s.id).slice(0, 32), seed: asNum(s.seed, 0) >>> 0 };
+  if (
+    n < 1 || !stg.id ||
+    typeof r.closed !== 'boolean' ||
+    typeof r.roundElapsedMs !== 'number' || !isFinite(r.roundElapsedMs)
+  ) return null;
+  return {
+    n,
+    stg,
+    timerLen: Math.max(TIMER_MIN, Math.min(TIMER_MAX, Math.round(asNum(r.timerLen, 60)))),
+    ...(r.forcedGood === true ? { forcedGood: true as const } : {}),
+    closed: r.closed,
+    roundElapsedMs: Math.max(0, Math.min(MAX_ROUND_ELAPSED_MS, Math.round(r.roundElapsedMs))),
+  };
+}
+
+function asMatchSnapshot(v: unknown): MpMatchSnapshot | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Record<string, unknown>;
+  if (
+    typeof r.depth !== 'number' || !isFinite(r.depth) ||
+    !Array.isArray(r.scores) || !Array.isArray(r.answered) ||
+    typeof r.closed !== 'boolean' ||
+    typeof r.roundElapsedMs !== 'number' || !isFinite(r.roundElapsedMs) ||
+    typeof r.over !== 'boolean' ||
+    (r.winnerUid !== null && typeof r.winnerUid !== 'string')
+  ) return null;
+  const hp = asHpMap(r.hp);
+  const phases = asPhaseMap(r.phases);
+  const prevRanks = asNumberMap(r.prevRanks);
+  const clocks = asNumberMap(r.clocks, false); // Response seconds keep sub-second precision.
+  const budget = asNumberMap(r.budget);
+  if (!hp || !phases || !prevRanks || !clocks || !budget) return null;
+  return {
+    depth: Math.max(0, Math.round(r.depth)),
+    scores: asScoreList(r.scores),
+    hp,
+    phases,
+    prevRanks,
+    answered: asUids(r.answered).map((uid) => uid.slice(0, 40)),
+    clocks,
+    budget,
+    closed: r.closed,
+    roundElapsedMs: Math.max(0, Math.min(MAX_ROUND_ELAPSED_MS, Math.round(r.roundElapsedMs))),
+    over: r.over,
+    winnerUid: typeof r.winnerUid === 'string' ? r.winnerUid.slice(0, 40) : null,
+  };
+}
+
+function asRoomSnapshot(v: Frame): RoomSnapshot | null {
+  const phase = v.phase;
+  if (phase === 'lobby') return { t: 'room-snapshot', phase: 'lobby' };
+  if (phase !== 'active' && phase !== 'ended') return null;
+  const begin = asBeginInfo(v.begin);
+  const match = asMatchSnapshot(v.match);
+  if (!begin || !match) return null;
+  if (phase === 'active') {
+    if (v.round == null) return { t: 'room-snapshot', phase, begin, match };
+    const round = asRoundInfo(v.round);
+    return round ? { t: 'room-snapshot', phase, begin, round, match } : null;
+  }
+  if (!v.end || typeof v.end !== 'object') return null;
+  const rawEnd = v.end as Record<string, unknown>;
+  if (!Array.isArray(rawEnd.scores)) return null;
+  const reason = typeof rawEnd.reason === 'string' ? rawEnd.reason.slice(0, 32) : undefined;
+  return {
+    t: 'room-snapshot',
+    phase,
+    begin,
+    match,
+    end: {
+      scores: asScoreList(rawEnd.scores),
+      ...(reason ? { reason } : {}),
+      ...(typeof rawEnd.winnerUid === 'string' ? { winnerUid: rawEnd.winnerUid.slice(0, 40) } : {}),
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -386,12 +544,66 @@ export function parseStg(stg: string): RoundPlan | null {
 
 export interface MpHandlers {
   /** Client: a round frame arrived — mount the identical challenge. */
-  onRemoteRound?(n: number, stg: StageRef, timerLen: number): void;
+  onRemoteRound?(
+    n: number,
+    stg: StageRef,
+    timerLen: number,
+    forcedGood?: boolean,
+    closed?: boolean,
+    roundElapsedMs?: number,
+  ): void;
   /** Every normalized event (both roles see one stream). */
   onEvent?(e: MpEvent): void;
 }
 
 type Sub = (e: MpEvent) => void;
+
+interface HostSequence {
+  epoch: string;
+  n: number;
+}
+type SnapshotEvent = Extract<MpEvent, { t: 'round' | 'reveal' | 'scores' | 'elim' | 'end' | 'peer-leave' }>;
+const SNAPSHOT_EVENT_LIMIT = 512;
+
+/** Only the broadcast sequence is comparable to a match capture. Unicasts
+ * have their own recipient-specific sequence space. */
+function asHostSequence(value: unknown): HostSequence | null {
+  if (typeof value !== 'string') return null;
+  const match = /^([^:]+):(\d+)$/.exec(value);
+  if (!match) return null;
+  const n = Number(match[2]);
+  return Number.isSafeInteger(n) ? { epoch: match[1], n } : null;
+}
+
+function isSnapshotEvent(type: string): boolean {
+  return type === 'round' || type === 'reveal' || type === 'scores' ||
+    type === 'elim' || type === 'end' || type === 'peer-leave';
+}
+
+/** A frame rejected by the live depth guard may still be needed to bring an
+ * older bootstrap ledger forward before the next round. */
+function snapshotEventFromFrame(f: Frame): SnapshotEvent | null {
+  if (f.t === 'round') {
+    const round = asRoundInfo(f);
+    return round ? { t: 'round', ...round } : null;
+  }
+  if (f.t === 'reveal' || f.t === 'scores') {
+    const n = Math.round(asNum(f.n, -1));
+    if (n < 1) return null;
+    return {
+      t: f.t, n, scores: asScoreList(f.scores), hp: asHpMap(f.hp),
+      ...(f.t === 'scores' && typeof f.reason === 'string' ? { reason: f.reason.slice(0, 32) } : {}),
+    };
+  }
+  if (f.t === 'end') {
+    return {
+      t: 'end', scores: asScoreList(f.scores),
+      reason: typeof f.reason === 'string' ? f.reason.slice(0, 32) : undefined,
+      winnerUid: typeof f.winnerUid === 'string' ? f.winnerUid.slice(0, 40) : undefined,
+    };
+  }
+  return null;
+}
 
 export class MpSession {
   readonly net: NetApi;
@@ -402,9 +614,25 @@ export class MpSession {
   private roster: PlayerRec[] = [];
   private roomLabel: string | null = null;
   private gone = false;
-  /** Last match-state frames — replayed to late joiners (mid-game catch-up). */
+  private phase: 'lobby' | 'active' | 'ended' = 'lobby';
+  private beginSeen = false;
+  private endSeen = false;
+  private roomSnapshotSeen = false;
+  private lastRoundN = 0;
+  private lastRoundSentN = 0;
+  private pendingRound: RoundInfo | null = null;
+  private roomSnapshotProvider: ((joiningUid: string) => MpMatchSnapshot | null) | null = null;
+  /** Current host-authored match frames used to build one atomic join snapshot. */
   private lastBegin: Frame | null = null;
   private lastRound: Frame | null = null;
+  private lastEnd: { scores: ScoreRec[]; reason?: string; winnerUid?: string } | null = null;
+  private hostCaptureSq: string | null = null;
+  private snapshotCapture: HostSequence | null = null;
+  private snapshotEvents: Array<{ sq: HostSequence; event: SnapshotEvent }> = [];
+  private snapshotDroppedThrough: HostSequence | null = null;
+  private latestScores: {
+    sq: HostSequence; n: number; scores: ScoreRec[]; hp?: Record<string, number>;
+  } | null = null;
 
   /**
    * @param initialRoster seed for the lobby screen — the handshake's roster
@@ -424,6 +652,10 @@ export class MpSession {
     const listen = (type: string, fn: (f: Frame) => MpEvent | null): void => {
       this.offs.push(
         net.on(type, (f) => {
+          const sq = f.src === 'HOST' ? asHostSequence(f._sq) : null;
+          if (this.role === 'host' && sq) this.hostCaptureSq = f._sq!;
+          if (this.role === 'client' && sq && isSnapshotEvent(type) &&
+            this.snapshotCapture?.epoch === sq.epoch && sq.n <= this.snapshotCapture.n) return;
           let e: MpEvent | null = null;
           try {
             e = fn(f);
@@ -432,6 +664,20 @@ export class MpSession {
             w.__sessErr = w.__sessErr || [];
             w.__sessErr.push('listen ' + type + ': ' + String(err).slice(0, 160));
             return;
+          }
+          if (this.role === 'client' && sq && isSnapshotEvent(type)) {
+            if (!this.roomSnapshotSeen) {
+              const event = e && isSnapshotEvent(e.t) ? e as SnapshotEvent : snapshotEventFromFrame(f);
+              if (event) this.rememberSnapshotEvent(sq, event);
+            }
+            if (e?.t === 'scores' || e?.t === 'reveal') {
+              const latest = this.latestScores;
+              if (latest?.n === e.n && latest.sq.epoch === sq.epoch && latest.sq.n > sq.n) {
+                e = { ...e, scores: latest.scores, hp: latest.hp };
+              } else {
+                this.latestScores = { sq, n: e.n, scores: e.scores, hp: e.hp };
+              }
+            }
           }
           if (e) this.fire(e);
         }),
@@ -445,27 +691,53 @@ export class MpSession {
       return { t: 'lobby', players: [...this.roster] };
     });
 
-    listen('begin', (f) => ({
-      t: 'begin',
-      timer: Math.max(TIMER_MIN, Math.min(TIMER_MAX, Math.round(asNum(f.timer, 60)))),
-      lms: f.lms === 1 || f.lms === true,
-      rn: typeof f.rn === 'string' ? f.rn.slice(0, 24) : undefined,
-      sd: asNum(f.sd, 0) >>> 0,
-    }));
+    listen('begin', (f) => {
+      if (this.beginSeen || this.phase === 'ended') return null;
+      const begin = asBeginInfo(f);
+      if (!begin) return null;
+      this.beginSeen = true;
+      this.phase = 'active';
+      this.lastBegin = { t: 'begin', ...begin };
+      const pending = this.pendingRound;
+      this.pendingRound = null;
+      if (pending) {
+        queueMicrotask(() => {
+          if (this.phase !== 'active' || pending.n <= this.lastRoundN) return;
+          this.lastRoundN = pending.n;
+          this.lastRound = { t: 'round', ...pending };
+          this.handlers.onRemoteRound?.(
+            pending.n,
+            pending.stg,
+            pending.timerLen,
+            pending.forcedGood,
+            pending.closed,
+            pending.roundElapsedMs,
+          );
+          this.fire({ t: 'round', ...pending });
+        });
+      }
+      return { t: 'begin', ...begin };
+    });
 
     listen('round', (f) => {
-      const stgRaw = f.stg;
-      const stg =
-        stgRaw && typeof stgRaw === 'object'
-          ? {
-              id: asStr((stgRaw as Record<string, unknown>).id).slice(0, 32),
-              seed: asNum((stgRaw as Record<string, unknown>).seed, 0) >>> 0,
-            }
-          : { id: '', seed: 0 };
-      const n = Math.round(asNum(f.n, 0));
-      const timerLen = Math.max(TIMER_MIN, Math.min(TIMER_MAX, Math.round(asNum(f.timerLen, 60))));
-      this.handlers.onRemoteRound?.(n, stg, timerLen);
-      return { t: 'round', n, stg, timerLen };
+      const round = asRoundInfo(f);
+      if (!round || this.phase === 'ended') return null;
+      if (this.phase === 'lobby') {
+        if (!this.pendingRound || round.n > this.pendingRound.n) this.pendingRound = round;
+        return null;
+      }
+      if (round.n <= this.lastRoundN) return null;
+      this.lastRoundN = round.n;
+      this.lastRound = { t: 'round', ...round };
+      this.handlers.onRemoteRound?.(
+        round.n,
+        round.stg,
+        round.timerLen,
+        round.forcedGood,
+        round.closed,
+        round.roundElapsedMs,
+      );
+      return { t: 'round', ...round };
     });
 
     listen('pick', (f) => ({
@@ -476,36 +748,101 @@ export class MpSession {
     }));
 
     listen('sr', (f) => {
+      const n = Math.round(asNum(f.n, -1));
       const v = clampSr(f.sr);
       if (!v) return null; // malformed verdicts vanish at the door
+      if (this.role === 'host' && this.lastRoundN > 0 && n !== this.lastRoundN) return null;
       return {
         t: 'sr',
         uid: asStr(f.uid, asStr(f.src, '?')),
-        n: Math.round(asNum(f.n, -1)),
+        n,
         sr: v,
       };
     });
 
-    listen('reveal', (f) => ({
-      t: 'reveal',
-      n: Math.round(asNum(f.n, -1)),
-      scores: asScoreList(f.scores),
-      hp: asHpMap(f.hp),
-    }));
+    listen('reveal', (f) => {
+      if (this.role === 'client' && this.phase === 'ended') return null;
+      const n = Math.round(asNum(f.n, -1));
+      if (this.lastRoundN > 0 && n < this.lastRoundN) return null;
+      return { t: 'reveal', n, scores: asScoreList(f.scores), hp: asHpMap(f.hp) };
+    });
 
-    listen('scores', (f) => ({
-      t: 'scores',
-      n: Math.round(asNum(f.n, -1)),
-      scores: asScoreList(f.scores),
-      hp: asHpMap(f.hp),
-      reason: typeof f.reason === 'string' ? f.reason.slice(0, 32) : undefined,
-    }));
+    listen('scores', (f) => {
+      if (this.role === 'client' && this.phase === 'ended') return null;
+      const n = Math.round(asNum(f.n, -1));
+      if (this.lastRoundN > 0 && n !== this.lastRoundN) return null;
+      return {
+        t: 'scores',
+        n,
+        scores: asScoreList(f.scores),
+        hp: asHpMap(f.hp),
+        reason: typeof f.reason === 'string' ? f.reason.slice(0, 32) : undefined,
+      };
+    });
 
-    listen('end', (f) => ({
-      t: 'end',
-      scores: asScoreList(f.scores),
-      reason: typeof f.reason === 'string' ? f.reason.slice(0, 32) : undefined,
-    }));
+    listen('end', (f) => {
+      if (this.endSeen) return null;
+      const event = {
+        t: 'end' as const,
+        scores: asScoreList(f.scores),
+        reason: typeof f.reason === 'string' ? f.reason.slice(0, 32) : undefined,
+        winnerUid: typeof f.winnerUid === 'string' ? f.winnerUid.slice(0, 40) : undefined,
+      };
+      this.endSeen = true;
+      this.phase = 'ended';
+      this.lastEnd = {
+        scores: event.scores.map((s) => ({ ...s })),
+        reason: event.reason,
+        winnerUid: event.winnerUid,
+      };
+      return event;
+    });
+
+    listen('room-snapshot', (f) => {
+      if (this.role !== 'client') return null;
+      let snapshot = asRoomSnapshot(f);
+      if (!snapshot || this.roomSnapshotSeen) return null;
+      if (snapshot.phase === 'lobby' && this.phase !== 'lobby') return null;
+      if (snapshot.phase !== 'lobby') {
+        const capture = asHostSequence(f._captureSq);
+        const floor = this.snapshotDroppedThrough;
+        if ((this.snapshotEvents.length > 0 && !capture) ||
+          (floor && (!capture || floor.epoch !== capture.epoch || floor.n > capture.n))) {
+          // The bounded journal cannot repair this capture. A fresh complete
+          // ledger includes the discarded events; never bootstrap partially.
+          this.net.send({ t: 'metaReq', snapshot: true });
+          return null;
+        }
+        const merged = this.mergeSnapshot(snapshot, capture);
+        if (!merged) {
+          this.net.send({ t: 'metaReq', snapshot: true });
+          return null;
+        }
+        snapshot = merged;
+        this.snapshotCapture = capture;
+        this.roomSnapshotSeen = true;
+        this.snapshotEvents.length = 0;
+        this.snapshotDroppedThrough = null;
+      }
+      this.phase = snapshot.phase;
+      this.beginSeen = snapshot.phase !== 'lobby';
+      this.endSeen = snapshot.phase === 'ended';
+      this.pendingRound = null;
+      this.lastBegin = snapshot.phase === 'lobby' ? null : { t: 'begin', ...snapshot.begin };
+      this.lastRound = snapshot.phase === 'active' && snapshot.round
+        ? { t: 'round', ...snapshot.round }
+        : null;
+      this.lastRoundN = snapshot.phase === 'active' ? snapshot.round?.n ?? 0 : this.lastRoundN;
+      if (snapshot.phase === 'ended') {
+        this.lastEnd = {
+          scores: snapshot.end.scores.map((s) => ({ ...s })),
+          reason: snapshot.end.reason,
+          winnerUid: snapshot.end.winnerUid,
+        };
+      }
+      return snapshot;
+    });
+
 
     listen('elim', (f) => ({ t: 'elim', uids: asUids(f.uids) }));
 
@@ -514,7 +851,7 @@ export class MpSession {
       uid: asStr(f.from, asStr(f.uid, asStr(f.src, '?'))),
       targetUid: typeof f.targetUid === 'string' ? f.targetUid.slice(0, 40) : undefined,
       weapon: typeof f.weapon === 'string' ? f.weapon.slice(0, 16) : undefined,
-      n: typeof f.n === 'number' ? f.n : undefined,
+      n: typeof f.n === 'number' ? Math.round(f.n) : undefined,
     }));
 
     listen('meta', (f) => {
@@ -528,19 +865,21 @@ export class MpSession {
       return { t: 'peer-join', id: asStr(f.id), name: asStr(f.name) || undefined };
     });
 
-    // Late joiner catch-up + room-name race-proofing. The joiner fires this
-    // automatically on its first lobby event; the host answers with a meta
-    // push AND a unicast replay of begin + the current round, so a client
-    // that joined mid-game mounts the exact challenge in flight.
+    // A late joiner receives one complete host snapshot, never a begin/round
+    // replay that resets the match to zero.
     listen('metaReq', (f) => {
       if (this.role !== 'host') return null;
       const uid = asStr(f.uid, asStr(f.src, '?'));
+      if (!uid || uid === '?') return null;
       this.pushMeta();
-      // A lobby frame is the join handshake's completion signal — a joiner
-      // whose first snapshot raced its own subscription starves without it.
       this.net.refreshLobby();
-      if (this.lastBegin) this.net.unicast(uid, { ...this.lastBegin });
-      if (this.lastRound) this.net.unicast(uid, { ...this.lastRound });
+      if (f.snapshot === true) {
+        const snapshot = this.roomSnapshotFor(uid);
+        if (snapshot) this.net.unicast(uid, {
+          ...snapshot,
+          ...(this.hostCaptureSq ? { _captureSq: this.hostCaptureSq } : {}),
+        });
+      }
       return null;
     });
 
@@ -548,6 +887,96 @@ export class MpSession {
       t: 'peer-leave',
       id: asStr(f.id, asStr(f.src, '?')),
     }));
+  }
+
+  private rememberSnapshotEvent(sq: HostSequence, event: SnapshotEvent): void {
+    if (this.snapshotEvents.length === SNAPSHOT_EVENT_LIMIT) {
+      const dropped = this.snapshotEvents.shift()!;
+      const floor = this.snapshotDroppedThrough;
+      if (!floor || floor.epoch !== dropped.sq.epoch || dropped.sq.n > floor.n) {
+        this.snapshotDroppedThrough = dropped.sq;
+      }
+    }
+    this.snapshotEvents.push({ sq, event });
+  }
+
+  /** Replay host authority into the captured ledger, not through subscribers:
+   * UI advance/finish/score effects have already run for the live copies. */
+  private mergeSnapshot(
+    snapshot: Exclude<RoomSnapshot, { phase: 'lobby' }>,
+    capture: HostSequence | null,
+  ): Exclude<RoomSnapshot, { phase: 'lobby' }> | null {
+    const m = snapshot.match;
+    let st: LmsState = {
+      role: 'client', myUid: this.myUid() ?? '?',
+      table: m.scores, hp: m.hp, phases: m.phases, prevRanks: m.prevRanks,
+      depth: m.depth, closed: m.closed, roundElapsedMs: m.roundElapsedMs,
+      clocks: m.clocks, answered: m.answered, budget: m.budget,
+      over: m.over, winnerUid: m.winnerUid,
+      order: m.scores.map((row) => row.uid), streaks: {},
+    };
+    let round = snapshot.phase === 'active' ? snapshot.round : undefined;
+    let end = snapshot.phase === 'ended' ? snapshot.end : null;
+    let tableSq = capture;
+    const newer = capture ? this.snapshotEvents
+      .filter(({ sq }) => sq.epoch === capture.epoch && sq.n > capture.n)
+      .sort((a, b) => a.sq.n - b.sq.n) : [];
+    for (const { sq, event } of newer) {
+      switch (event.t) {
+        case 'round':
+          if (!st.over && event.n > st.depth) {
+            st = beginDepth(st, event.n);
+            round = event;
+            tableSq = sq;
+          }
+          break;
+        case 'reveal':
+        case 'scores':
+          // A later depth's table without its round cannot be mounted safely.
+          // Recapture rather than consuming its already-deduped reveal.
+          if (event.n > st.depth && !st.over) return null;
+          if (event.n !== st.depth || st.over) break;
+          st = adoptScores(st, event.scores, event.t === 'reveal' && !st.closed);
+          if (event.hp) st = { ...st, hp: { ...st.hp, ...event.hp } };
+          if (event.t === 'reveal') st = { ...st, closed: true };
+          tableSq = sq;
+          break;
+        case 'elim':
+          st = applyElim(st, event.uids);
+          break;
+        case 'peer-leave':
+          st = dropSeat(st, event.id);
+          break;
+        case 'end': {
+          st = adoptScores(st, event.scores, false);
+          const alive = aliveUids(st);
+          st = { ...st, closed: true, over: true,
+            winnerUid: event.winnerUid ?? (alive.length === 1 ? alive[0] : null) };
+          end = { scores: st.table, reason: event.reason, winnerUid: st.winnerUid ?? undefined };
+          tableSq = sq;
+          break;
+        }
+      }
+    }
+    // Local lease/goodbye terminal events have no broadcast stamp. Their
+    // authority still wins over an earlier active capture.
+    if (!end && this.phase === 'ended' && this.lastEnd) {
+      st = adoptScores(st, this.lastEnd.scores, false);
+      st = { ...st, closed: true, over: true, winnerUid: this.lastEnd.winnerUid ?? st.winnerUid };
+      end = { ...this.lastEnd, scores: st.table };
+    }
+    const match: MpMatchSnapshot = {
+      depth: st.depth, scores: st.table, hp: st.hp, phases: st.phases,
+      prevRanks: st.prevRanks, answered: st.answered, clocks: st.clocks, budget: st.budget,
+      closed: st.closed, roundElapsedMs: st.roundElapsedMs,
+      over: st.over, winnerUid: st.winnerUid,
+    };
+    if (tableSq) this.latestScores = { sq: tableSq, n: st.depth, scores: st.table, hp: st.hp };
+    if (end) return { t: 'room-snapshot', phase: 'ended', begin: snapshot.begin, match, end };
+    return {
+      t: 'room-snapshot', phase: 'active', begin: snapshot.begin, match,
+      ...(round ? { round: { ...round, closed: st.closed, roundElapsedMs: st.roundElapsedMs } } : {}),
+    };
   }
 
   private fire(e: MpEvent): void {
@@ -576,6 +1005,41 @@ export class MpSession {
 
   setRoomName(rn: string): void {
     this.roomLabel = String(rn ?? '').slice(0, 24) || null;
+  }
+  setRoomSnapshotProvider(provider: (joiningUid: string) => MpMatchSnapshot | null): void {
+    if (this.role !== 'host') return;
+    this.roomSnapshotProvider = provider;
+  }
+
+  private roomSnapshotFor(joiningUid: string): RoomSnapshot | null {
+    if (!this.lastBegin) return { t: 'room-snapshot', phase: 'lobby' };
+    const begin = asBeginInfo(this.lastBegin);
+    const match = asMatchSnapshot(this.roomSnapshotProvider?.(joiningUid) ?? null);
+    if (!begin || !match) return null;
+    if (this.lastEnd) {
+      return {
+        t: 'room-snapshot',
+        phase: 'ended',
+        begin,
+        match,
+        end: {
+          scores: this.lastEnd.scores.map((s) => ({ ...s })),
+          ...(this.lastEnd.reason ? { reason: this.lastEnd.reason } : {}),
+          ...(this.lastEnd.winnerUid ? { winnerUid: this.lastEnd.winnerUid } : {}),
+        },
+      };
+    }
+    const cachedRound = this.lastRound ? asRoundInfo(this.lastRound) : null;
+    const round = cachedRound
+      ? { ...cachedRound, closed: match.closed, roundElapsedMs: match.roundElapsedMs }
+      : null;
+    return {
+      t: 'room-snapshot',
+      phase: 'active',
+      begin,
+      ...(round ? { round } : {}),
+      match,
+    };
   }
 
   /** The room's display NAME (never the invite code), or null before the
@@ -622,7 +1086,7 @@ export class MpSession {
 
   /** begin{timer,lms,rn,sd} — starts the match on every screen. */
   begin(timerSec: number, lms: boolean, rn: string, runSeed: number): void {
-    if (this.role !== 'host') return;
+    if (this.role !== 'host' || this.lastBegin || this.endSeen) return;
     this.setRoomName(rn);
     const frame: Frame = {
       t: 'begin',
@@ -631,22 +1095,34 @@ export class MpSession {
       rn: String(rn ?? '').slice(0, 24),
       sd: runSeed >>> 0,
     };
+    this.phase = 'active';
+    this.beginSeen = false;
+    this.lastRoundN = 0;
+    this.lastRoundSentN = 0;
+    this.lastRound = null;
+    this.lastEnd = null;
+    this.lastBegin = { ...frame };
     this.net.broadcast(frame);
-    this.lastBegin = { ...frame }; // kept for late-joiner catch-up
   }
 
-  /** round{n,stg{ id,seed},timerLen} — deals depth n identically everywhere. */
-  round(n: number, stgId: string, seed: number, timerLen: number): void {
-    if (this.role !== 'host') return;
+  /** Host deals a monotonic depth; the optional marker overrides only that beat. */
+  round(n: number, stgId: string, seed: number, timerLen: number, forcedGood?: boolean): void {
+    const depth = Math.round(n);
+    if (this.role !== 'host' || this.phase !== 'active' || depth < 1 || depth <= this.lastRoundSentN) return;
     const frame: Frame = {
       t: 'round',
-      n: Math.round(n),
+      n: depth,
       stg: { id: String(stgId).slice(0, 32), seed: seed >>> 0 },
       timerLen: Math.max(TIMER_MIN, Math.min(TIMER_MAX, Math.round(timerLen))),
+      ...(forcedGood === true ? { forcedGood: true } : {}),
+      closed: false,
+      roundElapsedMs: 0,
     };
+    this.lastRoundSentN = depth;
     this.net.broadcast(frame);
-    this.lastRound = { ...frame }; // late joiners mount THIS round on arrival
+    this.lastRound = { ...frame };
   }
+
 
   /** reveal{n,answer,scores} — the ONLY frame allowed to carry an answer. */
   reveal(n: number, answerIdx: number, scores: ScoreRec[], hp?: Record<string, number>): void {
@@ -677,13 +1153,20 @@ export class MpSession {
     });
   }
 
-  endMatch(scores: ScoreRec[], reason?: string): void {
-    if (this.role !== 'host') return;
-    this.net.broadcast({
-      t: 'end',
+  endMatch(scores: ScoreRec[], reason?: string, winnerUid?: string): void {
+    if (this.role !== 'host' || this.endSeen || this.lastEnd) return;
+    const end = {
       scores: scores.map((s) => ({ uid: s.uid, name: String(s.name).slice(0, 16), pts: Math.round(s.pts) })),
       ...(reason ? { reason: reason.slice(0, 32) } : {}),
-    });
+      ...(winnerUid ? { winnerUid: winnerUid.slice(0, 40) } : {}),
+    };
+    this.phase = 'ended';
+    this.lastEnd = {
+      scores: end.scores.map((s) => ({ ...s })),
+      reason: end.reason,
+      winnerUid: end.winnerUid,
+    };
+    this.net.broadcast({ t: 'end', ...end });
   }
 
   eliminate(uids: string[]): void {
@@ -720,6 +1203,11 @@ export class MpSession {
     this.gone = true;
     for (const off of this.offs.splice(0)) off();
     this.subs.clear();
+    this.snapshotEvents.length = 0;
+    this.snapshotDroppedThrough = null;
+    this.snapshotCapture = null;
+    this.latestScores = null;
+    this.hostCaptureSq = null;
     this.net.leave();
   }
 }
@@ -755,6 +1243,11 @@ async function buildMpScreen(
   ]);
   const holder = new Container();
   const render = (): void => {
+    /* Identity, not seat order: mp.myUid() says which roster row is the local
+     * player and `isHost` says whether this screen may begin the run. The
+     * screen used to receive names only, so it tagged seat 0 "you · host" —
+     * telling every joiner they were the host. */
+    const view = lobbyView(mp.rosterNow(), mp.myUid(), isHost);
     holder.removeChildren();
     holder.addChild(
       buildLobby({
@@ -764,7 +1257,9 @@ async function buildMpScreen(
          * kept a name the host had not chosen. */
         roomName: mp.roomName() ?? roomName,
         code,
-        players: mp.names(),
+        players: view.players,
+        youUid: view.youUid,
+        canStart: view.canStart,
         onStart: (seconds) => {
           if (!isHost) return; // joiners wait for the host's begin frame
           opts.onStart?.(seconds);
@@ -866,6 +1361,7 @@ export interface WireHandlers {
   onElim?(e: Extract<MpEvent, { t: 'elim' }>): void;
   onAttack?(e: Extract<MpEvent, { t: 'attack' }>): void;
   onPeerLeave?(e: Extract<MpEvent, { t: 'peer-leave' }>): void;
+  onRoomSnapshot?(e: RoomSnapshot): void;
 }
 
 /**
@@ -876,7 +1372,7 @@ export interface WireHandlers {
 export function wireMain(h: WireHandlers): () => void {
   if (!activeSession) return () => undefined;
   const mp = activeSession;
-  return mp.subscribe((e) => {
+  const off = mp.subscribe((e) => {
     switch (e.t) {
       case 'begin':
         h.onBegin?.(e);
@@ -905,9 +1401,17 @@ export function wireMain(h: WireHandlers): () => void {
       case 'attack':
         h.onAttack?.(e);
         break;
+      case 'room-snapshot':
+        h.onRoomSnapshot?.(e);
+        break;
       case 'peer-leave':
         h.onPeerLeave?.(e);
         break;
     }
   });
+  // MPJoin awaits lazy scene imports before Main is ready. Request catch-up
+  // only AFTER its gameplay subscriber exists, not in the constructor or
+  // the room-name exchange; transport dedupe cannot replay a consumed frame.
+  if (mp.role === 'client') mp.net.send({ t: 'metaReq', snapshot: true });
+  return off;
 }

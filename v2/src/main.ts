@@ -17,16 +17,14 @@ import { setLayer as setDreadLayer } from './audio/beds.ts';
 import { initShadow, say, announce, noteRound, __detach as detachShadow } from './shadow/shadow.ts';
 import { initLarge, announceLarge, setPresence, __detachLarge as detachLarge } from './shadow/large.ts';
 import { initDirector, onAct, onReveal as dirOnReveal, onEmerald, onHpThreshold } from './audio/director.ts';
-import { maybeFlavorA } from './fate/flavor-a.ts';
-import { maybeFlavorB } from './fate/flavor-b.ts';
 import { maybeFate } from './fate/fate.ts';
-import { emeraldPick, buildInterlude } from './scenes/interlude.ts';
+import { drawRewardObject, rewardFor } from './fate/rewards.ts';
+import { applyEmerald, emeraldPick, buildInterlude } from './scenes/interlude.ts';
 import { applyBackdrop } from './worlds/backdrops.ts';
-import { pick as pickWorld } from './worlds/registry.ts';
-import { maybeCurse } from './fate/cursepack.ts';
-import { maybePack } from './fate/packs/registry.ts';
+import { resolveEncounter, type WorldEncounter } from './worlds/encounters.ts';
+import { applyLayerBackdrop, layerWorldId, registerHellBackdrops, type HellLayerKey } from './worlds/hellbacks.ts';
 import { mountVolume } from './scenes/volume.ts';
-import { redemptionCallback } from './arc/callback.ts';
+import { redemptionCallback, type EncounterMemory } from './arc/callback.ts';
 import { hellState } from './arc/hell.ts';
 /* P7 wave: the seven stages the spec still had unbuilt. Order here, in
  * TAKEOVERS and in onboard.TAKEOVER_STAGE_IDS must agree — the onboard
@@ -44,7 +42,7 @@ import { createChaos, type ChaosBus } from './fx/chaos.ts';
 import { pickCameos, ROSTER } from './fx/cameos.ts';
 import { BOARD_PANEL, GRID_GAP, puzzleLayout } from './scenes/layouthelper.ts';
 import { goalCardForIndex, maybeShowLegend, resetLegendRun } from './meta/onboard.ts';
-import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, runSeedFromRound, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan } from './scenes/mp.ts';
+import { MPHost, MPJoin, setActiveSession, wireMain, parseStg, roundPlan, runSeedFromRound, hueIndexForDepth, type MpSession, type MpEvent, type RoundPlan, type RoomSnapshot } from './scenes/mp.ts';
 import { hpFor, pointsFor } from './scenes/lms.ts';
 import { createDirector, type LmsDirector } from './scenes/lmsdirector.ts';
 import { buildAttackMenu } from './scenes/attackmenu.ts';
@@ -73,6 +71,9 @@ import { mountSkyFire2 } from './scenes/takeovers/skyfire2.ts';
 import { mountSlots } from './scenes/takeovers/slots.ts';
 import { mountSlimeGallery } from './scenes/takeovers/slimegallery.ts';
 import { mountWell } from './scenes/takeovers/well.ts';
+import { mountCollectibles } from './scenes/takeovers/collectibles.ts';
+import { mountStoneTrial } from './scenes/takeovers/stonetrial.ts';
+import { mountGunshipEvasion } from './scenes/takeovers/gunshipevasion.ts';
 import { whenFontsReady } from './style/panelkit.ts';
 import { installQaHooks, isDevBuild } from './qa.ts';
 
@@ -122,7 +123,22 @@ function fit(): void {
  * mirror image of the usual bug and just as silent. */
 const ALL_FAMILIES = [...FAMILIES, ...FAMILIES2, ...FAMILIES3, ...FAMILIES4, ...FAMILIES5];
 const TAKEOVERS = [mountRedLight, mountTidePool, mountSerpent, mountFloorFall, mountHunterDodge, mountLaserStorm, mountDroneDodge, mountSaberClash, mountSlots, mountSlimeGallery, mountWell, mountPacman2, mountTetris2, mountBattleship2, mountDoom2, mountPhoenix2, mountGauntlet2, mountFractal2, mountHypercube2, mountSniper2, mountPopGlitter, mountMetal, mountTerminator2, mountFury2, mountSkyFire2,
-  mountLanternGuard, mountPiano, mountLamp, mountPod, mountShelfEdge, mountOrb, mountGreenWar];
+  mountLanternGuard, mountPiano, mountLamp, mountPod, mountShelfEdge, mountOrb, mountGreenWar, mountCollectibles, mountStoneTrial, mountGunshipEvasion];
+const OPENING_FAMILY_IDS = ['accretion', 'count-grid', 'rotation-composite'] as const;
+
+function openingRoundPlan(depth: number, seed: number, plan: RoundPlan): RoundPlan {
+  const id = OPENING_FAMILY_IDS[depth - 1];
+  if (!id) return plan;
+  const index = ALL_FAMILIES.findIndex((family) => family.id === id);
+  if (index < 0) throw new Error(`opening family is not mounted: ${id}`);
+  return {
+    ...plan,
+    kind: 'puzzle',
+    index,
+    stg: 'pz:' + index,
+    seed: (seed ^ Math.imul(depth, 7919)) >>> 0,
+  };
+}
 
 function code5(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -233,7 +249,7 @@ function makeDirector(role: 'host' | 'client', session: MpSession, seed: number)
       reveal: (n, a, scores, hp) => session.reveal(n, a, scores, hp),
       pushScores: (n, scores, hp, reason) => session.pushScores(n, scores, hp, reason),
       eliminate: (uids) => session.eliminate(uids),
-      endMatch: (scores, reason) => session.endMatch(scores, reason),
+      endMatch: (scores, reason, winnerUid) => session.endMatch(scores, reason, winnerUid),
       sendSr: (n, v) => session.sendSr(n, v),
       attack: (t, w, n) => session.attack(t, w, n),
       roster: () => session.rosterNow().map((p) => ({ id: p.id, name: p.name })),
@@ -351,7 +367,7 @@ function wireLms(): void {
     onBegin: (e: MpEvent) => {
       if (mpRole !== 'client') return;
       const ev = e as Extract<MpEvent, { t: 'begin'; timer: number; rn?: string; sd: number }>;
-      startRun(myName, ev.rn || 'Room', ev.timer, ev.sd);
+      startRun(myName, ev.rn || mp?.roomName() || 'PRIVATE ROOM', ev.timer, ev.sd, true);
     },
     onSr: (e) => lms?.handle(e),
     onReveal: (e) => lms?.handle(e),
@@ -360,8 +376,61 @@ function wireLms(): void {
     onEnd: (e) => lms?.handle(e),
     onAttack: (e) => lms?.handle(e),
     onPeerLeave: (e) => lms?.handle(e),
+    onRoomSnapshot: (snapshot) => handleRoomSnapshot(snapshot),
   });
 }
+function handleRoomSnapshot(snapshot: RoomSnapshot): void {
+  if (mpRole !== 'client' || snapshot.phase === 'lobby') return;
+  const roomName = snapshot.begin.rn || mp?.roomName() || 'PRIVATE ROOM';
+  if (!run || run.seed !== snapshot.begin.sd) {
+    startRun(myName, roomName, snapshot.begin.timer, snapshot.begin.sd, true);
+  } else {
+    run.roomName = roomName;
+    run.timerLen = snapshot.begin.timer;
+  }
+  if (!lms) return;
+  const mountedDepth = lms.state().depth;
+  lms.restoreSnapshot(snapshot.match);
+  if (snapshot.phase === 'ended') {
+    run!.depth = Math.max(1, snapshot.match.depth + 1);
+    endRun();
+    return;
+  }
+  if (mountedDepth > 0 && mountedDepth >= snapshot.match.depth) {
+    // Live round/reveal effects already ran. Install the missing ledger, but
+    // never remount that board or roll its existing clock/advance backward.
+    if (run!.depth === snapshot.match.depth) {
+      const now = performance.now();
+      const elapsedMs = Math.max(run!.roundElapsedMs, snapshot.match.roundElapsedMs,
+        now - run!.depthStartedAt);
+      run!.roundElapsedMs = elapsedMs;
+      run!.depthStartedAt = now - elapsedMs;
+      run!.roundClosed = snapshot.match.closed;
+    }
+    if (snapshot.match.closed) stopTick();
+    return;
+  }
+  if (snapshot.round) {
+    mountRemoteRound({ t: 'round', ...snapshot.round }, true);
+    return;
+  }
+  stopTick();
+  run!.depth = Math.max(1, snapshot.match.depth);
+  run!.roundClosed = snapshot.match.closed;
+  run!.roundElapsedMs = snapshot.match.roundElapsedMs;
+  const root = new Container();
+  shell = Shell.attach(root, {
+    onLobby: () => { run = null; toLanding(); },
+    onLeave: () => { run = null; toLanding(); },
+    roomTitle: roomName + ' · DEPTH ' + run!.depth,
+  });
+  shell.setDepth(run!.depth);
+  const remaining = Math.max(0, run!.timerLen - run!.roundElapsedMs / 1000);
+  shell.setTimer(run!.timerLen > 0 ? remaining / run!.timerLen : 0, fmtClock(Math.ceil(remaining)));
+  centreText(root, 'WAITING FOR THE HOST ROUND FRAME', 450, 18, T.muted);
+  show(root);
+}
+
 
 function toLanding(): void {
   stopTick();
@@ -384,8 +453,9 @@ async function toLobbyHost(name: string, roomName: string): Promise<void> {
     res = await MPHost.start(code5(), name, roomName, {
     onStart: (seconds) => {
       const sd = ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1)) >>> 0;
-      mp?.begin(seconds, true, roomName, sd);
-      startRun(myName, roomName, seconds, sd);
+      const canonicalRoomName = mp?.roomName() || roomName || name + "'s Room";
+      mp?.begin(seconds, true, canonicalRoomName, sd);
+      startRun(myName, canonicalRoomName, seconds, sd);
     },
       onLeave: () => { mp?.leave(); mp = null; toLanding(); },
     });
@@ -394,6 +464,7 @@ async function toLobbyHost(name: string, roomName: string): Promise<void> {
     return;
   }
   mp = res.mp; mpRole = 'host'; setActiveSession(mp);
+  res.mp.setRoomSnapshotProvider((joiningUid) => lms?.snapshotForJoin(joiningUid) ?? null);
   wireLms();
   show(res.ui);
 }
@@ -414,7 +485,7 @@ async function toLobbyJoin(code: string, name: string): Promise<void> {
   show(res.ui);
 }
 
-function mountRemoteRound(e: MpEvent): void {
+function mountRemoteRound(e: MpEvent, restoredSnapshot = false): void {
   if (e.t !== 'round') return;
   const stgRef = typeof e.stg === 'string' ? { id: e.stg, seed: 0 } : e.stg;
   const rp = parseStg(stgRef.id);
@@ -422,14 +493,17 @@ function mountRemoteRound(e: MpEvent): void {
   const sd = stgRef.seed >>> 0;
   /* `sd` is the BOARD seed for THIS depth, not the run seed. Storing it as
    * run.seed (what this used to do) left the client deriving modifiers,
-   * worlds, curses, fate and emerald offers from a seed that changed every
+   * encounters, Fate and emerald offers from a seed that changed every
    * round, while run.plan still came from the host's run seed — so no two
    * screens in a room agreed on the round's variation layers. Recover the
    * run seed instead, and keep seed and plan in lockstep. */
   const runSeed = runSeedFromRound(sd, e.n, rp.kind);
-  if (!run) startRun(myName, 'Room', e.timerLen, runSeed);
-  else if (run.seed !== runSeed) { run.seed = runSeed; run.plan = planArc(runSeed, 2000); }
+  if (!run) startRun(myName, mp?.roomName() || 'PRIVATE ROOM', e.timerLen, runSeed, true);
+  else if (run.seed !== runSeed) { run.seed = runSeed; run.plan = []; extendArcPlan(run, e.n); }
   const r0 = run!;
+  r0.pendingForcedGoodDepth = e.forcedGood === true ? e.n : null;
+  r0.roundClosed = e.closed === true;
+  r0.roundElapsedMs = Math.max(0, e.roundElapsedMs);
   /* Clear before the depth moves, not inside deal(): between these two the
    * QA snapshot would otherwise report the NEW depth carrying the PREVIOUS
    * depth's modifiers, which is exactly the false desync signal the field
@@ -442,7 +516,7 @@ function mountRemoteRound(e: MpEvent): void {
      * this depth and show()s it, which retires the previous round. Mounting
      * straight into `view` (the old path) left every client round parented to
      * an untracked container — chrome-less boards stacking up for the run. */
-    deal({ rp, seed: sd });
+    deal({ rp, seed: sd }, !restoredSnapshot);
   } catch (err) { DBG.errors.push('mount: ' + String(err).slice(0, 120)); }
 }
 
@@ -452,8 +526,14 @@ interface Run {
   seed: number; plan: ArcPlan[];
   depth: number; hp: number; score: number; streak: number;
   prevAlign: string | null; emeralds: string[]; lastTakeover: number; prevSanctuary: boolean; depthStartedAt: number;
-  /** Score multiplier a curse imposed for the current depth (1 = none). */
-  fateScoreMul: number;
+  roundClosed: boolean; roundElapsedMs: number;
+  memories: EncounterMemory[];
+  /** Host-authored, one-depth override announced with the next round frame. */
+  pendingForcedGoodDepth: number | null;
+  sharedScoreMul: number;
+  nextCorrectMul: number;
+  coinDropChance: number;
+  usedEmeralds: string[];
   /** Shape of the depth currently on screen — the host scores inbound sr
    *  frames against THIS, never against anything the client claims. */
   curKind: 'puzzle' | 'takeover'; curAnswer: number;
@@ -461,6 +541,30 @@ interface Run {
 /* Staleness is guarded by run IDENTITY (`run !== r`) throughout — a deferred
  * advance or tick from a dead run simply fails that check. */
 let run: Run | null = null;
+const ARC_PLAN_CHUNK = 1024;
+const ARC_PLAN_LOOKAHEAD = 8;
+
+/**
+ * Extend in deterministic batches rather than imposing a terminal run length
+ * or rebuilding the plan at every depth. The lookahead prevents planArc's
+ * finite-tail fit from changing already-dealt blocks; act bands are fixed so
+ * a later extension cannot retint earlier depths.
+ */
+function extendArcPlan(r: Run, throughDepth: number): void {
+  while (r.plan.length < throughDepth) {
+    const oldLength = r.plan.length;
+    const nextLength = oldLength + ARC_PLAN_CHUNK;
+    const generated = planArc(r.seed, nextLength + ARC_PLAN_LOOKAHEAD);
+    for (let i = oldLength; i < nextLength; i++) {
+      const source = generated[i];
+      if (!source) throw new Error('arc plan extension ended before its requested depth');
+      const depth = i + 1;
+      r.plan.push(depth <= 3
+        ? { ...source, align: 'neutral', act: 0, sanctuary: false, layer: 0 }
+        : { ...source, act: Math.min(3, Math.floor((depth - 1) / 500)) as 0 | 1 | 2 | 3 });
+    }
+  }
+}
 /* Which round modifiers the depth on screen is running. Read by the dev QA
  * snapshot so a driver (or a human with two tabs open) can assert that every
  * seat in a room is on the same variation layers. */
@@ -479,9 +583,11 @@ function clampHp(v: number): number {
   return Math.max(hpFloor, Math.min(100, v));
 }
 
-function startRun(name: string, roomName: string, timerLen: number, seed?: number): void {
+function startRun(name: string, roomName: string, timerLen: number, seed?: number, deferDeal = false): void {
   seed = (seed ?? ((Date.now() & 0xffff) ^ (Math.floor(Math.random() * 0xffff) + 1))) >>> 0;
-  run = { name, roomName, timerLen, seed, plan: planArc(seed, 2000), depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], lastTakeover: -99, prevSanctuary: false, fateScoreMul: 1, curKind: 'puzzle', curAnswer: -1 };
+  const fresh: Run = { name, roomName, timerLen, seed, plan: [], depth: 1, depthStartedAt: performance.now(), hp: 100, score: 0, streak: 0, prevAlign: null, emeralds: [], usedEmeralds: [], lastTakeover: -99, prevSanctuary: false, sharedScoreMul: 1, nextCorrectMul: 1, coinDropChance: 0, curKind: 'puzzle', curAnswer: -1, pendingForcedGoodDepth: null, roundClosed: false, roundElapsedMs: 0, memories: [] };
+  run = fresh;
+  extendArcPlan(fresh, 1);
   /* P2: one chaos bus per run. Pure logic — all time enters via tick(dtMs). */
   hpFloor = 0;
   chaos = createChaos(seed, revealMotionEnabled());
@@ -494,7 +600,7 @@ function startRun(name: string, roomName: string, timerLen: number, seed?: numbe
   initLarge(view);
   initDirector();
   resetLegendRun();
-  deal();
+  if (!deferDeal) deal();
 }
 
 function endRun(): void {
@@ -566,19 +672,31 @@ function endRun(): void {
  * @param remote client only — the host's round frame, which names the stage
  *   and its seed. Absent = deal locally (solo, or the host's own deal).
  */
-function deal(remote?: { rp: RoundPlan; seed: number }): void {
+function deal(remote?: { rp: RoundPlan; seed: number; forcedGood?: true }, advanceLmsDepth = true): void {
   const r = run!;
   /* A solo descent dies on HP. In a real match the elimination sweep is the
    * only authority on who is out, so a drained host keeps dealing until the
    * sweep says stop — but a one-seat room is not a match and must still die. */
-  if ((soloRules() && r.hp <= hpFloor) || r.depth > r.plan.length) { endRun(); return; }
-  lms?.openDepth(r.depth);
+  extendArcPlan(r, r.depth);
+  if (soloRules() && r.hp <= hpFloor) { endRun(); return; }
+  if (advanceLmsDepth) {
+    lms?.openDepth(r.depth);
+    r.roundClosed = false;
+    r.roundElapsedMs = 0;
+  }
   closeAttackMenu();
   activeMods = []; /* takeover depths run none; never report the last depth's */
-  const plan = r.plan[r.depth - 1];
-  r.fateScoreMul = 1; /* curses last exactly one depth */
+  const forcedGood = remote?.forcedGood === true || r.pendingForcedGoodDepth === r.depth;
+  if (forcedGood) {
+    const seededBeat = r.plan[r.depth - 1]!;
+    r.plan[r.depth - 1] = { ...seededBeat, align: 'good', sanctuary: true };
+    r.pendingForcedGoodDepth = null;
+  }
+  const plan = r.plan[r.depth - 1]!;
+  r.sharedScoreMul = 1; /* deterministic room-wide pressure lasts this depth */
+  r.coinDropChance = 0;
   const root = new Container();
-  /* Banners, curse lines and toasts are emitted BEFORE the board is built,
+  /* Banners and toasts are emitted BEFORE the board is built,
    * so they used to be painted under it — the sidebar panel sliced the layer
    * banner in half mid-sentence (owner, 2026-08-26: "issues with text having
    * other things over it or in front"). They now go into an overlay that is
@@ -619,44 +737,66 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     onLeave: () => { run = null; toLanding(); },
   });
   shell.setDepth(r.depth);
-  shell.setTimer(1, fmtClock(r.timerLen));
-  r.depthStartedAt = performance.now();
+  const remaining = Math.max(0, r.timerLen - r.roundElapsedMs / 1000);
+  shell.setTimer(r.timerLen > 0 ? remaining / r.timerLen : 0, fmtClock(Math.ceil(remaining)));
+  r.depthStartedAt = performance.now() - r.roundElapsedMs;
   startTick(root);
 
+  if (r.roundClosed) {
+    r.curKind = remote?.rp.kind ?? 'puzzle';
+    r.curAnswer = -1;
+    applyArc(root, plan);
+    centreText(overlay, 'ROUND CLOSED · WAITING FOR NEXT DEPTH', 440, 22, T.gold);
+    root.addChild(overlay);
+    show(root);
+    return;
+  }
+
   applyArc(root, plan);
-  /* P6: the two things the arc has always computed and never shown. */
+  let hellLayer: HellLayerKey | null = null;
+  let encounter: WorldEncounter | null = null;
+  let encounterObjectId: string | null = null;
+  let worldHost: Container | null = null;
+  const backdropStops: Array<() => void> = [];
   try {
     const hs = hellState(r.seed, r.depth, r.plan);
     hpFloor = soloRules() ? hs.hpFloor : 0;
     if (hs.crossed && hs.crossingLine) toastNow(overlay, hs.crossingLine, T.bad);
-    /* The redemption callback: the good round visibly continuing the good
-     * round from ~5 depths ago. The arc planner has threaded this internally
-     * since the rebuild and nothing ever surfaced it, which is why the game
-     * never felt designed rather than generated. */
-    const cb = redemptionCallback(r.seed, r.depth, r.plan);
-    if (cb) toastNow(overlay, cb.line, T.good);
+    if (plan.sanctuary) hellLayer = 'sanctuary';
+    else if (hs.layer >= 1) hellLayer = hs.layer as Exclude<HellLayerKey, 'sanctuary'>;
+    const cb = r.depth > 3 ? redemptionCallback(r.seed, r.depth, r.plan, r.memories) : null;
+    if (cb) toastNow(overlay, cb.line, T.accentB);
   } catch { /* continuity is optional; a bad beat must never kill the round */ }
   if (plan.sanctuary) sanctuaryOn(root); else sanctuaryOff(root);
-  try {
-    const wd = pickWorld(plan.align === 'chaotic' ? 'chaotic' : plan.align === 'good' ? 'good' : plan.align === 'neutral' ? 'neutral' : 'bad', mulberry((r.seed ^ Math.imul(r.depth, 0xBEEF)) >>> 0));
-    if (layout.uw) onSceneStop(applyBackdrop(bleedHolder, wd.id, { w: layout.lw, h: STAGE_H }));
-    else onSceneStop(applyBackdrop(root, wd.id));
-  } catch { /* backdrop optional */ }
-  try {
-    const cm = maybeCurse({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xCA75E)) >>> 0), hp: r.hp, seed: r.seed });
-    if (cm) {
-      if (typeof cm.hpDelta === 'number') r.hp = clampHp(r.hp + cm.hpDelta);
-      r.fateScoreMul = typeof cm.scoreMul === 'number' && cm.scoreMul > 0 ? cm.scoreMul : 1;
-      performCue(cm.cue);
-      if (cm.bannerText) toastNow(overlay, cm.bannerText, T.gold);
+  if (r.depth > 3) {
+    const backdropParent = layout.uw ? bleedHolder : root;
+    worldHost = new Container();
+    worldHost.label = 'encounter-world';
+    const hellHost = new Container();
+    hellHost.label = hellLayer ? layerWorldId(hellLayer) : 'hell-layer-inactive';
+    hellHost.alpha = hellLayer === 'sanctuary' ? 0.88 : hellLayer ? Math.min(0.62, 0.22 + 0.055 * Number(hellLayer)) : 0;
+    backdropParent.addChildAt(worldHost, 0);
+    backdropParent.addChildAt(hellHost, 1);
+    onSceneStop(() => {
+      for (const stop of backdropStops) { try { stop(); } catch { /* renderer already stopped */ } }
+      backdropParent.removeChild(worldHost!);
+      backdropParent.removeChild(hellHost);
+      worldHost!.destroy({ children: true });
+      hellHost.destroy({ children: true });
+    });
+    if (hellLayer) {
+      registerHellBackdrops();
+      const size = layout.uw ? { w: layout.lw, h: STAGE_H } : undefined;
+      backdropStops.push(applyLayerBackdrop(hellHost, hellLayer, size));
     }
-  } catch { /* fate optional */ }
-
+  }
   /* Resolve the round shape FIRST: the atmosphere layer needs to know
    * whether a chaos header is about to claim the banner row. */
-  const rp = roundPlan(r.seed, r.depth, ALL_FAMILIES.length, TAKEOVERS.length, (d) =>
+  const seededRp = roundPlan(r.seed, r.depth, ALL_FAMILIES.length, TAKEOVERS.length, (d) =>
     plan.align !== 'good' && d >= 4 && d - r.lastTakeover >= 3 && ((r.seed ^ Math.imul(d, 2654435761)) >>> 0) % 100 < 42);
-  const chaosRound = (remote ? remote.rp.kind : rp.kind) === 'takeover';
+  const rp = r.depth <= 3 ? openingRoundPlan(r.depth, r.seed, seededRp) : seededRp;
+  const useRp = r.depth <= 3 ? openingRoundPlan(r.depth, r.seed, remote?.rp ?? rp) : (remote?.rp ?? rp);
+  const chaosRound = useRp.kind === 'takeover';
 
   /* Announce the depth BEFORE anything that can return early. This used to
    * sit at the bottom of deal(), below the emerald interlude's `return` — so
@@ -664,10 +804,11 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
    * room nothing at all. Clients sat on the previous screen and only the host
    * ever got a relic. `rp`, `r.depth` and `r.timerLen` are all final here;
    * nothing between this point and the old call site touched them. */
-  if (!remote && mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen);
+  if (!remote && mp && mpRole === 'host') mp.round(r.depth, rp.kind === 'takeover' ? 'tk:' + rp.index : 'pz:' + rp.index, rp.seed, r.timerLen, forcedGood);
 
   onAct(Math.min(3, Math.floor(plan.layer / 2)));
-  if (plan.align !== 'good' && plan.layer > lastLayer && plan.layer >= 2) {
+  if (plan.align === 'good') lastLayer = 0;
+  else if (plan.layer > lastLayer && plan.layer >= 2) {
     const spec = layerBanner(overlay, plan.layer);
     /* Centre on the BOARD column, not the stage: the sidebar owns x >= 984,
      * so a stage-centred banner ran straight underneath it. On a chaos round
@@ -679,27 +820,10 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     }
     say('whisper', {});
     announceLarge('layer', spec.text);
+    lastLayer = plan.layer;
   }
   if (plan.sanctuary && !r.prevSanctuary) announceLarge('sanctuary', 'THE ORIGINAL LIGHT RETURNS');
   r.prevSanctuary = !!plan.sanctuary;
-  try {
-    const fa = maybeFlavorA({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA1A7 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
-    if (fa) { performCue(fa.cue); if (fa.bannerText) toastNow(overlay, fa.bannerText, T.gold); }
-    const fb = maybeFlavorB({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFB2B3 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
-    if (fb) { performCue(fb.cue); if (fb.bannerText) toastNow(overlay, fb.bannerText, T.muted); }
-    /* P4 breadth: the pack layer (16 packs, one weighted picker). Its riders
-     * are deliberately only the two this engine really applies — hpDelta and
-     * scoreMul — so a pack event can never read mechanical and do nothing.
-     * scoreMul MULTIPLIES into fateScoreMul so a curse in the same round is
-     * not silently overwritten; fateScoreMul is reset to 1 each depth. */
-    const pk = maybePack({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0x9C4A1 % 65536)) >>> 0), hp: r.hp, seed: r.seed });
-    if (pk) {
-      if (typeof pk.hpDelta === 'number') r.hp = clampHp(r.hp + pk.hpDelta);
-      if (typeof pk.scoreMul === 'number' && pk.scoreMul > 0) r.fateScoreMul *= pk.scoreMul;
-      performCue(pk.cue);
-      if (pk.bannerText) toastNow(overlay, pk.bannerText, T.gold);
-    }
-  } catch { /* flavor optional */ }
   setDreadLayer(plan.align === 'good' ? 0 : plan.layer);
   if (plan.align !== r.prevAlign && r.prevAlign !== null) sting(plan.align === 'good' ? 'heal' : 'pain');
   setAlignment(plan.align === 'chaotic' ? 'chaotic' : plan.align);
@@ -708,7 +832,22 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
 
   // emerald interlude every 4th depth
   if (r.depth % 4 === 0 && r.depth > 1) {
-    const offers = emeraldPick((r.seed ^ Math.imul(r.depth, 7919)) >>> 0, r.emeralds);
+    const inRoom = lms !== null;
+    const offers = emeraldPick((r.seed ^ Math.imul(r.depth, 7919)) >>> 0, r.emeralds)
+      .filter((offer) => inRoom || offer.id !== 'gravity_greed')
+      .map((offer) => ({
+        ...offer,
+        desc: inRoom
+          ? 'COSMETIC ONLY IN ROOMS · NO SCORE OR HP EFFECT'
+          : ({
+            chaos_control: 'Skip the next takeover and bank +150 points.',
+            crimson_veil: 'A failed takeover pays +40 points.',
+            doom_bloom: 'Correct puzzle answers pay x1.3 in solo descent.',
+            gravity_greed: 'Correct puzzle answers gain +60 points in solo descent.',
+            final_chaos: 'Every 10th depth: correct pays x2; a miss halves your total score.',
+            black_arrow: 'Once per run, skip one takeover for free.',
+          } as Record<string, string>)[offer.id] ?? offer.desc,
+      }));
     if (offers.length) {
       /* No board, no clock: the round tick used to keep counting under the
        * emerald screen and "drown" a player mid-choice (and in MP it would
@@ -737,22 +876,82 @@ function deal(remote?: { rp: RoundPlan; seed: number }): void {
     }
   }
 
-  // fate roll (hostile/neutral flavor events)
-  const fate = maybeFate({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA7E)) >>> 0), hp: r.hp, seed: r.seed });
-  if (fate) {
-    performCue(fate.cue);
-    if (fate.bannerText) toastNow(overlay, fate.bannerText, T.gold);
-    if (typeof fate.timerDelta === 'number' && fate.timerDelta < 0) r.hp -= 0; // timer handled per-scene
+  const fate = r.depth > 3
+    ? maybeFate({ depth: r.depth, align: plan.align, rng: mulberry((r.seed ^ Math.imul(r.depth, 0xFA7E)) >>> 0), hp: r.hp, seed: r.seed })
+    : null;
+  r.coinDropChance = fate?.coinDropChance ?? 0;
+  if (fate?.nextCorrectMul && soloRules()) r.nextCorrectMul *= fate.nextCorrectMul;
+  if (fate?.forceGoodNext && (!lms || mpRole === 'host')) r.pendingForcedGoodDepth = r.depth + 1;
+  const encounterEvent = fate ? {
+    id: fate.id,
+    bannerText: fate.bannerText,
+    hpDelta: fate.nuke ? 0 : fate.hpDelta,
+    scoreMul: fate.scoreMul,
+    cue: fate.cue,
+    rewardId: fate.rewardId,
+  } : null;
+  if (r.depth > 3) {
+    encounter = resolveEncounter(r.seed, r.depth, plan.align, encounterEvent);
+    if (encounter) {
+      if (worldHost) {
+        const size = layout.uw ? { w: layout.lw, h: STAGE_H } : undefined;
+        backdropStops.push(applyBackdrop(worldHost, encounter.worldId, size));
+      }
+      r.sharedScoreMul *= encounter.pressure.scoreMul;
+      performCue(encounter.pressure.cue);
+      if (encounter.pressure.hpDelta !== 0) {
+        if (lms && mpRole === 'host') {
+          const st = lms.state();
+          const deltas = st.table
+            .filter((row) => st.phases[row.uid] === 'alive')
+            .map((row) => ({ uid: row.uid, hpDelta: encounter!.pressure.hpDelta }));
+          lms.applyRoundHpDeltas(r.depth, `encounter:${r.depth}:${encounter.eventId}`, deltas);
+        } else if (!lms) {
+          r.hp = clampHp(r.hp + encounter.pressure.hpDelta);
+        }
+      }
+      if (fate?.nuke) {
+        if (lms && mpRole === 'host') {
+          const st = lms.state();
+          const deltas = st.table
+            .filter((row) => st.phases[row.uid] === 'alive')
+            .map((row) => ({ uid: row.uid, hpDelta: 1 - (st.hp[row.uid] ?? 100) }));
+          lms.applyRoundHpDeltas(r.depth, `fate:nuke:${r.depth}`, deltas);
+        } else if (!lms) {
+          r.hp = 1;
+        }
+      }
+      let banner = encounter.bannerText;
+      if (fate?.coinDropChance !== undefined && lms) banner += ' · COIN TOKEN HAS NO ROOM POINTS';
+      else if (fate?.nextCorrectMul !== undefined && lms && !soloRules()) banner += ' · SOLO BONUS ONLY';
+      toastNow(overlay, banner, T.gold);
+      if (encounter.rewardId) {
+        const spec = rewardFor(encounter.rewardId);
+        if (spec) {
+          const item = drawRewardObject(spec, 54);
+          item.x = 850; item.y = 760;
+          overlay.addChild(item);
+          encounterObjectId = encounter.rewardId;
+        }
+      }
+    }
   }
 
   /* A client with no round frame yet shows the chrome and waits. */
   if (mpRole === 'client' && !remote) { r.curKind = 'puzzle'; r.curAnswer = -1; root.addChild(overlay); startTick(root); show(root); return; }
-  const useRp = remote ? remote.rp : rp;
   const useSeed = remote ? remote.seed : rp.seed;
   r.curKind = useRp.kind;
   r.curAnswer = -1;
-  if (useRp.kind === 'takeover') { r.lastTakeover = r.depth; setPresence('hidden'); dealTakeover(root, useRp.index, useSeed, overlay); }
-  else { juiceW = BOARD_PANEL.x + BOARD_PANEL.w; /* keep the sidebar clean */ dealPuzzle(root, useRp.index, useSeed, r.depth, overlay); }
+  if (useRp.kind === 'takeover') {
+    r.lastTakeover = r.depth;
+    setPresence('hidden');
+    dealTakeover(root, useRp.index, useSeed, overlay);
+    rememberEncounter(encounter, null, encounterObjectId);
+  } else {
+    juiceW = BOARD_PANEL.x + BOARD_PANEL.w; /* keep the sidebar clean */
+    const personaId = dealPuzzle(root, useRp.index, useSeed, r.depth, overlay, encounter);
+    rememberEncounter(encounter, personaId, encounterObjectId);
+  }
   root.addChild(overlay); /* banners on top of the board, always */
   startTick(root);
   show(root);
@@ -830,6 +1029,7 @@ function clearJuice(): void {
 function startTick(root: Container): void {
   stopTick();
   const r = run!;
+  if (r.roundClosed) return;
   tickId = setInterval(() => {
     if (run !== r) { stopTick(); return; }
     const left = Math.max(0, r.timerLen - (performance.now() - r.depthStartedAt) / 1000);
@@ -964,27 +1164,62 @@ function dealTakeover(root: Container, idx: number, planSeed: number, overlay: C
   box.y = TAKEOVER_TOP;
   root.addChild(box);
   const mount = TAKEOVERS[idx];
+  let completed = false;
+  const finish = (res: StageResult): void => {
+    if (completed) return;
+    completed = true;
+    if (res.correct === true) { r.streak++; say('right', {}); } else if (res.correct === false) { r.streak = 0; say('wrong', {}); }
+    const veil = !lms && res.correct === false
+      ? applyEmerald('crimson_veil', { score: r.score, hp: r.hp, depth: r.depth, emeralds: r.emeralds })
+      : { note: '' };
+    const points = res.correct === false && 'flatBonus' in veil ? (veil.flatBonus ?? res.points) : res.points;
+    toastNow(root, points !== res.points ? veil.note : res.summary, res.correct === true ? T.good : res.correct === false ? T.bad : T.gold);
+    if (lms && mp) { lms.answer(res.correct, points, res.hpDelta); return; }
+    r.score = Math.max(0, r.score + points);
+    r.hp = clampHp(r.hp + res.hpDelta);
+    scheduleAdvance(r, r.depth, 1500);
+  };
   mount({
     depth: r.depth, seed: planSeed, timerLen: r.timerLen,
     container: box, rng: mulberry((r.seed ^ Math.imul(r.depth, 0x9E37)) >>> 0),
-    onDone: (res: StageResult) => {
-      if (res.correct === true) { r.streak++; say('right', {}); } else if (res.correct === false) { r.streak = 0; say('wrong', {}); }
-      toastNow(root, res.summary, res.correct === true ? T.good : res.correct === false ? T.bad : T.gold);
-      if (lms && mp) { lms.answer(res.correct, res.points, res.hpDelta); return; }
-      r.score = Math.max(0, r.score + res.points);
-      r.hp = clampHp(r.hp + res.hpDelta);
-      scheduleAdvance(r, r.depth, 1500);
-    },
+    onDone: finish,
   });
+  const skipRelic = !lms
+    ? (['chaos_control', 'black_arrow'] as const).find((id) => r.emeralds.includes(id) && !r.usedEmeralds.includes(id))
+    : undefined;
+  if (skipRelic) {
+    const card = panel(overlay, 40, 812, 300, 56);
+    card.eventMode = 'static'; card.cursor = 'pointer';
+    text(card, skipRelic === 'chaos_control' ? 'CHAOS CONTROL · SKIP +150' : 'BLACK ARROW · FREE SKIP', 14, 18, 14, T.gold, true);
+    card.on('pointerdown', () => {
+      if (completed) return;
+      r.usedEmeralds.push(skipRelic);
+      const effect = applyEmerald(skipRelic, { score: r.score, hp: r.hp, depth: r.depth, emeralds: r.emeralds });
+      finish({ correct: null, points: effect.flatBonus ?? 0, hpDelta: 0, summary: effect.note });
+    });
+  }
 }
 const TAKEOVER_NAMES = ['RED LIGHT', 'TIDE POOL', 'SERPENT', 'FLOOR-FALL', 'HUNTER-DODGE', 'LASER-STORM', 'DRONE SWARM', 'SABER CLASH', 'ONE-ARMED GOD', 'SLIME GALLERY', 'THE WELL', 'GLUTTON 2', 'THE WELL 2', 'SALVOS 2', 'CORRIDOR 2', 'SEED RITUAL', 'FOUR RIDERS', 'DEEP ZOOM', '606D', 'OVERWATCH', 'CHART TOPPER', 'FORGE SET', 'THE HUNT', 'FURY ROADRUN', 'SKY FIRE',
-  'LANTERN GUARD', 'THE RECITAL', 'THE LAMP', 'THE POD', 'SHELF EDGE', 'MISTER ORB', 'THE GREEN WAR'];
+  'LANTERN GUARD', 'THE RECITAL', 'THE LAMP', 'THE POD', 'SHELF EDGE', 'MISTER ORB', 'THE GREEN WAR', 'TOKEN RUN', 'SIX STONES', 'GUNSHIP PASS'];
 
-function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: number, overlay: Container): void {
+function rememberEncounter(encounter: WorldEncounter | null, personaId: string | null, objectId: string | null): void {
+  const r = run;
+  if (!encounter || !r) return;
+  r.memories = r.memories.filter((memory) => memory.depth >= r.depth - 7 && memory.depth !== r.depth);
+  r.memories.push({
+    depth: r.depth,
+    worldId: encounter.worldId,
+    eventId: encounter.eventId,
+    personaId,
+    objectId,
+  });
+}
+
+function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: number, overlay: Container, encounter: WorldEncounter | null): string | null {
   const r = run!;
   const plan = r.plan[depth - 1];
   const fam = ALL_FAMILIES[famIdx % ALL_FAMILIES.length];
-  const hue = T.boardHues[hueIndexForDepth(r.seed, depth, T.boardHues.length)];
+  const hue = T.boardHues[depth <= 3 ? 2 : hueIndexForDepth(r.seed, depth, T.boardHues.length)];
   /* Difficulty used to be min(5, 1 + floor(depth/6)) — it stopped climbing at
    * depth 24 and never moved again, in a game whose whole premise is that you
    * descend until you die. That ceiling is the mechanical half of the owner's
@@ -997,12 +1232,11 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
 
   r.curAnswer = p.answer;
   try {
-    /* First sight of a family in the shallow depths gets one plain-language
-     * line. onboard.ts already tracks "seen this run"; nothing was asking it. */
+    /* Teach each family's visible rule at first sight, before answer input. */
     const legend = maybeShowLegend(depth, fam.id);
     if (legend) {
-      const band = panel(root, 40, 118, 920, 34);
-      text(band, legend.text.slice(0, 110), 14, 8, 13, T.muted, true);
+      const band = panel(overlay, 40, 146, 920, 34);
+      text(band, legend.text, 14, 8, 13, T.muted, true);
     }
   } catch { /* legend optional */ }
   let answered = false;
@@ -1010,34 +1244,62 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
     if (answered) return; /* F2 lock: one answer per board */
     answered = true;
     const diffV = diff;
-    const mul = activeScoreMul();
-    const midas = mul > 1;
+    const relicState = { score: r.score, hp: r.hp, depth, emeralds: r.emeralds };
+    const doom = !lms ? applyEmerald('doom_bloom', relicState) : { note: '' };
+    const gravity = !lms && correct ? applyEmerald('gravity_greed', relicState) : { note: '' };
+    const finalChaos = !lms
+      ? applyEmerald('final_chaos', { ...relicState, correct })
+      : { note: '' };
+    if (correct && finalChaos.scoreMul) r.sharedScoreMul *= finalChaos.scoreMul;
+    const mul = activeScoreMul() * (correct ? (doom.scoreMul ?? 1) : 1);
+    const multiplierTag = gravity.flatBonus
+      ? 'GRAVITY GREED · '
+      : doom.scoreMul
+        ? 'DOOM BLOOM · '
+        : finalChaos.scoreMul === 2
+          ? 'FINAL CHAOS · '
+          : r.nextCorrectMul > 1
+            ? 'MIDAS · '
+            : mul < 1 ? 'PRESSURE · ' : '';
     if (correct) {
       r.streak++;
-      const pts = pointsFor(diffV, r.streak, mul);
+      const pts = pointsFor(diffV, r.streak, mul) + (gravity.flatBonus ?? 0);
       sfx('chime');
       dirOnReveal(true, r.streak);
-      say('right', {});
+      if (depth > 3) say('right', {});
       playRevealFx(root, 'correct', r.streak, pts);
-      toastNow(root, (midas ? 'MIDAS · ' : mul < 1 ? 'CURSED · ' : '') + '+' + pts + ' — ' + p.rule, T.good);
+      toastNow(root, multiplierTag + '+' + pts + ' — ' + p.rule, T.good);
       if (!lms) { r.score += pts; if (plan.sanctuary) r.hp = Math.min(100, r.hp + 20); }
+      if (r.coinDropChance > 0 && mulberry((r.seed ^ Math.imul(depth, 0xC01A)) >>> 0)() < r.coinDropChance) {
+        const coin = rewardFor('coin');
+        if (coin) {
+          const item = drawRewardObject(coin, 60);
+          item.x = 920; item.y = 760;
+          overlay.addChild(item);
+          if (!lms) r.score += coin.scoreDelta;
+          toastNow(root, !lms ? `COIN · +${coin.scoreDelta}` : 'COIN TOKEN · NO ROOM POINTS', T.gold);
+        }
+      }
     } else {
       r.streak = 0;
       sting('pain');
       dirOnReveal(false, 0);
-      say('wrong', {});
+      if (depth > 3) say('wrong', {});
       playRevealFx(root, 'wrong', 0, 0);
-      toastNow(root, 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
+      if (!lms && finalChaos.scoreMul === 0.5) r.score = Math.floor(r.score * 0.5);
+      const finalNote = !lms && finalChaos.scoreMul === 0.5 ? 'FINAL CHAOS · SCORE HALVED — ' : '';
+      toastNow(root, finalNote + 'WRONG — answer ' + (p.answer + 1) + ' · ' + p.rule, T.bad);
       if (!lms) { r.score = Math.max(0, r.score - 40); r.hp = clampHp(r.hp - 12); }
     }
     /* MP: the host re-derives the score from (diff, streak, sanctuary) —
      * the verdict below only reports WHAT happened, never what it is worth. */
-    if (lms && mp) { lms.answer(correct, 0, hpFor(correct, !!plan.sanctuary, depth)); return; }
+    if (lms && mp) { lms.answer(correct, 0, hpFor(correct, !!plan.sanctuary, depth)); if (correct) r.nextCorrectMul = 1; return; }
+    if (correct) r.nextCorrectMul = 1;
     scheduleAdvance(r, r.depth, 1400);
   }, depth, {
     score: () => r.score,
     players: sidebarPlayers,
-    locked: () => !!lms && !lms.mayAnswer(),
+    locked: () => r.roundClosed || (!!lms && !lms.mayAnswer()),
   }, overlay); /* sidebar into the OVERLAY — see buildGameScene's `chrome` param:
                 * the modifiers transform `scene`, and the player rail must not
                 * turn sideways with the board. */
@@ -1050,7 +1312,7 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
    * near identical for the first few rounds, but then it turns into my game."
    * Round modifiers used to fire from depth 1, so round one was already our
    * game. The first three depths now run clean; the corruption starts after. */
-  const modMax = depth <= 3 ? 0 : Math.min(3, Math.max(1, Math.floor(plan.layer / 2)));
+  const modMax = depth <= 3 || plan.sanctuary ? 0 : Math.min(3, Math.max(1, Math.floor(plan.layer / 2)));
   const mctx: ModCtx = { depth, seed: r.seed, layer: plan.layer, align: plan.align, motion: revealMotionEnabled() };
   /* Transform about the stage centre, not the container origin. Pixi rotates
    * and scales around (0,0) by default, so mirror-flip (scale.x = -1) and
@@ -1059,7 +1321,20 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
    * exactly the same while making those transforms happen in place. */
   scene.pivot.set(STAGE_W / 2, STAGE_H / 2);
   scene.position.set(STAGE_W / 2, STAGE_H / 2);
-  for (const mod of pickModifiers(mctx, modMax)) {
+  const selectedMods = pickModifiers(mctx, modMax);
+  if (selectedMods.length) {
+    const notePanel = panel(overlay, 40, 810, 790, 82);
+    const note = new Text({
+      text: selectedMods.map((mod) => `${mod.banner} · ${mod.telegraph}`).join('\n'),
+      style: {
+        fontFamily: T.font, fontSize: 11, fill: T.muted, fontWeight: '700',
+        letterSpacing: 0.7, lineHeight: 18, wordWrap: true, wordWrapWidth: 758, breakWords: false,
+      },
+    });
+    note.x = 54; note.y = 817;
+    notePanel.addChild(note);
+  }
+  for (const mod of selectedMods) {
     activeMods.push(mod.id);
     const stop = mod.apply(mctx, scene);
     onSceneStop(stop);
@@ -1304,54 +1579,53 @@ function dealPuzzle(root: Container, famIdx: number, planSeed: number, depth: nu
     }
   }
 
-  /* P3: cameo silhouettes — pure function of (runSeed, depth), budgeted per
-   * round, drawn into the overlay so they sit above the board. Every teardown
-   * is registered with the scene, exactly like the modifiers above. */
-  const cl = puzzleLayout(p.cols, p.rows);
-  const answerArea = { x: BOARD_PANEL.x + cl.ox, y: BOARD_PANEL.y + cl.oy, w: cl.optW, h: cl.optH };
-  const cameoHost = new Container();
-  overlay.addChild(cameoHost);
-  for (const c of pickCameos(r.seed, depth, answerArea)) {
-    const sil = ROSTER.find((s) => s.id === c.id);
-    if (!sil) continue;
-    const node = new Container();
-    node.x = c.x; node.y = c.y;
-    const ink = sil.alignment === 'good' ? T.good : sil.alignment === 'bad' ? T.bad : T.muted;
-    const g = new Graphics();
-    for (const m of sil.marks) {
-      const mx = m.x * c.size, my = m.y * c.size, ms = m.size * c.size;
-      if (m.kind === 'line') {
-        g.moveTo(mx, my).lineTo((m.x2 ?? m.x) * c.size, (m.y2 ?? m.y) * c.size).stroke({ width: Math.max(2, ms * 0.5), color: ink, alpha: 0.9 });
-      } else if (m.kind === 'dot') {
-        g.circle(mx, my, ms).fill(ink);
-      } else if (m.kind === 'diamond') {
-        g.poly([mx, my - ms, mx + ms, my, mx, my + ms, mx - ms, my]).fill(ink);
-      } else {
-        const pts: number[] = [];
-        for (let i = 0; i < 3; i++) {
-          const a = m.rot + (i * 2 * Math.PI) / 3;
-          pts.push(mx + Math.cos(a) * ms, my + Math.sin(a) * ms);
+  /* Cameos are world-linked content after the clean opening. */
+  let personaId: string | null = null;
+  if (depth > 3) {
+    const cl = puzzleLayout(p.cols, p.rows);
+    const answerArea = { x: BOARD_PANEL.x + cl.ox, y: BOARD_PANEL.y + cl.oy, w: cl.optW, h: cl.optH };
+    const cameoHost = new Container();
+    overlay.addChild(cameoHost);
+    for (const c of pickCameos(encounter?.identitySeed ?? planSeed, depth, answerArea)) {
+      const sil = ROSTER.find((s) => s.id === c.id);
+      if (!sil) continue;
+      if (personaId === null) personaId = c.id;
+      const node = new Container();
+      node.x = c.x; node.y = c.y;
+      const ink = sil.alignment === 'good' ? T.good : sil.alignment === 'bad' ? T.bad : T.muted;
+      const g = new Graphics();
+      for (const m of sil.marks) {
+        const mx = m.x * c.size, my = m.y * c.size, ms = m.size * c.size;
+        if (m.kind === 'line') {
+          g.moveTo(mx, my).lineTo((m.x2 ?? m.x) * c.size, (m.y2 ?? m.y) * c.size).stroke({ width: Math.max(2, ms * 0.5), color: ink, alpha: 0.9 });
+        } else if (m.kind === 'dot') {
+          g.circle(mx, my, ms).fill(ink);
+        } else if (m.kind === 'diamond') {
+          g.poly([mx, my - ms, mx + ms, my, mx, my + ms, mx - ms, my]).fill(ink);
+        } else {
+          const pts: number[] = [];
+          for (let i = 0; i < 3; i++) {
+            const a = m.rot + (i * 2 * Math.PI) / 3;
+            pts.push(mx + Math.cos(a) * ms, my + Math.sin(a) * ms);
+          }
+          g.poly(pts).fill(ink);
         }
-        g.poly(pts).fill(ink);
       }
+      node.addChild(g);
+      cameoHost.addChild(node);
     }
-    node.addChild(g);
-    cameoHost.addChild(node);
+    onSceneStop(() => { cameoHost.destroy({ children: true }); });
   }
-  onSceneStop(() => { cameoHost.destroy({ children: true }); });
+  return personaId;
 }
 
 /**
- * Score multiplier in force for this depth (1 = none).
- *
- * Curses roll off the shared seed BUT also off the player's own hp, so two
- * screens can legitimately disagree about whether one fired. In a contest
- * everyone therefore scores on the same clean curve — a personal fate event
- * must never move a shared ladder. Solo, it applies.
+ * Score multiplier in force for this depth. Encounter pressure is seeded and
+ * shared; Midas remains personal to a solo descent or one-seat room.
  */
 function activeScoreMul(): number {
-  if (!run || !soloRules()) return 1;
-  return run.fateScoreMul;
+  if (!run) return 1;
+  return (soloRules() ? run.nextCorrectMul : 1) * run.sharedScoreMul;
 }
 
 /**

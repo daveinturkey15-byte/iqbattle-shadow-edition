@@ -1,5 +1,5 @@
 /* ============================================================================
- * WORLD BACKDROPS — 12 procedural canvas worlds across alignments.
+ * WORLD BACKDROPS — procedural canvas worlds across alignments.
  *
  * Dave's spec: "the music and art style of everything changes" per
  * alignment/theme. Each backdrop is a pure f(t) over fixed constants:
@@ -15,14 +15,17 @@
  * at t=0). Backdrops never recolor/animate question/answer glyphs (DNA.md).
  *
  * Integration (main.ts):
- *   import { applyBackdrop } from './worlds/backdrops.ts'; // registers all 12
+ *   import { applyBackdrop } from './worlds/backdrops.ts'; // registers procedural worlds
  *   const stop = applyBackdrop(sceneRoot, 'volcano');      // Pixi Container
  *   stop();                                                // on scene exit
  * ==========================================================================*/
 
 import { register, byId } from './registry.ts';
 import './w/index.ts'; /* P5: registers the 22 named-setting worlds */
+import { registerHellBackdrops } from './hellbacks.ts';
 import { STAGE_W, STAGE_H } from '../theme.ts';
+registerHellBackdrops();
+
 
 const TAU = Math.PI * 2;
 

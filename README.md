@@ -25,11 +25,11 @@ the Pages build — a leak fails the deploy. To falsify the guard, paste the ban
 into any tracked file and confirm it exits 1.
 
 > **v2 is the game.** Active development lives in [`v2/`](v2/) — Vite + TypeScript + PixiJS v8,
-> fixed 1600×900 logical stage, 12 solver-audited puzzle families, 25 chaos stages and
+> fixed 1600×900 logical stage, 14 solver-audited puzzle families, 35 takeover slots and
 > host-authoritative Last-Man-Standing multiplayer. Start at
 > [`v2/README-V2.md`](v2/README-V2.md); the puzzle ground truth is [`v2/DNA.md`](v2/DNA.md).
-> Everything described below this box is the **frozen v1 build** kept at the repo root for
-> reference and served at `/v1/`. It has no build step; v2 does.
+> The frozen v1 files at the repo root are source references, not a selectable release.
+> The version picker offers two v2 builds: the retained September release and the October candidate.
 
 ```sh
 cd v2 && npm i && npm run dev     # http://localhost:8792
@@ -42,14 +42,29 @@ cd v2 && npm i && npm run dev     # http://localhost:8792
 
 ## Deploy to GitHub Pages
 
-`.github/workflows/pages.yml` owns the deploy. On a push to `main` (or the active
-working branch listed in that file) it runs the name guard, builds `v2/` with Vite and
-publishes `v2/dist` via *Pages → Source: GitHub Actions*. There is no branch-and-folder
-deploy any more, and nothing at the repo root is published directly.
+`.github/workflows/pages.yml` owns publication through *Pages → Source: GitHub Actions*.
+The existing workflow still runs the name guard and `cd v2 && npm ci && npm run build`,
+then uploads `v2/dist`. It is unchanged by the dual-version cutover.
 
-Live: `https://<you>.github.io/iqbattle-shadow-edition/`. `v2/vite.config.ts` hardcodes
-that path as the production `base`, so **renaming the repo means editing that line in the
-same commit** or every asset 404s.
+Live picker: https://daveinturkey15-byte.github.io/iqbattle-shadow-edition/
+
+- **Current:** `./current/` retains the exact 4 September build from deployment
+  `6273064973`, source `b781411d2f04a555e748f0c3c5da1745c7011910`.
+- **New / experimental:** `./new/` builds the newer October source, including the
+  multiplayer transport fixes. Full-game and cross-network acceptance are not claimed.
+- Friends should select the same version. Browser Back returns to the picker.
+
+The Vite build uses `/iqbattle-shadow-edition/new/` and writes only
+`runtime/omarchy/build/new`. The npm `postbuild` runs release regression checks and
+`tools/assemble-pages.mjs`, which verifies `release/current-manifest.json`, preserves
+the old bytes under `current/` and their original absolute asset paths, and places
+the chooser at the root of `runtime/omarchy/build/site`. `release.json` records
+the publishing revision and retained-build digest. Serve that site at the project prefix.
+On GitHub Actions only, assembly also stages `v2/dist` for the existing publisher;
+it refuses to overwrite an existing output. Local builds never touch `v2/dist`.
+
+`node tools/verify-current-release.mjs` verifies the frozen current artifact.
+Never rebuild or edit that retained artifact to update the new candidate.
 
 Cross-device multiplayer uses the free PeerJS cloud broker (`unpkg.com/peerjs@1.4.7` + `0.peerjs.com`) — no keys, no server of your own. If the broker is busy, same-browser play still works via the storage bus, and solo is always fully playable.
 
