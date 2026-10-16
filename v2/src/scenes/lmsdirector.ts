@@ -15,9 +15,11 @@
  * SELFTEST:  node --experimental-strip-types src/scenes/selftest-lms.ts
  * ==========================================================================*/
 
-import type { MpEvent, ScoreRec, SrVerdict } from './mp.ts';
+import { MAX_ROUND_ELAPSED_MS } from './mp.ts';
+import type { MpEvent, MpMatchSnapshot, ScoreRec, SrVerdict } from './mp.ts';
 import {
   addSeat,
+  aliveUids,
   adoptScores,
   applyElim,
   attackRejectionText,
@@ -39,13 +41,17 @@ import {
   type Seat,
 } from './lms.ts';
 import type { AttackMenuEntry, WeaponId } from './mpfeat.ts';
+export interface RoundHpDelta {
+  uid: string;
+  hpDelta: number;
+}
 
 /** The slice of MpSession the director is allowed to touch. */
 export interface DirectorWire {
   reveal(n: number, answerIdx: number, scores: ScoreRec[], hp?: Record<string, number>): void;
   pushScores(n: number, scores: ScoreRec[], hp?: Record<string, number>, reason?: string): void;
   eliminate(uids: string[]): void;
-  endMatch(scores: ScoreRec[], reason?: string): void;
+  endMatch(scores: ScoreRec[], reason?: string, winnerUid?: string): void;
   sendSr(n: number, v: SrVerdict): void;
   attack(targetUid: string, weapon: string, n: number): void;
   /** Live lobby roster — late joiners are seated from it every depth. */
@@ -88,7 +94,7 @@ export interface LmsDirector {
    * True once the room holds two or more seats. Every run in this game is a
    * hosted room, so a director exists even when nobody joined — but a
    * one-seat room is a solo descent, not a match: it keeps the solo HP-death
-   * rule and the solo end screen, and end-when-one never fires.
+   * rule and end-when-one never fires.
    */
   isContest(): boolean;
   rows(): LmsRow[];
@@ -96,7 +102,7 @@ export interface LmsDirector {
   mayAttack(): boolean;
   attackMenu(): AttackMenuEntry[];
   budget(): number;
-  /** Start depth n: clear the per-depth ledgers, seat any late joiners. */
+  /** Start a strictly newer depth and its per-depth ledgers. */
   openDepth(depth: number): void;
   /** This screen answered (or finished a takeover stage). */
   answer(correct: boolean | null, points: number, hpDelta: number): void;
@@ -104,12 +110,19 @@ export interface LmsDirector {
   timeout(): void;
   /** Throw a weapon at a rival. */
   throwAt(targetUid: string, weapon: WeaponId): void;
+  /** Host-only active match snapshot for one fresh roster UID. */
+  snapshotForJoin(joiningUid: string): MpMatchSnapshot;
+  /** Client installs the missing host ledger without refilling a locally spent same-depth allowance. */
+  restoreSnapshot(snapshot: MpMatchSnapshot): void;
+  /** Host-only, current-depth, idempotent room-wide HP rider. */
+  applyRoundHpDeltas(depth: number, effectId: string, deltas: readonly RoundHpDelta[]): boolean;
   /** Every inbound MP event, both roles. */
   handle(e: MpEvent): void;
 }
 
 export function createDirector(deps: DirectorDeps, seats: Seat[], roomSeed: number | string): LmsDirector {
   let st = createLms(deps.role, deps.myUid, seats, roomSeed);
+  const appliedRoundHpEffects = new Set<string>();
 
   const set = (next: LmsState): void => {
     st = next;
@@ -146,13 +159,17 @@ export function createDirector(deps: DirectorDeps, seats: Seat[], roomSeed: numb
 
   /** Host: rank, sweep, broadcast, then advance — or end the match. */
   const closeAndReveal = (): void => {
-    if (deps.role !== 'host' || st.over) return;
-    const close = closeDepth(st);
+    if (deps.role !== 'host' || st.over || st.closed) return;
+    const elapsedSec = deps.clockSec();
+    const roundElapsedMs = Number.isFinite(elapsedSec)
+      ? Math.max(0, Math.min(MAX_ROUND_ELAPSED_MS, Math.round(elapsedSec * 1000)))
+      : 0;
+    const close = closeDepth({ ...st, roundElapsedMs });
     set(close.state);
     deps.wire.reveal(deps.depth(), deps.answerIdx(), close.scores, st.hp);
     if (close.eliminated.length) deps.wire.eliminate(close.eliminated);
     if (close.matchOver) {
-      deps.wire.endMatch(close.scores, 'last-standing');
+      deps.wire.endMatch(close.scores, 'last-standing', st.winnerUid ?? undefined);
       deps.finish();
       return;
     }
@@ -187,6 +204,8 @@ export function createDirector(deps: DirectorDeps, seats: Seat[], roomSeed: numb
     budget: () => myBudget(st),
 
     openDepth(depth) {
+      if (st.over || depth < 1 || depth <= st.depth || depth !== deps.depth()) return;
+      appliedRoundHpEffects.clear();
       set(beginDepth(st, depth));
       syncSeats();
     },
@@ -206,7 +225,7 @@ export function createDirector(deps: DirectorDeps, seats: Seat[], roomSeed: numb
     },
 
     timeout() {
-      if (deps.role !== 'host') return; /* clients wait for the host's reveal */
+      if (deps.role !== 'host' || st.over || st.closed) return;
       const sweep = timeoutMissing(st);
       set(sweep.state);
       closeAndReveal();
@@ -221,10 +240,94 @@ export function createDirector(deps: DirectorDeps, seats: Seat[], roomSeed: numb
       deps.toast(weapon.toUpperCase() + ' THROWN', 'info');
     },
 
+    snapshotForJoin(joiningUid) {
+      if (deps.role !== 'host') throw new Error('LMS snapshot requested by a client');
+      if (!joiningUid || !deps.wire.roster().some((seat) => seat.id === joiningUid)) {
+        throw new Error('LMS snapshot uid is not in the authoritative roster');
+      }
+      if (!st.over) syncSeats();
+      const elapsedSec = deps.clockSec();
+      const currentElapsedMs = Number.isFinite(elapsedSec)
+        ? Math.max(0, Math.min(MAX_ROUND_ELAPSED_MS, Math.round(elapsedSec * 1000)))
+        : 0;
+      return {
+        depth: st.depth,
+        scores: st.table.map((row) => ({ ...row })),
+        hp: { ...st.hp },
+        phases: { ...st.phases },
+        prevRanks: { ...st.prevRanks },
+        answered: [...st.answered],
+        clocks: { ...st.clocks },
+        budget: { ...st.budget },
+        closed: st.closed,
+        roundElapsedMs: st.closed ? st.roundElapsedMs : currentElapsedMs,
+        over: st.over,
+        winnerUid: st.winnerUid,
+      };
+    },
+
+    restoreSnapshot(snapshot) {
+      if (deps.role !== 'client') return;
+      const budget = { ...snapshot.budget };
+      // beginDepth grants every alive seat one attack; only a local throw
+      // spends ours. A same-depth capture cannot undo that known spend.
+      // Missing/cold budgets and newer depths must still take the host refill.
+      if (snapshot.depth === st.depth && Object.prototype.hasOwnProperty.call(st.budget, st.myUid)) {
+        budget[st.myUid] = Math.min(budget[st.myUid] ?? 0, st.budget[st.myUid]);
+      }
+      set({
+        ...st,
+        depth: snapshot.depth,
+        table: snapshot.scores.map((row) => ({ ...row })),
+        order: snapshot.scores.map((row) => row.uid),
+        hp: { ...snapshot.hp },
+        phases: { ...snapshot.phases },
+        prevRanks: { ...snapshot.prevRanks },
+        answered: [...snapshot.answered],
+        clocks: { ...snapshot.clocks },
+        budget,
+        closed: snapshot.closed,
+        roundElapsedMs: snapshot.roundElapsedMs,
+        over: snapshot.over,
+        winnerUid: snapshot.winnerUid,
+      });
+    },
+
+    applyRoundHpDeltas(depth, effectId, deltas) {
+      if (
+        deps.role !== 'host' || st.over || st.closed || depth < 1 ||
+        depth !== deps.depth() || depth !== st.depth || !effectId.trim()
+      ) return false;
+      const effectKey = depth + ':' + effectId.trim();
+      if (appliedRoundHpEffects.has(effectKey)) return false;
+      const byUid = new Map<string, number>();
+      for (const delta of deltas) {
+        if (!delta || typeof delta.uid !== 'string' || !delta.uid || !Number.isFinite(delta.hpDelta)) continue;
+        if (st.phases[delta.uid] !== 'alive' || !st.table.some((row) => row.uid === delta.uid)) continue;
+        const sum = (byUid.get(delta.uid) ?? 0) + Math.round(delta.hpDelta);
+        if (Number.isFinite(sum)) byUid.set(delta.uid, sum);
+      }
+      if (!byUid.size) return false;
+      const hp = { ...st.hp };
+      let changed = false;
+      for (const [uid, hpDelta] of byUid) {
+        const before = hp[uid] ?? 100;
+        const after = Math.max(0, Math.min(100, Math.round(before + hpDelta)));
+        if (after !== before) {
+          hp[uid] = after;
+          changed = true;
+        }
+      }
+      appliedRoundHpEffects.add(effectKey);
+      if (changed) set({ ...st, hp });
+      deps.wire.pushScores(depth, st.table, hp, 'round-effect');
+      return true;
+    },
+
     handle(e) {
       switch (e.t) {
         case 'sr':
-          if (deps.role !== 'host') return;
+          if (deps.role !== 'host' || e.n !== deps.depth() || e.n !== st.depth) return;
           hostVerdict(e.uid, e.sr.correct, e.sr.points, e.sr.hpDelta);
           return;
 
@@ -232,7 +335,7 @@ export function createDirector(deps: DirectorDeps, seats: Seat[], roomSeed: numb
           if (deps.role !== 'client') return;
           let next = adoptScores(st, e.scores, true);
           if (e.hp) next = { ...next, hp: { ...next.hp, ...e.hp } };
-          set(next);
+          set({ ...next, closed: true });
           deps.advance(0);
           return;
         }
@@ -260,23 +363,47 @@ export function createDirector(deps: DirectorDeps, seats: Seat[], roomSeed: numb
 
         case 'end':
           if (deps.role !== 'client') return;
-          set(adoptScores(st, e.scores, false));
+          const final = adoptScores(st, e.scores, false);
+          const alive = aliveUids(final);
+          set({
+            ...final,
+            closed: true,
+            over: true,
+            winnerUid: e.winnerUid ?? (alive.length === 1 ? alive[0] : null),
+          });
           deps.finish();
           return;
 
         case 'attack': {
-          if (deps.role !== 'host' || !e.targetUid) return;
+          if (deps.role !== 'host' || st.closed || !e.targetUid || e.n !== deps.depth() || e.n !== st.depth) return;
           const weapon: WeaponId = e.weapon === 'curse' ? 'curse' : 'rotten';
           applyAttackAsHost(e.uid, e.targetUid, weapon, true);
           return;
         }
 
-        case 'peer-leave':
-          set(dropSeat(st, e.id));
+        case 'peer-leave': {
+          const next = dropSeat(st, e.id);
+          set(next);
           deps.toast('A SEAT EMPTIED', 'info');
-          /* The room may have been waiting on the seat that just walked. */
-          if (deps.role === 'host' && everyoneAnswered(st)) closeAndReveal();
+          if (
+            deps.role === 'host' && !next.over && next.depth > 0 &&
+            next.table.length >= 2 && aliveUids(next).length <= 1
+          ) {
+            if (next.closed) {
+              const winnerUid = aliveUids(next)[0] ?? null;
+              const ended = { ...next, over: true, winnerUid };
+              set(ended);
+              deps.wire.endMatch(ended.table, 'last-standing', winnerUid ?? undefined);
+              deps.finish();
+            } else {
+              closeAndReveal();
+            }
+          } else if (deps.role === 'host' && everyoneAnswered(next)) {
+            closeAndReveal();
+          }
           return;
+        }
+
 
         default:
           return;

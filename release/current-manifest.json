@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "sourceSha": "b781411d2f04a555e748f0c3c5da1745c7011910",
+  "deploymentId": 6273064973,
+  "capturedAt": "2026-10-16T22:03:14.353Z",
+  "origin": "https://daveinturkey15-byte.github.io/iqbattle-shadow-edition/",
+  "files": [
+    {
+      "path": "assets/browserAll-CFVNRMIm.js",
+      "sha256": "76f8ab76fdfaa18edb345dba3fc56f7f445e84e9b1816c81e96667bdfabded97",
+      "size": 171
+    },
+    {
+      "path": "assets/index-Dk3HjM__.js",
+      "sha256": "1c35fe8aad2066f32eb16703e35d7fcbbd5c80e008220582270229d952d4edc3",
+      "size": 1512512
+    },
+    {
+      "path": "assets/lobby-BHGhGWzS.js",
+      "sha256": "66ba788f0cb978b393befa5eea85af3466d68290b7e64b8f8e112191e0805dd2",
+      "size": 2351
+    },
+    {
+      "path": "assets/webworkerAll-TzAB4XfZ.js",
+      "sha256": "8b1e6ecd075a7dce4aee254dcc626341119b4a738891f4c6280c2e0bd3b3c3d3",
+      "size": 77
+    },
+    {
+      "path": "index.html",
+      "sha256": "34fa68c39acc9e077755352e329faa98a398c4f53d318fff5f2565baff725a59",
+      "size": 1107
+    }
+  ],
+  "runtimeTreeSha256": "be6cb509c9cfcf2e4af4db63f2b9e8bd7533447815025c63275253349d2e4262",
+  "digestPolicy": "All 5 reachable same-origin runtime files, including original index.html, retained byte-for-byte; external Google Fonts and PeerJS broker/CDN remain external. Digest = SHA256(sorted path + NUL + file SHA256 + newline).",
+  "rollbackPolicy": "Serve exact retained bytes without rebuilding; original absolute assets remain at the site root alongside the current/ copy."
+}

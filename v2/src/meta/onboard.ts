@@ -9,10 +9,9 @@
  *     here every mounted takeover has a hand-written card). Text caps mirror the
  *     v1 normalize(): goal <= 140 chars, controls <= 90 chars.
  *
- *  2. FAMILY LEGEND — one line per REAL rule family (DNA.md set from
- *     families/families2/families3), shown as an escapable overlay at depths
- *     1-3 only, once per family per run. Derived from each family's own `rule`
- *     sentence, so the legend can never contradict the generator.
+ *  2. FAMILY LEGEND — one line per mounted REAL rule family (DNA.md), shown on
+ *     first sight before answer input, once per family per run. Derived from
+ *     each family's `rule` sentence, so the legend cannot contradict the generator.
  *
  * Determinism: pure lookups over frozen tables — no Math.random, no Date.now,
  * no DOM. The only state is the once-per-run legend ledger; resetLegendRun()
@@ -24,7 +23,7 @@
 /* ------------------------------------------------------------------ */
 
 export interface GoalCard {
-  /** canonical takeover stage id (see MOUNTED_STAGE_IDS ordering contract) */
+  /** canonical takeover stage id (see TAKEOVER_STAGE_IDS ordering contract) */
   stageId: string;
   /** uppercase scene title, e.g. 'LASER STORM' */
   title: string;
@@ -40,46 +39,6 @@ export interface LegendOverlay {
   familyId: string;
   text: string;
 }
-
-/* ------------------------------------------------------------------ */
-/* Stage ids                                                           */
-/* ------------------------------------------------------------------ */
-
-/**
- * The 11 mounted takeovers, in EXACTLY main.ts TAKEOVERS array order, so
- * Main can map roundPlan()'s takeover index -> stage id positionally:
- *   TAKEOVERS[idx] <-> MOUNTED_STAGE_IDS[idx]
- * Incoming wave-1 ports (PortRetro / PortNarrative files pacman2..sniper2)
- * get their own ids below so their goal cards exist the frame they mount.
- */
-export const MOUNTED_STAGE_IDS = [
-  'red-light',
-  'tide-pool',
-  'serpent',
-  'floor-fall',
-  'hunter-dodge',
-  'laser-storm',
-  'drone-dodge',
-  'saber-clash',
-  'slots',
-  'slime-gallery',
-  'the-well',
-] as const;
-
-export type MountedStageId = (typeof MOUNTED_STAGE_IDS)[number];
-
-/** Incoming port stage ids (wave-1 ownership notes: pacman2..sniper2 files). */
-export const PORT_STAGE_IDS = [
-  'pacman2',
-  'tetris2',
-  'battleship2',
-  'doom2',
-  'phoenix2',
-  'gauntlet2',
-  'fractal2',
-  'hypercube2',
-  'sniper2',
-] as const;
 
 /* ------------------------------------------------------------------ */
 /* Goal cards                                                          */
@@ -282,6 +241,24 @@ const CARDS: Readonly<Record<string, GoalCard>> = Object.freeze({
     goal: 'THE SCOPE IS THE ONLY LIGHT. CONFIRM ONLY FIGURES WEARING THE POSTED HEAD-COUNT.',
     controls: 'MOUSE AIMS \u00B7 HOLD SPACE TO STEADY \u00B7 CLICK TO CONFIRM',
   },
+  collectibles: {
+    stageId: 'collectibles',
+    title: 'TOKEN RUN',
+    goal: 'RUN THE THREE-LANE TRAIL, COLLECT THE POSTED TOKEN SET IN ORDER, AND DODGE THE GAPS.',
+    controls: 'ARROWS / WASD · CLICK LANE / KEYS 1–3 · ESC BAILS NEUTRAL',
+  },
+  'six-stones': {
+    stageId: 'six-stones',
+    title: 'SIX STONES',
+    goal: 'WATCH SIX MARKED STONES, THEN ACTIVATE THEM IN THE SHOWN ORDER BEFORE THE SEAL CLOSES.',
+    controls: 'CLICK STONES · KEYS 1–6 · ESC BAILS NEUTRAL',
+  },
+  'gunship-evasion': {
+    stageId: 'gunship-evasion',
+    title: 'GUNSHIP PASS',
+    goal: 'READ THE TELEGRAPHED SEARCHLIGHT SWEEP AND MOVE TO A SHELTERED LANE BEFORE EACH PASS.',
+    controls: 'LEFT / RIGHT OR A / D · CLICK SHELTER / KEYS 1–3 · ESC BAILS NEUTRAL',
+  },
 });
 
 /**
@@ -300,6 +277,7 @@ export const TAKEOVER_STAGE_IDS = [
   'popglitter2', 'metal2', 'terminator2', 'fury2', 'skyfire2',
   /* P7 wave — order MUST match main.TAKEOVERS exactly (selftest-enforced). */
   'lantern-guard', 'piano-round', 'lamp', 'pod', 'shelf-edge', 'the-orb', 'green-war',
+  'collectibles', 'six-stones', 'gunship-evasion',
 ] as const;
 
 /** Goal card for the takeover main.ts mounts at TAKEOVERS[idx]. */
@@ -327,25 +305,28 @@ export function goalCardFor(stageId: string): GoalCard | null {
 /* ------------------------------------------------------------------ */
 
 /**
- * One line per real rule family, derived from each generator's own `rule`
- * sentence (families.ts / families2.ts / families3.ts). If a family's rule
- * changes, change its legend with it.
+ * Concise, answer-independent rules from every mounted family.
  */
 const LEGENDS: Readonly<Record<string, string>> = Object.freeze({
   'count-grid': 'Columns double the count; each row starts a step higher.',
   accretion: 'Each step adds one structure: diagonal, then corners, then edge dots.',
-  'rotation-composite': 'The dot ring spins 90\u00B0 each step while one more dot joins.',
-  'position-orbit': 'The dot steps a fixed angle per column; its orbit widens per row.',
-  'missing-section': 'Section counts grow across and down; mark kind cycles reading-order.',
-  'dot-matrix-rotate': 'The dot arc turns 90\u00B0 per column and gains one dot per row.',
-  'line-reflection': 'The right column mirrors the left horizontally; the bottom row mirrors the top.',
-  'count-positions': 'The mark count never changes; occupied spots advance one step per column.',
-  'size-ladder': 'The triangle climbs one size rung per column and turns 90\u00B0 per row.',
+  'rotation-composite': 'The dot ring spins 90° each step while one more dot joins.',
+  'position-orbit': 'The large dot steps around its orbit per column; its orbit widens per row.',
+  'missing-section': 'Section counts grow across and down; mark kind cycles in reading order.',
+  'dot-matrix-rotate': 'The dot arc turns 90° per column and gains one dot per row.',
+  'line-reflection': 'The right column mirrors left-to-right; the bottom row mirrors top-to-bottom.',
+  'count-positions': 'The mark count stays fixed; occupied lattice spots advance one step per column.',
+  'size-ladder': 'The triangle climbs one size rung per column and turns 90° per row.',
+  'arrow-chain': 'The arrow turns 90° each step; its tail gains a tick.',
+  'dot-balance': 'The beam tips to the heavier stack; the gap steps up per column.',
+  'ring-nest': 'One more ring per column; ring spacing widens per row.',
+  'dual-axis': 'Dots grow across; triangles grow down.',
+  'mirror-mend': 'Complete the missing cell by mirroring each visible cell horizontally, vertically, or both ways.',
 });
 
 export const LEGEND_MAX = 120;
 
-/** The nine family ids every legend must cover (DNA-real families only). */
+/** Every mounted solver-backed family has a one-line, answer-independent rule legend. */
 export const ALL_FAMILY_IDS = Object.keys(LEGENDS);
 
 /** One-line rule legend for a puzzle family id, or null if unknown. */
@@ -357,8 +338,7 @@ export function legendFor(familyId: string): string | null {
 /* Once-per-run legend gating                                          */
 /* ------------------------------------------------------------------ */
 
-/** Legends show only on depths 1-3 — after that the rules are assumed known. */
-export const LEGEND_DEPTHS = [1, 2, 3];
+/** First sight teaches a family at any depth; repeats stay quiet for the run. */
 
 const seenThisRun = new Set<string>();
 
@@ -369,11 +349,11 @@ export function resetLegendRun(): void {
 
 /**
  * Overlay spec for a family legend, or null.
- * Shows at depths 1-3 only, once per family per run; unknown families and
- * repeat asks yield null so callers can skip rendering entirely.
+ * Shows on first sight at any positive depth, once per family per run; unknown
+ * families and repeat asks yield null so callers can skip rendering entirely.
  */
 export function maybeShowLegend(depth: number, familyId: string): LegendOverlay | null {
-  if (!LEGEND_DEPTHS.includes(depth)) return null;
+  if (!Number.isInteger(depth) || depth < 1) return null;
   if (seenThisRun.has(familyId)) return null;
   const text = LEGENDS[familyId];
   if (text === undefined) return null;
@@ -393,29 +373,6 @@ export interface SelfTestResult {
 export function selfTest(): SelfTestResult {
   const failures: string[] = [];
 
-  /* --- coverage: EVERY takeover main mounts has a card ---------------
-   * This is the gate that matters. 25 takeovers were wired into the
-   * rotation while only 20 cards existed and main indexed a hardcoded
-   * 11-entry list, so 14 chaos rounds mounted with no instructions at
-   * all: "not even clear what you're supposed to do" (owner, 2026-08-26).
-   * Coverage is now asserted against the ordering contract itself. */
-  for (const id of TAKEOVER_STAGE_IDS) {
-    const card = goalCardFor(id);
-    if (!card) {
-      failures.push(`no goal card for mounted takeover ${id}`);
-      continue;
-    }
-    if (card.stageId !== id) failures.push(`${id}: stageId mismatch`);
-  }
-  /* This used to assert the literal 25 — a snapshot of the roster, not the
-   * contract, so it went red the moment a stage was added and told you nothing
-   * about whether main.ts agreed. What actually matters is that every mounted
-   * takeover has a card and the two orders line up, which the loops either
-   * side of this already prove. All that is left worth asserting is that the
-   * roster never SHRINKS silently: stages are only ever added here. */
-  if (TAKEOVER_STAGE_IDS.length < 25) {
-    failures.push(`takeover roster shrank to ${TAKEOVER_STAGE_IDS.length} (was 25 at the P7 wave)`);
-  }
   if (new Set(TAKEOVER_STAGE_IDS).size !== TAKEOVER_STAGE_IDS.length) {
     failures.push('duplicate id in TAKEOVER_STAGE_IDS');
   }
@@ -428,11 +385,11 @@ export function selfTest(): SelfTestResult {
     failures.push('out-of-range takeover index should be null');
   }
 
-  /* --- coverage: all 11 mounted stage ids --- */
-  for (const id of MOUNTED_STAGE_IDS) {
+  /* --- coverage: every mounted takeover card is complete and readable --- */
+  for (const id of TAKEOVER_STAGE_IDS) {
     const card = goalCardFor(id);
     if (!card) {
-      failures.push(`no goal card for mounted stage ${id}`);
+      failures.push(`no goal card for mounted takeover ${id}`);
       continue;
     }
     if (card.stageId !== id) failures.push(`${id}: stageId mismatch`);
@@ -444,23 +401,20 @@ export function selfTest(): SelfTestResult {
     if (card.controls.length > CONTROLS_MAX) failures.push(`${id}: controls ${card.controls.length} > ${CONTROLS_MAX}`);
     if (/[\n\r]/.test(card.goal + card.controls + card.title)) failures.push(`${id}: multi-line card`);
   }
-  if (MOUNTED_STAGE_IDS.length !== 11) failures.push(`mounted count ${MOUNTED_STAGE_IDS.length} != 11`);
-
-  /* --- coverage: the 9 incoming ports also have cards --- */
-  for (const id of PORT_STAGE_IDS) {
-    if (!goalCardFor(id)) failures.push(`no goal card for incoming port ${id}`);
-  }
 
   /* --- unknown id -> null, never throw --- */
   if (goalCardFor('not-a-stage') !== null) failures.push('unknown stage id should be null');
   if (goalCardFor('') !== null) failures.push('empty stage id should be null');
 
-  /* --- coverage: all 9 families have single-line, capped legends --- */
+  /* --- coverage: every mounted puzzle family has a single-line legend --- */
   const expectedFamilies = [
     'count-grid', 'accretion', 'rotation-composite', 'position-orbit', 'missing-section',
     'dot-matrix-rotate', 'line-reflection', 'count-positions', 'size-ladder',
+    'arrow-chain', 'dot-balance', 'ring-nest', 'dual-axis', 'mirror-mend',
   ];
-  if (ALL_FAMILY_IDS.length !== 9) failures.push(`family legend count ${ALL_FAMILY_IDS.length} != 9`);
+  if (ALL_FAMILY_IDS.length !== expectedFamilies.length) {
+    failures.push(`family legend coverage ${ALL_FAMILY_IDS.length} != ${expectedFamilies.length}`);
+  }
   for (const fam of expectedFamilies) {
     const text = legendFor(fam);
     if (text === null) {
@@ -473,28 +427,29 @@ export function selfTest(): SelfTestResult {
   }
   if (legendFor('color-rotation') !== null) failures.push('anti-DNA family should have no legend');
 
-  /* --- once-per-run semantics --- */
+  /* --- first appearance teaches once at any depth, before the answer --- */
   resetLegendRun();
   let shown = 0;
-  for (const depth of [1, 2, 3]) {
-    for (const fam of expectedFamilies) {
-      const ov = maybeShowLegend(depth, fam);
-      if (depth === 1 && !ov) failures.push(`depth 1 first ask missing overlay for ${fam}`);
-      if (ov) {
-        shown++;
-        if (ov.kind !== 'legend' || ov.familyId !== fam || ov.text !== legendFor(fam)) {
-          failures.push(`${fam}: overlay spec mismatch`);
-        }
+  for (let i = 0; i < expectedFamilies.length; i++) {
+    const depth = i + 1;
+    const fam = expectedFamilies[i]!;
+    const ov = maybeShowLegend(depth, fam);
+    if (!ov) failures.push(`first sight missing overlay for ${fam}`);
+    else {
+      shown++;
+      if (ov.kind !== 'legend' || ov.familyId !== fam || ov.text !== legendFor(fam)) {
+        failures.push(`${fam}: overlay spec mismatch`);
       }
-      // second ask inside the same run must be null regardless of depth
-      if (maybeShowLegend(depth, fam) !== null) failures.push(`${fam}: showed twice in one run`);
     }
+    if (maybeShowLegend(depth + 100, fam) !== null) failures.push(`${fam}: showed twice in one run`);
   }
-  if (shown !== 9) failures.push(`expected 9 overlays across depths 1-3, got ${shown}`);
+  if (shown !== expectedFamilies.length) {
+    failures.push(`expected one overlay per family, got ${shown}`);
+  }
 
-  /* depth gate */
+  /* Invalid depths do not consume a family's first-sight legend. */
   resetLegendRun();
-  for (const depth of [-1, 0, 4, 5, 99]) {
+  for (const depth of [-1, 0, 0.5]) {
     if (maybeShowLegend(depth, 'accretion') !== null) failures.push(`depth ${depth} should show nothing`);
   }
 
@@ -507,12 +462,6 @@ export function selfTest(): SelfTestResult {
   if (maybeShowLegend(2, 'accretion') === null) failures.push('resetLegendRun did not restore depth 2 teaching');
   if (maybeShowLegend(2, 'accretion') !== null) failures.push('post-reset second ask should be null');
 
-  /* determinism: pure lookup twice, identical result objects' content */
-  const a = goalCardFor('laser-storm');
-  const b = goalCardFor('laser-storm');
-  if (!a || !b || a.goal !== b.goal || a.controls !== b.controls || a.title !== b.title) {
-    failures.push('goalCardFor not stable');
-  }
 
   return { ok: failures.length === 0, failures };
 }

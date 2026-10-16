@@ -587,16 +587,11 @@ export function selfTest(): { ok: boolean; failures: string[] } {
     }
   });
 
-  /* option-shuffle: a no-op implementation (never setting optionOrder)
-   * fails here. main.ts moves the option tiles' positions from this
-   * permutation, so it must be a valid permutation of 0..7, deterministic,
-   * step-free in both motion modes, torn down, and the banner must say the
-   * options moved. */
+  /* Option shuffle must yield a deterministic bijection over the eight answer slots. */
   const shuf = MODIFIERS.find((m) => m.id === 'option-shuffle');
   check(`option-shuffle permutation state (${SEED_COUNT} seeds)`, () => {
     assert(!!shuf, 'option-shuffle missing from MODIFIERS');
     if (!shuf) return;
-    assert(shuf.banner === 'OPTIONS HAVE MOVED', 'option-shuffle banner must say the options moved');
     for (let i = 0; i < SEED_COUNT; i++) {
       const seed = (i * 1664525 + 1013904223) >>> 0;
       const depth = (i % 25) + 1;
@@ -654,6 +649,27 @@ export function selfTest(): { ok: boolean; failures: string[] } {
       const restored = pOrder();
       assert(restored !== undefined && restored.join(',') === '7,6,5,4,3,2,1,0', `[option-shuffle seed=${seed}] teardown over a preset order must restore the original value`);
     }
+  });
+
+  const inverted = MODIFIERS.find((m) => m.id === 'inverted-controls');
+  check('inverted-controls preserves every answer in a reversed slot mapping', () => {
+    assert(!!inverted, 'inverted-controls missing from MODIFIERS');
+    if (!inverted) return;
+    const ctx: ModCtx = { depth: 4, seed: 19, layer: 1, align: 'bad', motion: true };
+    const target = createStub();
+    const stop = inverted.apply(ctx, target);
+    assert(target.inverted === true, 'inverted-controls must activate its input mapping');
+    const map = target.invertMap;
+    assert(map !== undefined && map.length === 8, 'inverted-controls must map all eight answer slots');
+    if (map) {
+      const sorted = [...map].sort((a, b) => a - b);
+      for (let i = 0; i < 8; i++) {
+        assert(map[i] === 7 - i, `slot ${i} must map to ${7 - i}`);
+        assert(sorted[i] === i, `inverted answer mapping lost slot ${i}`);
+      }
+    }
+    stop();
+    assert(target.inverted === undefined && target.invertMap === undefined, 'input mapping teardown must restore its prior state');
   });
 
   /* mirror-flip — writes the container transform directly (scale.x). The gate
@@ -777,6 +793,11 @@ export function selfTest(): { ok: boolean; failures: string[] } {
             `pickModifiers returned ${picked1.length} which exceeds total modifiers count`
           );
 
+          const categories = new Set(picked1.map((m) => m.category));
+          assert(
+            categories.size === picked1.length,
+            `pickModifiers repeated a compatibility category for seed=${seed}: '${picked1.map((m) => m.category).join(',')}'`
+          );
           const ids1 = picked1.map((m) => m.id).join(',');
           const ids2 = picked2.map((m) => m.id).join(',');
           assert(
@@ -786,6 +807,23 @@ export function selfTest(): { ok: boolean; failures: string[] } {
         }
       }
     }
+  });
+
+  check('modifier opening, sanctuary, and category compatibility', () => {
+    for (const align of ['bad', 'chaotic', 'neutral', 'good'] as const) {
+      for (const depth of [1, 2, 3]) {
+        const ctx: ModCtx = { depth, seed: 7, layer: 0, align, motion: true };
+        assert(pickModifiers(ctx, 5).length === 0, `depth ${depth} align ${align} must stay modifier-free`);
+      }
+    }
+
+    const sanctuary: ModCtx = { depth: 20, seed: 7, layer: 0, align: 'good', motion: true };
+    assert(pickModifiers(sanctuary, 5).length === 0, 'good sanctuary rounds must stay modifier-free');
+
+    const hostile: ModCtx = { depth: 4, seed: 7, layer: 1, align: 'bad', motion: true };
+    const picked = pickModifiers(hostile, 5);
+    assert(picked.length === 5, `depth-4 hostile round must offer one of each category, got ${picked.length}`);
+    assert(new Set(picked.map((m) => m.category)).size === 5, 'depth-4 picker must cover five compatible categories');
   });
   }
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port 8792 --strictPort",
     "build": "tsc && vite build",
+    "postbuild": "node --test ../tools/release.test.mjs && node ../tools/assemble-pages.mjs",
     "preview": "vite preview --port 8792"
   },
   "devDependencies": {

@@ -1,9 +1,16 @@
 import { planArc, type ArcPlan } from '../arc-data.ts';
 
-export interface Callback {
+export interface EncounterMemory {
+  depth: number;
+  worldId: string;
+  eventId: string;
+  personaId: string | null;
+  objectId: string | null;
+}
+
+export interface Callback extends EncounterMemory {
   fromDepth: number;
   line: string;
-  worldId?: string;
 }
 
 function hashSeedDepth(seed: number, depth: number): number {
@@ -24,54 +31,52 @@ function mulberry32(state: number): () => number {
   };
 }
 
-const CALLBACK_LINES: readonly string[] = [
-  'THE GARDEN REMEMBERS YOU - YOU KNELT HERE AT DEPTH {D}',
-  'YOU LIT THIS LIGHT AT DEPTH {D} - IT NEVER WENT OUT',
-  'DEPTH {D} LEFT A DOOR OPEN - STEP BACK THROUGH',
-  'THE SANCTUARY KEEPS YOUR SHADOW FROM DEPTH {D}',
-  'WHAT HEALED YOU AT DEPTH {D} HAS BEEN WAITING',
-  'YOU SANG HERE AT DEPTH {D} - THE WALLS SING BACK',
-  'THE VOW YOU MADE AT DEPTH {D} STILL HOLDS',
-  'THIS IS THE SAME LIGHT YOU FOUND AT DEPTH {D}',
-  'DEPTH {D} REMEMBERED YOUR NAME - ANSWER IT',
-  'YOU WERE FORGIVEN AT DEPTH {D} - REMEMBER HOW',
-  'THE WELL YOU DRANK AT DEPTH {D} HAS NOT RUN DRY',
-  'RETURN TO WHAT SAVED YOU AT DEPTH {D}',
-  'THE FLAME FROM DEPTH {D} FOLLOWED YOU DOWN',
-  'GRACE FOUND YOU AT DEPTH {D} - IT FOUND YOU AGAIN',
-  'THIS GROUND IS HOLY - YOU BLED HERE AT DEPTH {D}',
-  'THE CHOIR YOU JOINED AT DEPTH {D} CALLS YOU BACK',
-];
-
-function renderLine(template: string, fromDepth: number): string {
-  return template.split('{D}').join(String(fromDepth));
+function shortId(value: string): string {
+  return value.replace(/[^a-z0-9]+/gi, ' ').trim().toUpperCase().slice(0, 8) || 'UNKNOWN';
 }
 
-export function redemptionCallback(seed: number, depth: number, plan: readonly ArcPlan[]): Callback | null {
-  if (!Number.isInteger(depth)) return null;
-  if (depth < 0 || depth >= plan.length) return null;
-  const cur = plan[depth];
+function callbackLine(memory: EncounterMemory): string {
+  const identity = [
+    ...(memory.personaId ? [`P:${shortId(memory.personaId)}`] : []),
+    ...(memory.objectId ? [`O:${shortId(memory.objectId)}`] : []),
+    `E:${shortId(memory.eventId)}`,
+    `W:${shortId(memory.worldId)}`,
+    `D${memory.depth}`,
+  ];
+  return `RETURN: ${identity.join(' · ')}`;
+}
+
+export function redemptionCallback(
+  seed: number,
+  depth: number,
+  plan: readonly ArcPlan[],
+  memories: readonly EncounterMemory[],
+): Callback | null {
+  if (!Number.isInteger(depth) || depth < 1 || depth > plan.length) return null;
+  const cur = plan[depth - 1];
   if (!cur || cur.align !== 'good') return null;
+
   const eligible: number[] = [];
-  for (let d = depth - 7; d <= depth - 4; d++) {
-    if (d >= 0 && d < plan.length) {
-      const p = plan[d];
-      if (p && p.align === 'good') eligible.push(d);
-    }
+  for (let fromDepth = depth - 7; fromDepth <= depth - 4; fromDepth++) {
+    if (fromDepth < 1 || fromDepth > plan.length) continue;
+    const beat = plan[fromDepth - 1];
+    const memory = memories.find((m) => m.depth === fromDepth);
+    if (
+      beat?.align === 'good' &&
+      memory &&
+      memory.worldId.trim().length > 0 &&
+      memory.eventId.trim().length > 0
+    ) eligible.push(fromDepth);
   }
   if (eligible.length === 0) return null;
+
   const rnd = mulberry32(hashSeedDepth(seed, depth));
-  const echoIdx = Math.floor(rnd() * eligible.length);
-  const fromDepth: number = eligible[echoIdx] as number;
-  const tmplIdx = Math.floor(rnd() * CALLBACK_LINES.length);
-  const template: string = CALLBACK_LINES[tmplIdx] as string;
-  const line = renderLine(template, fromDepth);
+  const fromDepth = eligible[Math.floor(rnd() * eligible.length)] as number;
+  const memory = memories.find((m) => m.depth === fromDepth);
+  if (!memory) return null;
+  const line = callbackLine(memory);
   if (line.length === 0 || line.length > 90) return null;
-  return {
-    fromDepth,
-    line,
-    worldId: 'sanctuary-' + String(fromDepth),
-  };
+  return { ...memory, fromDepth, line };
 }
 
 export function selfTest(): { ok: boolean; failures: string[] } {
@@ -81,55 +86,61 @@ export function selfTest(): { ok: boolean; failures: string[] } {
   };
   const distinct = new Set<string>();
   const MAX_DEPTH = 40;
+
   for (let seed = 0; seed < 500; seed++) {
     const plan = planArc(seed, MAX_DEPTH);
+    const memories: EncounterMemory[] = [];
+    for (let i = 0; i < plan.length; i++) {
+      if (plan[i]?.align !== 'good') continue;
+      memories.push({
+        depth: i + 1,
+        worldId: `world-${seed}-${i + 1}`,
+        eventId: `event-${seed}-${i + 1}`,
+        personaId: `persona-${i + 1}`,
+        objectId: `object-${i + 1}`,
+      });
+    }
+
     for (let d = 0; d < plan.length; d++) {
-      const first = redemptionCallback(seed, d, plan);
-      const second = redemptionCallback(seed, d, plan);
+      const depth = d + 1;
+      const first = redemptionCallback(seed, depth, plan, memories);
+      const second = redemptionCallback(seed, depth, plan, memories);
       if (JSON.stringify(first) !== JSON.stringify(second)) {
-        push('seed ' + seed + ' depth ' + d + ': not deterministic');
+        push('seed ' + seed + ' depth ' + depth + ': not deterministic');
       }
+
       const cur = plan[d] as ArcPlan | undefined;
       if (!cur) continue;
       if (cur.align !== 'good') {
-        if (first !== null) {
-          push('seed ' + seed + ' depth ' + d + ': expected null on ' + cur.align + ' beat');
-        }
+        if (first !== null) push('seed ' + seed + ' depth ' + depth + ': expected null on ' + cur.align + ' beat');
       } else if (first !== null) {
-        if (!(first.fromDepth < d)) {
-          push('seed ' + seed + ' depth ' + d + ': fromDepth ' + first.fromDepth + ' not strictly less than depth');
+        if (!(first.fromDepth < depth)) {
+          push('seed ' + seed + ' depth ' + depth + ': source ' + first.fromDepth + ' is not earlier');
         }
-        const gap = d - first.fromDepth;
-        if (!(gap >= 4 && gap <= 7)) {
-          push('seed ' + seed + ' depth ' + d + ': gap ' + gap + ' outside 4-7 window');
+        const gap = depth - first.fromDepth;
+        if (!(gap >= 4 && gap <= 7)) push('seed ' + seed + ' depth ' + depth + ': gap ' + gap + ' outside 4-7 window');
+
+        const source = plan[first.fromDepth - 1] as ArcPlan | undefined;
+        const memory = memories.find((m) => m.depth === first.fromDepth);
+        if (!source || source.align !== 'good') push('seed ' + seed + ' depth ' + depth + ': source is not good');
+        if (!memory || memory.worldId !== first.worldId || memory.eventId !== first.eventId ||
+            memory.personaId !== first.personaId || memory.objectId !== first.objectId) {
+          push('seed ' + seed + ' depth ' + depth + ': callback identity is not the remembered encounter');
         }
-        const src = plan[first.fromDepth] as ArcPlan | undefined;
-        if (!src || src.align !== 'good') {
-          push('seed ' + seed + ' depth ' + d + ': echo source ' + first.fromDepth + ' is not a good beat');
-        }
-        if (typeof first.line !== 'string' || first.line.length === 0) {
-          push('seed ' + seed + ' depth ' + d + ': line empty');
+        if (typeof first.line !== 'string' || first.line.length === 0 || first.line.length > 90) {
+          push('seed ' + seed + ' depth ' + depth + ': callback line missing or too long');
         } else {
-          if (first.line.length > 90) {
-            push('seed ' + seed + ' depth ' + d + ': line length ' + first.line.length + ' exceeds 90');
-          }
-          if (first.line !== first.line.toUpperCase()) {
-            push('seed ' + seed + ' depth ' + d + ': line not uppercase');
-          }
-          if (first.line.indexOf(String(first.fromDepth)) < 0) {
-            push('seed ' + seed + ' depth ' + d + ': line does not reference depth ' + first.fromDepth);
+          if (first.line !== first.line.toUpperCase()) push('seed ' + seed + ' depth ' + depth + ': line not uppercase');
+          if (!first.line.endsWith('D' + String(first.fromDepth))) {
+            push('seed ' + seed + ' depth ' + depth + ': line does not reference its source depth');
           }
           distinct.add(first.line);
         }
       }
     }
   }
-  if (distinct.size < 10) {
-    push('expected at least 10 distinct lines over 500 seeds, got ' + distinct.size);
-  }
-  if (CALLBACK_LINES.length < 14) {
-    push('expected at least 14 line templates, got ' + CALLBACK_LINES.length);
-  }
+
+  if (distinct.size < 10) push('expected at least 10 distinct memory callbacks, got ' + distinct.size);
   return { ok: failures.length === 0, failures };
 }
 

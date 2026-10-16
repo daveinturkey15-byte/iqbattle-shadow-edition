@@ -71,7 +71,9 @@ function resolveBoardTarget(scene: unknown): BoardTarget | null {
  */
 const pendulumSwayModifier: RoundModifier = {
   id: 'pendulum-sway',
+  category: 'motion',
   banner: 'PENDULUM SWAY',
+  telegraph: 'MOTION ON: BOARD SWAYS WITHIN 0.20 RAD; REDUCED MOTION HOLDS A SEEDED HALF-SWING.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -125,7 +127,9 @@ const pendulumSwayModifier: RoundModifier = {
  */
 const snapRotateModifier: RoundModifier = {
   id: 'snap-rotate',
+  category: 'motion',
   banner: 'SNAP ROTATE',
+  telegraph: 'MOTION ON: BOARD SNAPS WITHIN 0.20 RAD, THEN RETURNS; REDUCED MOTION STAYS UPRIGHT.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -197,7 +201,9 @@ const snapRotateModifier: RoundModifier = {
  */
 const sharpInhaleModifier: RoundModifier = {
   id: 'sharp-inhale',
+  category: 'motion',
   banner: 'SHARP INHALE',
+  telegraph: 'MOTION ON: BOARD BREATHES IN QUICKLY, OUT SLOWLY; REDUCED MOTION HOLDS MID-BREATH.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -263,7 +269,9 @@ const sharpInhaleModifier: RoundModifier = {
  */
 const singleAxisDriftModifier: RoundModifier = {
   id: 'single-axis-drift',
+  category: 'motion',
   banner: 'SIDE DRIFT',
+  telegraph: 'MOTION ON: BOARD DRIFTS ALONG ONE AXIS; REDUCED MOTION HOLDS A SEEDED OFFSET.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -322,7 +330,9 @@ const singleAxisDriftModifier: RoundModifier = {
  */
 const barrelRollModifier: RoundModifier = {
   id: 'barrel-roll',
+  category: 'motion',
   banner: 'BARREL ROLL',
+  telegraph: 'MOTION ON: BOARD TURNS ONCE IN 6–10S AND ENDS UPRIGHT; REDUCED MOTION STAYS UPRIGHT.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -378,7 +388,9 @@ const barrelRollModifier: RoundModifier = {
  */
 const figureEightDriftModifier: RoundModifier = {
   id: 'figure-eight-drift',
+  category: 'motion',
   banner: 'FIGURE EIGHT',
+  telegraph: 'MOTION ON: BOARD TRACES A FIGURE EIGHT WITHIN 30PX; REDUCED MOTION HOLDS ITS START POINT.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -436,7 +448,9 @@ const figureEightDriftModifier: RoundModifier = {
  */
 const primePulseModifier: RoundModifier = {
   id: 'prime-pulse',
+  category: 'motion',
   banner: 'PRIME PULSE',
+  telegraph: 'MOTION ON: BOARD PULSES EVERY 2, 3, 5, OR 7S; REDUCED MOTION HOLDS A QUARTER-PULSE SCALE.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -498,7 +512,9 @@ const primePulseModifier: RoundModifier = {
  */
 const seesawWobbleModifier: RoundModifier = {
   id: 'seesaw-wobble',
+  category: 'motion',
   banner: 'SEESAW WOBBLE',
+  telegraph: 'MOTION ON: WIDTH AND HEIGHT WOBBLE OPPOSITELY; REDUCED MOTION HOLDS A HALF-WOBBLE.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -555,7 +571,9 @@ const seesawWobbleModifier: RoundModifier = {
  */
 const slowOrbitModifier: RoundModifier = {
   id: 'slow-orbit',
+  category: 'motion',
   banner: 'SLOW ORBIT',
+  telegraph: 'MOTION ON: BOARD ORBITS WITHIN 22PX; REDUCED MOTION HOLDS ITS SEEDED START POINT.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
@@ -612,7 +630,9 @@ const slowOrbitModifier: RoundModifier = {
  */
 const decayingJitterModifier: RoundModifier = {
   id: 'decaying-jitter',
+  category: 'motion',
   banner: 'SETTLING JITTER',
+  telegraph: 'MOTION ON: SMALL JITTER FADES TO STILLNESS; REDUCED MOTION HOLDS A QUARTER-SIZED OFFSET.',
   when: (ctx: ModCtx): boolean => ctx.depth >= 0,
   apply: (ctx: ModCtx, scene: unknown): ModifierStop => {
     const target = resolveBoardTarget(scene);
